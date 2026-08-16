@@ -1,0 +1,17 @@
+insertVariant:
+INSERT INTO NovelVariant(variant_id, novel_id, base_novel_id, project_id, name, status, blueprint, scope_spec, created_at, updated_at)
+VALUES (:variant_id, :novel_id, :base_novel_id, :project_id, :name, :status, :blueprint, :scope_spec, :created_at, :updated_at);
+
+updateVariant:
+UPDATE NovelVariant
+SET name = :name, status = :status, blueprint = :blueprint, scope_spec = :scope_spec, updated_at = :updated_at
+WHERE variant_id = :variant_id;
+
+getVariantById:
+SELECT * FROM NovelVariant WHERE variant_id = :variant_id;
+
+getVariantsByNovel:
+SELECT * FROM NovelVariant WHERE novel_id = :novel_id;
+
+getAll:
+SELECT * FROM NovelVariant;

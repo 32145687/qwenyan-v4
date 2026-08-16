@@ -1,0 +1,9 @@
+insertNovel:
+INSERT INTO Novel(novel_id, project_id, title, source, genre, synopsis, scope, status, created_at, updated_at)
+VALUES (:novel_id, :project_id, :title, :source, :genre, :synopsis, :scope, :status, :created_at, :updated_at);
+
+getNovel:
+SELECT * FROM Novel WHERE novel_id = :novel_id;
+
+getAllNovels:
+SELECT * FROM Novel ORDER BY created_at;

@@ -12,7 +12,10 @@ kotlin {
 }
 
 dependencies {
-    // 无外部依赖（纯领域，见 P1）
+    // P1：领域模型需要可序列化与时间类型；纯 Kotlin/JVM，无任何平台/框架依赖。
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.datetime)
+
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

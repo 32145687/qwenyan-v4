@@ -1,0 +1,160 @@
+-- Qianyan Storage · 初始 Schema（Version 1）
+-- SQLDelight 以 .sq 文件作为当前 schema 真源；.sqm 仅供跨版本迁移变更。
+-- 当前为全新数据库，无历史 migration，故此处即 initial schema（P2.9）。
+-- P4 说明：在初始 schema 中追加 TXT Pipeline 三张表（TxtDocument / TxtChapter / TextBlock）。
+--   因仓库仅 1 个 commit、无已发布数据库，属 initial schema 扩展而非跨版本迁移（P4 报告 §4）。
+-- ID 一律以 TEXT（全局唯一 UUID 字符串）持久化，Repository 边界恢复为强类型 ID（P2.3）。
+-- 时间一律以 INTEGER（epoch 毫秒）持久化，Repository 边界恢复为 kotlinx.datetime.Instant。
+
+CREATE TABLE Novel (
+    novel_id    TEXT NOT NULL PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    source      TEXT NOT NULL,          -- ProjectSource 枚举名
+    genre       TEXT NOT NULL DEFAULT '[]',   -- JSON
+    synopsis    TEXT NOT NULL DEFAULT '',
+    scope       TEXT NOT NULL,          -- VariantScope.ORIGINAL
+    status      TEXT NOT NULL,          -- ProjectStatus
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+CREATE TABLE NovelVariant (
+    variant_id    TEXT NOT NULL PRIMARY KEY,
+    novel_id      TEXT NOT NULL,
+    base_novel_id TEXT NOT NULL,
+    project_id    TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    blueprint     TEXT,                  -- VariantBlueprint JSON 或 NULL
+    scope_spec    TEXT,                  -- VariantScopeSpec JSON 或 NULL
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE EntityOverride (
+    override_id    TEXT NOT NULL PRIMARY KEY,
+    variant_id     TEXT NOT NULL,
+    target_kind    TEXT NOT NULL,
+    target_id      TEXT NOT NULL,
+    operation      TEXT NOT NULL,
+    replaced_value TEXT,                 -- JSON (JsonElement) 或 NULL；禁用 Map<String,Any>
+    note           TEXT NOT NULL DEFAULT '',
+    UNIQUE (target_id, variant_id),      -- P2.5 逻辑唯一键
+    FOREIGN KEY (variant_id) REFERENCES NovelVariant(variant_id)
+);
+
+CREATE TABLE Vocabulary (
+    vocabulary_id TEXT NOT NULL PRIMARY KEY,
+    novel_id      TEXT,
+    variant_id    TEXT,
+    scope_level   TEXT NOT NULL,         -- VocabularyScopeLevel
+    name          TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE VocabularyEntry (
+    entry_id      TEXT NOT NULL PRIMARY KEY,
+    vocabulary_id TEXT NOT NULL,
+    novel_id      TEXT,
+    variant_id    TEXT,
+    scope_level   TEXT NOT NULL,
+    canonical     TEXT NOT NULL,
+    aliases       TEXT NOT NULL DEFAULT '[]',   -- JSON
+    type          TEXT NOT NULL,
+    replacement   TEXT,
+    status        TEXT NOT NULL,
+    FOREIGN KEY (vocabulary_id) REFERENCES Vocabulary(vocabulary_id)
+);
+
+CREATE TABLE VocabularyRule (
+    rule_id           TEXT NOT NULL PRIMARY KEY,
+    vocabulary_id     TEXT NOT NULL,
+    novel_id          TEXT,
+    variant_id        TEXT,
+    scope_level       TEXT NOT NULL,
+    vocab_from        TEXT NOT NULL,
+    vocab_to          TEXT NOT NULL,
+    enabled           INTEGER AS kotlin.Boolean NOT NULL DEFAULT 1,
+    deterministic_only INTEGER AS kotlin.Boolean NOT NULL DEFAULT 1,
+    FOREIGN KEY (vocabulary_id) REFERENCES Vocabulary(vocabulary_id)
+);
+
+CREATE TABLE VocabularyCandidate (
+    candidate_id  TEXT NOT NULL PRIMARY KEY,
+    vocabulary_id TEXT NOT NULL,
+    novel_id      TEXT,
+    variant_id    TEXT,
+    scope_level   TEXT NOT NULL,
+    suggested     TEXT NOT NULL,          -- JSON（VocabularyEntry）
+    source        TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    created_at    INTEGER NOT NULL,
+    FOREIGN KEY (vocabulary_id) REFERENCES Vocabulary(vocabulary_id)
+);
+
+CREATE TABLE MemoryEntry (
+    memory_id   TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    variant_id  TEXT,
+    scope       TEXT NOT NULL,            -- VariantScope
+    layer       TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    source      TEXT NOT NULL DEFAULT '',
+    created_by  TEXT,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL
+);
+
+-- ============================================================
+-- P4 · TXT Pipeline（Original Source，只读原文结构）
+-- ============================================================
+-- TxtDocument：导入根（含原始文本与规范化文本，Original 语义）。
+--   novel_id 可为 NULL：P4 导入独立成 Original Source，不自动创建 Novel / Variant（P4 报告 §16）。
+CREATE TABLE TxtDocument (
+    document_id     TEXT NOT NULL PRIMARY KEY,
+    novel_id        TEXT,                          -- 可选绑定；P5 绑定 Novel
+    source_name     TEXT NOT NULL DEFAULT '',
+    title           TEXT NOT NULL DEFAULT '',
+    encoding        TEXT NOT NULL,                 -- TxtEncoding 枚举名
+    had_bom         INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    byte_count      INTEGER NOT NULL DEFAULT 0,
+    char_count      INTEGER NOT NULL DEFAULT 0,
+    original_text   TEXT NOT NULL DEFAULT '',
+    normalized_text TEXT NOT NULL DEFAULT '',
+    content_hash    TEXT NOT NULL DEFAULT '',      -- SHA-256(normalizedText)
+    rule_version    TEXT NOT NULL DEFAULT '',      -- normalize;chapter 版本串
+    status          TEXT NOT NULL,                 -- TxtParseStatus
+    created_at      INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE TxtChapter (
+    chapter_id          TEXT NOT NULL PRIMARY KEY,
+    document_id         TEXT NOT NULL,
+    novel_id            TEXT,
+    ordinal             INTEGER NOT NULL,
+    title               TEXT NOT NULL DEFAULT '',
+    source_start        INTEGER NOT NULL,          -- 标题行在规范化文本中的偏移
+    source_end          INTEGER NOT NULL,
+    first_block_ordinal INTEGER NOT NULL,          -- 本章第一个块在文档块序列中的序号
+    block_count         INTEGER NOT NULL,
+    FOREIGN KEY (document_id) REFERENCES TxtDocument(document_id)
+);
+
+CREATE TABLE TextBlock (
+    block_id     TEXT NOT NULL PRIMARY KEY,
+    chapter_id   TEXT NOT NULL,
+    document_id  TEXT NOT NULL,
+    novel_id     TEXT,
+    ordinal      INTEGER NOT NULL,                 -- 文档内全局块序号（稳定顺序）
+    text         TEXT NOT NULL DEFAULT '',
+    source_start INTEGER NOT NULL,
+    source_end   INTEGER NOT NULL,
+    FOREIGN KEY (chapter_id) REFERENCES TxtChapter(chapter_id),
+    FOREIGN KEY (document_id) REFERENCES TxtDocument(document_id)
+);
+
+CREATE INDEX idx_txt_chapter_doc ON TxtChapter(document_id, ordinal);
+CREATE INDEX idx_text_block_doc ON TextBlock(document_id, ordinal);
+CREATE INDEX idx_text_block_chapter ON TextBlock(chapter_id, ordinal);

@@ -1,0 +1,15 @@
+insertOverride:
+INSERT INTO EntityOverride(override_id, variant_id, target_kind, target_id, operation, replaced_value, note)
+VALUES (:override_id, :variant_id, :target_kind, :target_id, :operation, :replaced_value, :note);
+
+selectOverridesByVariant:
+SELECT * FROM EntityOverride WHERE variant_id = :variant_id;
+
+selectOverrideByVariantAndTarget:
+SELECT * FROM EntityOverride WHERE variant_id = :variant_id AND target_id = :target_id;
+
+deleteOverrideByVariantAndTarget:
+DELETE FROM EntityOverride WHERE variant_id = :variant_id AND target_id = :target_id;
+
+getAll:
+SELECT * FROM EntityOverride;

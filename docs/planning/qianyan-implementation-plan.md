@@ -92,14 +92,19 @@ gradle/libs.versions.toml
 
 ## 2.3 ⚠️ [IMPLEMENTATION ISSUE]（不修改架构，逐条上报）
 
-### ISSUE-1：Workflow 状态清单冲突 —— 需要用户决定
+### ISSUE-1：Workflow 状态清单冲突 —— [DECIDED] 已解决
 
 - **问题**：用户在《开发目标（十二）》中给出的状态流 `RECEIVED → INTENT_ANALYSIS → CONTEXT_RESEARCH → PLANNING → WRITING → CRITIQUE → REVISION → FINAL_REVIEW → KNOWLEDGE_UPDATE → COMPLETED` 与冻结架构 §23.2 的 `WorkflowState` 枚举**不一致**：
   - 架构含 `PLAN_REVIEW`（HITL 规划确认）与 `CONFLICT_HITL`（冲突人工裁决），用户清单没有；
   - 用户清单含 `RECEIVED` 与 `FINAL_REVIEW`，架构枚举没有。
 - **影响**：状态机实现、UI 进度展示、Checkpoint 恢复点的命名都依赖这一清单；不统一会导致实现漂移。
-- **建议（不改架构）**：以冻结架构 §23.2 枚举为**唯一实现基准**；`RECEIVED` 由 Task.status=PENDING 承载（不新增 Workflow 状态）；`FINAL_REVIEW` 视为"通过前的最后一次 CRITIQUE 复查"（复用 CRITIQUE 状态），不新增状态。
-- **是否需要用户决定**：**是**。若用户坚持要独立的 `RECEIVED` / `FINAL_REVIEW` 状态，则属于修改冻结架构，需用户明确批准后再改文档。
+- **最终决策（[DECIDED]，V4.2）**：以架构 §23.2 `WorkflowState` 为**唯一** Workflow 状态机，**不再存在第二套并列的 Workflow 状态枚举**。与 §23.2 不一致的历史清单一律以 §23.2 为准。
+- **状态映射**（用于表达产品语义，不新增 Workflow 状态；详见架构 §23.3）：
+  - `RECEIVED` → 由 `TaskStatus=PENDING`（§18.2）承载，**不新增 Workflow 状态**；
+  - `INTENT_ANALYSIS` → `WorkflowState.INTENT_PARSING`；
+  - `CONTEXT_RESEARCH` → `WorkflowState.RESEARCH`；
+  - `FINAL_REVIEW` → 复用 `WorkflowState.CRITIQUE`（最后一次复查），通过即 `COMPLETED`。
+- **状态族分离**：WorkflowState / TaskState(= §18.2 TaskStatus) / AgentState(§20.2) / DraftState[TBD] / HITLState[TBD] 五个状态族互不替代，定义见架构 §23.3。
 
 ### ISSUE-2：共享 Core 的跨平台技术选型 —— 建议决策
 

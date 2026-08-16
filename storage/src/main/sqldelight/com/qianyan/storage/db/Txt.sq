@@ -1,0 +1,28 @@
+-- P4 · TXT Pipeline 查询（QianyanDb 生成）
+
+insertTxtDocument:
+INSERT INTO TxtDocument(document_id, novel_id, source_name, title, encoding, had_bom, byte_count, char_count, original_text, normalized_text, content_hash, rule_version, status, created_at)
+VALUES (:document_id, :novel_id, :source_name, :title, :encoding, :had_bom, :byte_count, :char_count, :original_text, :normalized_text, :content_hash, :rule_version, :status, :created_at);
+
+getTxtDocument:
+SELECT * FROM TxtDocument WHERE document_id = :document_id;
+
+insertTxtChapter:
+INSERT INTO TxtChapter(chapter_id, document_id, novel_id, ordinal, title, source_start, source_end, first_block_ordinal, block_count)
+VALUES (:chapter_id, :document_id, :novel_id, :ordinal, :title, :source_start, :source_end, :first_block_ordinal, :block_count);
+
+getTxtChapters:
+SELECT * FROM TxtChapter WHERE document_id = :document_id ORDER BY ordinal;
+
+insertTextBlock:
+INSERT INTO TextBlock(block_id, chapter_id, document_id, novel_id, ordinal, text, source_start, source_end)
+VALUES (:block_id, :chapter_id, :document_id, :novel_id, :ordinal, :text, :source_start, :source_end);
+
+getTextBlocks:
+SELECT * FROM TextBlock WHERE document_id = :document_id ORDER BY ordinal;
+
+getTextBlocksOfChapter:
+SELECT * FROM TextBlock WHERE chapter_id = :chapter_id ORDER BY ordinal;
+
+getTextBlock:
+SELECT * FROM TextBlock WHERE block_id = :block_id;

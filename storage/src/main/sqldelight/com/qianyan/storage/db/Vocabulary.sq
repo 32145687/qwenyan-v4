@@ -1,0 +1,36 @@
+insertVocabulary:
+INSERT INTO Vocabulary(vocabulary_id, novel_id, variant_id, scope_level, name)
+VALUES (:vocabulary_id, :novel_id, :variant_id, :scope_level, :name);
+
+selectVocabularyByScope:
+SELECT * FROM Vocabulary WHERE scope_level = :scope_level;
+
+insertEntry:
+INSERT INTO VocabularyEntry(entry_id, vocabulary_id, novel_id, variant_id, scope_level, canonical, aliases, type, replacement, status)
+VALUES (:entry_id, :vocabulary_id, :novel_id, :variant_id, :scope_level, :canonical, :aliases, :type, :replacement, :status);
+
+selectEntriesByVariant:
+SELECT * FROM VocabularyEntry WHERE (variant_id IS :variant_id);
+
+selectEntriesByNovel:
+SELECT * FROM VocabularyEntry WHERE variant_id IS NULL AND novel_id IS :novel_id;
+
+insertRule:
+INSERT INTO VocabularyRule(rule_id, vocabulary_id, novel_id, variant_id, scope_level, vocab_from, vocab_to, enabled, deterministic_only)
+VALUES (:rule_id, :vocabulary_id, :novel_id, :variant_id, :scope_level, :vocab_from, :vocab_to, :enabled, :deterministic_only);
+
+insertCandidate:
+INSERT INTO VocabularyCandidate(candidate_id, vocabulary_id, novel_id, variant_id, scope_level, suggested, source, status, created_at)
+VALUES (:candidate_id, :vocabulary_id, :novel_id, :variant_id, :scope_level, :suggested, :source, :status, :created_at);
+
+getAll:
+SELECT * FROM Vocabulary;
+
+getAllEntries:
+SELECT * FROM VocabularyEntry;
+
+getAllRules:
+SELECT * FROM VocabularyRule;
+
+getAllCandidates:
+SELECT * FROM VocabularyCandidate;

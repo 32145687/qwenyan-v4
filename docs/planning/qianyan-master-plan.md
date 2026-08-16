@@ -1587,6 +1587,10 @@ UserWritingRequest
 
 ### 23.2 Workflow State Machine
 
+> **[DECIDED]（V4.2）** `WorkflowState` 是**唯一**的工作流（Workflow）状态机。
+> 系统中不得再存在第二套与之并列的 Workflow 状态枚举。任何"整个写作工作流现在运行到哪里"的表达，
+> 只能使用本节枚举。历史产品流程清单与本节不一致处，一律以本节为准。
+
 ```kotlin
 enum class WorkflowState {
     INTENT_PARSING,
@@ -1616,6 +1620,46 @@ enum class WorkflowState {
 
 - 任意状态可持久化到 Task Checkpoint，支持暂停/恢复。
 - 失败处理：可重试（最多 3 次）→ 仍失败 → 标记 FAILED → 通知用户。
+
+### 23.3 Workflow State Architecture（V4.2，状态族分离）
+
+**[DECIDED]** 系统中不是只有 `WorkflowState` 一种状态。以下五个概念是**不同的状态族**，
+职责不同、可同时存在、**互不替代、互不混用**：
+
+```
+Workflow
+ ├── WorkflowState   整个 Workflow 运行到哪一阶段（§23.2，唯一来源）
+ ├── TaskState       一个用户任务的启停生命周期（= §18.2 TaskStatus）
+ ├── AgentState      单个 Agent 的执行状态（§20.2）
+ ├── DraftState      一份 Draft 的审查/修订状态（[TBD]）
+ └── HITLState       是否需要人工介入及等待用户做什么（[TBD]）
+```
+
+| 状态族 | 负责什么 | 定义来源 | 状态 |
+|--------|---------|---------|:---:|
+| **WorkflowState** | 整个创作 Workflow 运行到哪一阶段 | §23.2（唯一） | 正式定义 |
+| **TaskState** | 一个用户任务的生命周期（等待/执行/暂停/取消/完成/失败） | = §18.2 `TaskStatus` | 正式定义 |
+| **AgentState** | 单个 Agent 的执行状态 | §20.2 | 正式定义 |
+| **DraftState** | 一份 Draft 的起草/待审/需修订/通过 | 未定义独立枚举 | **[TBD]** |
+| **HITLState** | 是否需要人工介入、等待用户做什么 | 未定义独立枚举（由 §20.2 `WAITING_HUMAN` 与 §23.2 `PLAN_REVIEW`/`CONFLICT_HITL` 承载语义） | **[TBD]** |
+
+**它们可以同时存在，且这不是冲突**（示例）：
+
+```
+WorkflowState = CRITIQUE        // 整个工作流处于审查阶段
+TaskState     = RUNNING         // 该用户任务正在执行
+AgentState    = RUNNING         // CriticAgent 正在执行
+DraftState    = [TBD]           // 属 Draft 生命周期，本次不定
+HITLState     = NOT_REQUIRED    // 当前无需人工介入
+```
+
+**命名与实现对应**：
+- **`TaskState` 族对应架构的 `TaskStatus` 枚举（§18.2）**（`PENDING / RUNNING / PAUSED / CANCELLED / COMPLETED / FAILED`），文档以"TaskState 族"表达语义，实现层类型名用 `TaskStatus`。
+- **`AgentState`（§20.2）** 已正式定义（`IDLE / RUNNING / WAITING_TOOL / WAITING_HUMAN / RETRYING / FAILED / COMPLETED`）。
+- **`DraftState`、`HITLState`** 当前文档未给出正式独立枚举，标记 **[TBD]**，**本次修正不私自设计**，待后续需要时再正式定义。
+
+**唯一性约束**：任何表示"整个写作工作流处于哪一阶段"的枚举值，只能来自 §23.2 `WorkflowState`；
+`TaskState / AgentState / DraftState / HITLState` 均不得承担 Workflow 的阶段语义。
 
 ---
 

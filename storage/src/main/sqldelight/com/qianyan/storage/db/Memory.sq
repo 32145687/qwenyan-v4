@@ -1,0 +1,12 @@
+insertMemory:
+INSERT INTO MemoryEntry(memory_id, novel_id, variant_id, scope, layer, content, source, created_by, created_at, updated_at)
+VALUES (:memory_id, :novel_id, :variant_id, :scope, :layer, :content, :source, :created_by, :created_at, :updated_at);
+
+selectMemoriesByNovel:
+SELECT * FROM MemoryEntry WHERE novel_id = :novel_id;
+
+selectMemoriesByVariant:
+SELECT * FROM MemoryEntry WHERE novel_id = :novel_id AND variant_id IS :variant_id;
+
+getAll:
+SELECT * FROM MemoryEntry;
