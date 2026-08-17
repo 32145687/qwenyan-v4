@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P5）
+## 当前进度（P0–P6）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -27,22 +27,26 @@
 | P3 | Application：Use Case 层（DI / 错误边界 / 集成测试） | ✅ |
 | P4 | TXT Pipeline：确定性 导入 → 规范化 → 章节识别 → 结构化 → 持久化 | ✅ |
 | P5 | TXT Pipeline 接入 Application：TXT → 去重(contentHash) → Original Novel → novelId 绑定 → 原子持久化 → 结构化结果 + VariantContext(ORIGINAL) | ✅ |
+| P6 | AI Analysis Pipeline：TXT → AnalysisInput → Provider(API/Impl) → AnalysisResult → Validation → VocabularyCandidate(PENDING) | ✅ |
 
-**当前阶段**：P6 = AI Analysis（对 TXT 做语义分析，落地 AnalysisResult / Candidate / Vocabulary 提取），**尚未开始**。
-**尚未实现**：Agent 编排、AI Provider（含 DeepSeek / MiMo）、写作工作流、Android / Desktop UI、云端后端。
+**当前阶段**：P7（下一阶段，尚未开始）。
+**P6 说明**：AI Analysis 使用 **Mock Provider**；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`。
+**尚未实现**：Agent 编排、完整 AI Provider（DeepSeek / MiMo）、写作工作流、Android / Desktop UI、云端后端。
 
 ## 模块结构
 
 ```
 core/model         领域模型（纯数据，零依赖）
 core/engine        TXT 确定性引擎（纯 JVM，零 AI 依赖）
+core/engine/analysis 确定性 TXT → AnalysisInput 构建（P6，零 AI/存储依赖）
 agent/tool         工具系统 / 权限矩阵（占位）
 agent/runtime      Agent Runtime（占位）
 agent/agents       六个 Agent 定义（占位）
 agent/orchestration  Agent 编排（占位）
-provider           AI Provider 抽象（占位）
+provider/api       AI Provider 抽象契约（LLM 契约 + 请求/响应 + 异常，P6）
+provider/impl      AI Provider 实现（MockLLMGateway，P6）
 storage            SQLDelight + SQLite / Repository / Backup
-application        Use Case 层（DI 容器 + 错误边界）
+application        Use Case 层（DI 容器 + 错误边界；含 P6 AnalysisUseCases）
 runtime            平台 Runtime 抽象（占位）
 app/android        Android 客户端（占位）
 app/desktop        Desktop 客户端（占位）

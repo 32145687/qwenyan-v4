@@ -1,6 +1,6 @@
 # Qianyan Project Status Report
 
-> 生成日期：2026-08-17
+> 生成日期：2026-08-18
 > 性质：状态记录文档（非开发计划）
 > 数据来源：真实读取代码仓库 / Git 状态 / Gradle 构建与测试结果 / 规划文档
 
@@ -39,29 +39,34 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 | P3 | Application / Agent Integration | IN_PROGRESS | Application 层已完整落地（DI/错误/用例/集成测试 11 用例）；**Agent 集成未开始**（agent:* 模块为空壳） |
 | P4 | TXT Pipeline | DONE | `core:engine` 确定性 TXT Pipeline 落地（Importer/Normalizer/ChapterDetector + 文本重建 + contentHash）；`Txt.sq` 三表 + SqliteTxtRepository.saveImport/getChapters/getBlocks；TxtPipelineTest + TxtRepositoryTest 全绿 |
 | P5 | TXT → Application 集成 | DONE | `ImportTxtUseCase` 把 P4 管线接入 Application（TXT bytes→解析→去重→建 Original Novel→绑定 novelId→原子持久化→结构化结果+VariantContext(ORIGINAL)）；application→core:engine 依赖演进；TXT 错误归一（4 子类映射）；findByContentHash/findByNovelId；全绿 |
-| P6 | AI Analysis（后续） | NOT STARTED | AI Analysis / AnalysisResult / Knowledge-Character-Timeline 落地 / VocabularyCandidate 自动提取、Agent/Provider/Workflow 等留待 P6 及更后阶段 |
+| P6 | AI Analysis Pipeline | DONE | `provider:api` / `provider:impl` 拆分 + `LLMGateway` 契约 + `MockLLMGateway`；`core:model/analysis`（AnalysisInput/AnalysisResult/AnalysisStatus，transient）；`core:engine/analysis/AnalysisInputBuilder`（确定性 TXT→AnalysisInput，零 AI/存储）；`application` `AnalysisUseCases`（TXT→Input→VariantContext(ORIGINAL)→Mock→Result→Validation→VocabularyCandidate(PENDING)）；错误链 ProviderException/AnalysisException→ApplicationError→ErrorMapper；`findCandidatesByNovel` 回读验证；AnalysisUseCaseTest 8 + AnalysisInputBuilderTest 5 + MockLLMGatewayTest 4 全绿 |
 | P7 | Android UI | NOT STARTED | 仅 P0 占位：无 Activity、无 Compose UI；APK 可构建但不可启动（文档 P11/P15 未做） |
 | P8 | Desktop UI | NOT STARTED | `app:desktop` 仅 `println` 占位（文档 P16 未做） |
 
-**结论：当前真实完成到 P5（确定性 TXT Pipeline 已接入 Application，可导入 TXT → Original Novel → TxtDocument 绑定 → 持久化 → 去重/查询）；P6（AI Analysis 等）及更后阶段未开始。**
+**结论：当前真实完成到 P6（AI Analysis Pipeline：TXT → AnalysisInput → Mock Provider → AnalysisResult → Validation → VocabularyCandidate(PENDING)）；P7（Android UI）及更后阶段未开始。**
+
+> **P6 关键界定**：AI Analysis 使用 **Mock Provider**；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`。Analysis 仅处理 `VariantContext(ORIGINAL)`。
+>
+> **Post-P6 Hardening / Known Follow-up**（不阻塞 P6 DONE）：`VocabularyCandidate` 批量持久化当前**不是跨候选的单事务**；写库中途失败的回滚测试**尚未补**。见 §14。
 
 ---
 
 # 3. Architecture Status
 
-模块定义见 [settings.gradle.kts](file:///workspace/settings.gradle.kts)（共 **13** 个模块）。注意：`:application` 是文档外新增模块（见 §DOCUMENT VS CODE DIFFERENCE-1）。
+模块定义见 [settings.gradle.kts](file:///workspace/settings.gradle.kts)（共 **14** 个模块）。注意：`:application` 是文档外新增模块（见 §DOCUMENT VS CODE DIFFERENCE-1）；`:provider` 已按 P6 拆分为 `:provider:api` + `:provider:impl`。
 
 | 模块 | 当前职责（构建脚本注释） | 已实现内容 | 未实现内容 |
 |---|---|---|---|
 | `core:model` | 纯领域模型（V4.2 Hybrid） | 14 个包的完整模型 + 40 个强类型 ID + P1DomainModelTest(11) | 无（模型即阶段目标） |
-| `core:engine` | 引擎（Novel/TXT/Analysis） | 无（仅 1 个 2+2 冒烟测试） | 全部引擎逻辑 |
+| `core:engine` | 引擎（TXT / Analysis） | TXT Pipeline（Importer/Normalizer/ChapterDetector + 文本重建 + contentHash）+ AnalysisInputBuilder（确定性 TXT→AnalysisInput，零 AI/存储）+ TxtPipelineTest(20) + AnalysisInputBuilderTest(5) | 其余引擎逻辑（写作/检索等） |
 | `agent:tool` | Tool System / 权限矩阵 | 无 | 全部 |
 | `agent:runtime` | Agent Runtime | 无 | 全部 |
 | `agent:agents` | 六个 Agent 定义 | 无 | 全部 |
 | `agent:orchestration` | Orchestrator + 状态机 | 无 | 全部 |
-| `provider` | AI Provider（DeepSeek/MiMo/Mock） | 无 | 全部 |
-| `storage` | SQLDelight + SQLite 持久化 | 4 仓储接口 + Sqlite 实现 + Schema + 3 触发器 + Backup + StorageRepositoryTest(20) | 跨版本 Migration、FTS5、四层 Memory 持久化 |
-| `application` | Application Use Case 层（DI/错误/用例） | ApplicationContainer + ErrorMapper + Novel/Override/Vocabulary/Memory 用例 + ApplicationIntegrationTest(11) | Workflow 编排、Backup 应用级导出用例 |
+| `provider:api` | AI Provider 抽象契约（P6） | LLMGateway + ProviderModels/ProviderConfig/ProviderException | DeepSeek / MiMo 真实实现（DEFER） |
+| `provider:impl` | AI Provider 实现（P6） | MockLLMGateway + MockLLMGatewayTest(4) | DeepSeek / MiMo 实现、容错/重试语义（DEFER） |
+| `storage` | SQLDelight + SQLite 持久化 | 5 仓储接口 + Sqlite 实现 + Schema + 3 触发器 + Backup + **findCandidatesByNovel（P6）** + StorageRepositoryTest(20) | 跨版本 Migration、FTS5、四层 Memory 持久化 |
+| `application` | Application Use Case 层（DI/错误/用例） | ApplicationContainer + ErrorMapper + Novel/Override/Vocabulary/Memory/TXT 用例 + **P6 AnalysisUseCases** + ApplicationIntegrationTest(11) + TxtImportUseCaseTest(13) + AnalysisUseCaseTest(8) | Workflow 编排、Backup 应用级导出用例 |
 | `runtime` | 平台 Runtime 抽象（文件/网络/DB） | 无 | 全部 |
 | `app:android` | Android 应用 | `QianyanApplication` 占位 + Manifest（无 Activity） | 所有 UI/DI/业务 |
 | `app:desktop` | Desktop 应用 | `Main.kt` println 占位 | 所有 UI/业务 |
@@ -142,11 +147,12 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
   - Vocabulary：SaveVocabulary / saveEntry / QueryVocabulary
   - Memory：SaveMemoryEntry / QueryMemory
   - TXT（P5）：ImportTxtUseCase —— `TxtPipeline` 确定性解析 → contentHash 去重 → 创建 Original Novel → 回填绑定 novelId → 原子持久化 Document/Chapter/TextBlock → 返回结构化结果 + `VariantContext(ORIGINAL)`。去重命中时不产生第二个 Novel / 不写重复 TXT。
+  - Analysis（P6）：AnalyzeTxtOriginal —— `AnalysisInputBuilder`（确定性 TXT→AnalysisInput，章节级、保留 sourceLocation，零 AI/存储）→ `VariantContext(ORIGINAL)` 显式校验 → `LLMGateway.chat`（Mock）→ 解析/校验 AI 输出 → transient `AnalysisResult` → 构建 PENDING `VocabularyCandidate` → 持久化。错误经 `guardAnalysis` + `ErrorMapper` 归一（ProviderUnavailable / InvalidAnalysisOutput / AnalysisFailed）。
 - **Context 传递**：统一 `VariantContext`（Original=variantId null；Variant=当前 variantId），Use Case 不自行判断 Variant。
-- **测试**：ApplicationIntegrationTest 11 用例 + TxtImportUseCaseTest 13 用例 + TxtRepositoryP5QueryTest（storage）5 用例，全部通过。
+- **测试**：ApplicationIntegrationTest 11 用例 + TxtImportUseCaseTest 13 用例 + AnalysisUseCaseTest 8 用例 + TxtRepositoryP5QueryTest（storage）5 用例，全部通过。
 
-**已连接**：Application ↔ storage（仓储接口）；Application ↔ core:model（领域类型）；**Application ↔ core:engine（TXT 管线，P5 依赖演进）**。
-**未连接**：Application ↔ agent（agent 空壳）；Application ↔ app UI；Application ↔ provider。
+**已连接**：Application ↔ storage（仓储接口）；Application ↔ core:model（领域类型）；**Application ↔ core:engine（TXT 管线，P5 依赖演进）**；**Application ↔ provider:api（LLM 契约，P6）**。
+**未连接**：Application ↔ agent（agent 空壳）；Application ↔ app UI；Application ↔ provider:impl（仅测试 e2e / 测试装配 Mock）。
 
 > **P5 依赖演进说明**：为把 P4 的确定性 TXT Pipeline 接入 Use Case，新增 `application → :core:engine`（application/build.gradle.kts）。依赖方向保持冻结 DAG 单向性：`application → core:engine → core:model` 且 `application → storage → core:model`；`core:engine` 不访问 Repository / Application / LLM，持久化仍走 storage 接口。
 
@@ -154,39 +160,41 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 
 # 8. AI Provider Status
 
-**结论：Provider 仅接口占位，无任何真实 AI 调用。**
+**结论：P6 已建立 Provider 契约（`:provider:api`）并实现 Mock（`:provider:impl`）；无任何真实 AI 调用。**
 
-- `provider` 模块无 `src/main` 源码，仅 1 个 2+2 冒烟测试。
-- 构建脚本注释："Agent 不直接依赖任何 Provider 实现"。
-- 领域契约（`core:model`）无 Provider 相关模型。
-- DeepSeek / MiMo / Mock 三类均**未实现**。计划 ISSUE-4 决定"P3 交付 DeepSeek + Mock，MiMo 占位"，但**该 P3 决定未落地**（本仓库执行的 P3 是 Application 层，非文档 P3 的 AI Provider）。
+- `:provider:api`（`provider/api`）：`LLMGateway` 契约 + `ProviderModels`（ProviderRequest/ProviderResponse/ChatMessage/Usage/FinishReason/ModelProfile）+ `ProviderConfig` + `ProviderException`（sealed：Timeout/RateLimit/ProviderUnavailable/InvalidResponse/MalformedOutput/TokenLimit）。只依赖 `:core:model`。
+- `:provider:impl`（`provider/impl`）：`MockLLMGateway` —— 确定性响应（相同请求→相同 JSON 输出 + 确定性 usage），可注入自定义响应/失败。只依赖 `:provider:api`。
+- 调用方（application / agent:runtime）只依赖 `:provider:api`；`provider:impl` 仅测试与 `test:e2e` 绑定。
+- DeepSeek / MiMo **均未实现（DEFER）**。
 
 | 项 | 状态 |
 |---|---|
-| DeepSeek | 未实现（接口都无） |
-| MiMo | 未实现（计划占位） |
-| Mock | 未实现 |
-| 真实调用 | 无 |
+| 契约（LLMGateway + 模型 + 异常） | **已实现（P6）** |
+| Mock | **已实现（P6）** |
+| DeepSeek | DEFER（未实现） |
+| MiMo | DEFER（未实现） |
+| 真实调用 | 无（未接入任何外部 API） |
 
 ---
 
 # 9. TXT Creation Pipeline Status
 
-**重点检查 —— 全部 NOT IMPLEMENTED。**
+**重点检查 —— 部分实现（P4/P6），正式分析能力仍未落地。**
 
 | 能力 | 状态 |
 |---|---|
 | 上传 TXT | NOT IMPLEMENTED（无文件输入路径，`runtime` 空壳） |
-| 解析章节 | NOT IMPLEMENTED（`core:engine` 空壳，无 TXT Engine） |
-| 角色分析 | NOT IMPLEMENTED（仅 Character 模型存在） |
-| 世界观分析 | NOT IMPLEMENTED（仅 World 模型存在） |
-| 时间线分析 | NOT IMPLEMENTED（仅 Timeline 模型存在） |
-| 知识库生成 | NOT IMPLEMENTED（仅 Knowledge 模型存在） |
-| 词库生成 | NOT IMPLEMENTED（仅 Vocabulary 模型 + 存储存在；无提取/生成算法） |
+| 解析章节 | **Implemented（P4）**：`core:engine` TXT Pipeline（Importer/Normalizer/ChapterDetector） |
+| 角色分析 | NOT IMPLEMENTED（仅 Character 模型存在；**P6 DEFER**） |
+| 世界观分析 | NOT IMPLEMENTED（仅 World 模型存在；**P6 DEFER**） |
+| 时间线分析 | NOT IMPLEMENTED（仅 Timeline 模型存在；**P6 DEFER**） |
+| 知识库生成 | NOT IMPLEMENTED（仅 Knowledge 模型存在；**P6 DEFER**） |
+| 词库候选提取 | **Implemented（P6，部分）**：`AnalyzeTxtOriginal` + Mock Provider → PENDING `VocabularyCandidate`（AUTO_EXTRACT，不写正式词条） |
+| 正式词库生成 | NOT IMPLEMENTED（PENDING 候选 → 确认 → 正式 `VocabularyEntry` 的流程未实现） |
 | Original Novel 生成 | **Implemented（Application 层）**：`CreateOriginalNovel` + 存储落库 |
 | Variant 生成 | **Implemented（Application 层）**：`CreateVariant` + Override 解析 |
 
-> 即：**"从 TXT 文本到结构"的分析管线完全未实现**；仅"手工构造 Original/Variant 领域对象并落库"已打通。
+> 即：**"从 TXT 文本到结构"的分析管线已部分打通（P6：章节解析 + 词汇候选提取）**；角色/世界观/时间线/知识 的正式分析、以及候选→正式词库的确认流程 **DEFER**。
 
 ---
 
@@ -222,32 +230,31 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 
 # 12. Build & Test Status
 
-本次 P5 会话实测（2026-08-18，环境 JDK 17；沙箱内已现场安装 Android SDK cmdline-tools + platforms;android-34 + build-tools;34.0.0 到 `/opt/android-sdk`，并为其配置 Gradle 全局代理以拉取 aapt2）：
+本次 P6 会话实测（2026-08-18，环境 JDK 17；沙箱内已现场安装 Android SDK cmdline-tools + platforms;android-34 + build-tools;34.0.0 到 `/opt/android-sdk`，并为其配置 Gradle 全局代理以拉取 aapt2）：
 
 | 命令 | 结果 |
 |---|---|
 | `gradle test --rerun-tasks`（全模块） | **BUILD SUCCESSFUL**（含 `:app:android:testDebugUnitTest` / `testReleaseUnitTest` 及全部 JVM 模块测试） |
-| `gradle :core:engine:test --rerun-tasks` | BUILD SUCCESSFUL |
-| `gradle :storage:test --rerun-tasks` | BUILD SUCCESSFUL |
-| `gradle :application:test --rerun-tasks` | BUILD SUCCESSFUL |
-| `gradle test assembleDebug --rerun-tasks` | **BUILD SUCCESSFUL**（104 actionable tasks；`assembleDebug` 产出 debug APK） |
+| `gradle test assembleDebug --rerun-tasks` | **BUILD SUCCESSFUL**（109 actionable tasks；`assembleDebug` 产出 debug APK） |
 
 > 说明：`./gradlew` 因 wrapper 发行包下载超时不可用，改用同版本系统 `gradle 8.14.5`。沙箱默认未装 Android SDK 且 `dl.google.com` 直连超时；已现场安装 SDK（命令 `sdkmanager --sdk_root=/opt/android-sdk "platforms;android-34" "build-tools;34.0.0"`）并在节点级 `~/.gradle/gradle.properties` 配置代理（`systemProp.https.proxyHost/Port=127.0.0.1:18080`）以经代理拉取 `aapt2`，从而完成 `assembleDebug`。该代理配置为节点级、不影响项目文件。`app:android` 不依赖 `application` 模块，因此 P5 的 `application` 改动不影响 Android 构建，且 Android 构建实测已通过。
 
-**测试统计（P5 后，全部通过，0 failure / 0 error）：**
+**测试统计（P6 后，全部通过，0 failure / 0 error）：**
 
 | 模块 | 测试类 | 用例数 |
 |---|---|---|
 | core:model | P1DomainModelTest + ModelSmokeTest | 11 + 1 |
-| core:engine | TxtPipelineTest + EngineSmokeTest | 20 + 1 |
-| storage | StorageRepositoryTest + StorageSmokeTest + TxtRepositoryTest + **TxtRepositoryP5QueryTest** | 20 + 1 + 4 + 5 |
-| application | ApplicationIntegrationTest + **TxtImportUseCaseTest** | 11 + 13 |
+| core:engine | TxtPipelineTest + EngineSmokeTest + **AnalysisInputBuilderTest(P6)** | 20 + 1 + 5 |
+| storage | StorageRepositoryTest + StorageSmokeTest + TxtRepositoryTest + TxtRepositoryP5QueryTest | 20 + 1 + 4 + 5 |
+| application | ApplicationIntegrationTest + TxtImportUseCaseTest + **AnalysisUseCaseTest(P6)** | 11 + 13 + 8 |
 | agent:tool/runtime/agents/orchestration | 各 SmokeTest | 1×4 |
-| provider / runtime / test:e2e / app:desktop | 各 SmokeTest | 1×4 |
+| provider:api | ProviderSmokeTest | 1 |
+| provider:impl | **MockLLMGatewayTest(P6)** | 4 |
+| runtime / test:e2e / app:desktop | 各 SmokeTest | 1×3 |
 
-**P5 相关测试（新增）**：`storage` 的 TxtRepositoryP5QueryTest（findByContentHash 命中/缺失、findByNovelId 确定性顺序/空结果、文件库重开 5 用例）与 `application` 的 TxtImportUseCaseTest（正常导入/去重/建 Novel/绑定/章节段落/contentHash/VariantContext ORIGINAL/4 类错误映射/失败无半成品/确定性/文件库重开 13 用例）。
+**P6 新增测试**：`core:engine` 的 AnalysisInputBuilderTest（正常构建/空章节/未绑定 Novel/章节顺序确定性/段落顺序确定性 5 用例）、`application` 的 AnalysisUseCaseTest（正常 Mock 全链路/Provider 失败/非法输出/空建议/Variant 拒绝/Novel 不匹配/文档不存在/确定性 8 用例）、`provider:impl` 的 MockLLMGatewayTest（确定性响应/自定义响应/失败注入/空 Prompt 4 用例）。
 
-**总计 95 个测试，全部通过（0 failure / 0 error）。**（真实业务用例：P1 模型 11 + Engine 20 + Storage 24 + Application 24 = 79；其余为冒烟/占位桩。）
+**总计 110 个测试，全部通过（0 failure / 0 error）。**（真实业务用例：P1 模型 11 + Engine 20+5 + Storage 24 + Application 24+8 + Provider 4 = 96；其余为冒烟/占位桩。）
 
 **CI**：`.github/workflows/ci.yml` 存在，main push / PR 触发：JDK17 + Android SDK 34 + `./gradlew --no-daemon build` + `test`。
 
@@ -277,16 +284,14 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 > 仅记录问题，不提出新设计。
 
 ## BLOCKER
-- **无阻塞构建的问题**（`build`/`test`/`assembleDebug` 全绿）。但存在"产品级阻塞"：Agent / Provider / TXT / Workflow / UI 全部为空，产品无法使用。
+- **无阻塞构建的问题**（`build`/`test`/`assembleDebug` 全绿）。但存在"产品级阻塞"：Agent / 真实 Provider / Workflow / UI 全部为空，产品无法使用。
 
 ## HIGH
 - **Agent 系统纯空壳**：4 个 agent 模块无业务代码，`WorkflowState` 只有枚举，无任何可执行的写作 Agent 链路。
-- **TXT 管线未实现**：无法上传/解析/分析 TXT，核心"小说化"价值链路断裂。
-- **Provider 无真实 AI 调用**：DeepSeek/Mock 均未实现，任何 AI 能力不可用。
-- **P1/P2/P3 全部未提交**：当前 Git 仅含 P0 提交 `132a469`；`core:model`、`storage`、`application` 三块核心实现均为**未跟踪（untracked）**文件，存在丢失风险。
 - **无跨版本 Migration**：Schema v1 之后无迁移机制（TBD）。
 
 ## MEDIUM
+- **Post-P6 Hardening（不阻塞 P6 DONE）**：`VocabularyCandidate` 批量持久化当前**不是跨候选的单事务**，写库中途失败（如磁盘满）可能留下部分候选；**写库中途失败的回滚测试尚未补**。见 P6 Completion Report / P6 Post-Completion Audit。
 - **`:application` 为文档外新增模块**：不在 master-plan/implementation-plan 的 12 模块清单内，规划文档未同步（见 §DIFFERENCE-1）。
 - **文档阶段号与执行口径不一致**：implementation-plan 的 P3="AI Provider/Gateway"，实际执行的 P3="Application Integration"，阶段命名语义存在漂移。
 - **Android 无启动 Activity**：APK 可构建但不可启动，无法做任何手工冒烟。
@@ -295,22 +300,20 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 
 ## LOW
 - `:runtime`（文件/网络抽象）空壳；desktop 依赖了空壳 runtime。
-- 14 个 2+2 冒烟测试占测试总数 25%，信息量低。
+- 冒烟测试占测试总数比例仍偏高，信息量低。
 - PacingProfile / 四层 Memory / 字段级 Override（TBD-1）/ PC UI 框架（TBD-3）等仍为 TBD。
 
 ---
 
 # 15. Next Recommended Step
 
-基于真实状态（P3 Application 层已完成、Agent/TXT/Provider/UI 未动）：
+基于真实状态（P6 AI Analysis Pipeline 已完成，Agent / 真实 Provider / Workflow / UI 未动）：
 
-1. **先提交当前成果**：P1/P2/P3 三块未跟踪代码应立即纳入 Git，消除丢失风险（这是写代码前的必要卫生动作）。
-2. **进入 P4（TXT 管线）而非重做 P0/P1**：`core:engine` 是下一个有真实价值的落点——从"构造领域对象"走向"从 TXT 文本提取结构"。步骤建议从小到大：
-   - 先做 TXT 读取 + 章节切分（纯本地零 AI，TXT Engine）；
-   - 再做角色/世界观/时间线/知识/词库的提取（可先手工 or Mock Provider）。
-3. **在 P4 进行中同步接入 Provider 的 Mock**：不阻塞、可测试。
+1. **进入 P7（Android UI）**：`app:android` 仍是 P0 占位（无 Activity、无 Compose UI）。
+2. 在投入 P7 前，可按需先消化 **Post-P6 Hardening**（候选批量持久化事务化 + 回滚测试）——该加固不阻塞 P6 DONE。
+3. 真实 **DeepSeek / MiMo Provider**、正式 **Knowledge/Character/Event/Timeline/World 持久化**、**Variant Analysis** 仍在后续阶段（DEFER）。
 
-> 不建议：回退重做 P0/P1/P2，也不建议在 P3.5 基础上扩写 P3 之外的 Workflow（跨度过大）。
+> 不建议：回退重做 P0–P6，也不建议在当前 P6 之外提前扩写 Workflow（跨度过大）。
 
 ---
 
@@ -318,11 +321,11 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 
 | 维度 | 评分 | 依据 |
 |---|---|---|
-| Architecture | 78% | 13 模块分层清晰、依赖方向基本单向、V4.2 决策落地到位；但存在文档外模块 `:application`、文档阶段号漂移、多个空壳模块拉低一致性 |
+| Architecture | 80% | 14 模块分层清晰、依赖方向基本单向、V4.2 决策落地到位；但存在文档外模块 `:application`、文档阶段号漂移、多个空壳模块拉低一致性 |
 | Domain | 90% | 领域模型完整且全部实现（含 V4.2 扩展），40 强类型 ID，序列化规范统一；缺 DraftState/HITLState 建模 |
-| Implementation | 45% | 仅 core:model + storage + application 三个模块有真实实现；engine/agent/provider/runtime/UI 全部为空壳（10/13 模块无业务代码） |
-| Testing | 55% | 55 用例全绿、42 个真实业务用例覆盖核心路径；但 14 个冒烟桩、无覆盖率工具、无 instrumented/UI 测试、无 E2E |
-| Product Readiness | 8% | 无可用 UI、无 TXT 输入、无 AI 能力、无写作工作流；仅"手工构造 + 落库 + 用例查询"可演示 |
+| Implementation | 52% | core:model / storage / application / provider:api / provider:impl / core:engine(TXT+Analysis) 有真实实现；agent/runtime/UI 仍为空壳 |
+| Testing | 68% | 110 用例全绿、96 个真实业务用例覆盖核心路径；但冒烟桩仍占比例、无覆盖率工具、无 instrumented/UI 测试、无 E2E |
+| Product Readiness | 10% | 无可用 UI、无真实 AI 能力、无写作工作流；可演示"TXT 导入 + Mock 词汇候选提取 + 用例查询" |
 
 ---
 
@@ -345,11 +348,14 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 - **实际代码状态**：本次执行的"P3"= Application Integration（DI/Use Case/错误边界），AI Provider 仍未实现。
 - **推荐处理**：在实施计划中明确阶段定义冲突，或将 AI Provider 归入未来的 TXT/Agent 阶段，避免后续对"P3 完成度"产生歧义。
 
-## 差异-4：Git 历史只含 P0，P1/P2/P3 全部未提交
-- **文档状态**：无（纯代码卫生问题）。
-- **实际代码状态**：仅 commit `132a469`（P0 bootstrap）；core:model、storage、application 的源码与测试均为 untracked，核心实现无版本记录。
-- **推荐处理**：尽快将当前工作区提交（或至少 add 核心源码），再进入下一阶段。
+## 差异-4：模块数由 13 → 14（provider 拆分为 api/impl）
+- **文档状态**：先前记录为"13 模块"（含单一 `:provider`）。
+- **实际代码状态**：P6 将 `:provider` 拆为 `:provider:api` + `:provider:impl`，模块数变为 **14**；`settings.gradle.kts` 显式指定 `projectDir`（详情见 P6 commit）。
+
+## 差异-5：Git 历史（已含 P0–P6，P6 提交发生于 2026-08-18）
+- **文档状态**：先前记录"仅 P0 commit，P1–P3 未提交"。
+- **实际代码状态**：Git 现含：`132a469`(P0 bootstrap) → `6fc6ac3`(P1–P3+P4) → `ccde587`(P0–P4 README) → `b53f985`(P1–P5 foundation & TXT pipeline) → `026e65b`(P5 status docs) → `139095d`(P6 AI analysis pipeline)。P1–P6 均已提交；P6 文档提交紧随其后。
 
 ---
 
-*文档结束。本报告仅记录状态，未修改任何代码、架构与模块；未执行任何 Git 提交。*
+*文档结束。本报告仅记录状态，未修改任何代码、架构与模块，仅同步项目状态至 P6。*
