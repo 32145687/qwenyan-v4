@@ -18,6 +18,7 @@ import com.qianyan.model.vocabulary.VocabularyScopeLevel
 import com.qianyan.storage.repository.OriginalImmutableException
 import com.qianyan.storage.repository.UniqueConflictException
 import com.qianyan.storage.repository.VariantBaseViolation
+import com.qianyan.provider.impl.MockLLMGateway
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -34,7 +35,7 @@ import kotlin.test.assertTrue
  */
 class ApplicationIntegrationTest {
 
-    private fun container(): ApplicationContainer = ApplicationContainer.open()
+    private fun container(): ApplicationContainer = ApplicationContainer.open(analysisGateway = MockLLMGateway())
 
     /* 1. 创建 Original */
     @Test

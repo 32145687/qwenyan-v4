@@ -54,4 +54,8 @@ class SqliteVocabularyRepository(private val db: QianyanDb) : VocabularyReposito
             row.suggested, row.source, row.status, row.created_at,
         )
     }
+
+    override fun findCandidatesByNovel(novelId: NovelId): List<VocabularyCandidate> =
+        db.vocabularyQueries.selectCandidatesByNovel(novelId.value)
+            .executeAsList().map { StorageMappers.dbVocabularyCandidate(it) }
 }

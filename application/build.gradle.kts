@@ -26,6 +26,11 @@ dependencies {
     // P5 新增：TXT Use Case 经 TxtPipeline 做确定性解析（引擎不触库、不调 LLM）。
     implementation(project(":core:engine"))
 
+    // P6 新增：Analysis Use Case 只依赖 LLM 契约（:provider:api），不依赖具体 Provider 实现。
+    // Provider(DeepSeek/MiMo/Mock) 实现始终在 :provider:impl；测试期通过 :provider:impl 注入 Mock。
+    implementation(project(":provider:api"))
+    testImplementation(project(":provider:impl"))
+
     // 领域类型携带的序列化/时间类型（core:model 以 implementation 声明，需在此显式补充以编译/运行）。
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.datetime)

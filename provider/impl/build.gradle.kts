@@ -11,12 +11,9 @@ kotlin {
 }
 
 dependencies {
-    api(project(":core:model"))
-    // P6：只依赖 Provider 契约（:provider:api），不依赖具体实现（:provider:impl）。
-    implementation(project(":provider:api"))
-    implementation(project(":agent:tool"))
-    implementation(project(":core:engine"))
-    implementation(libs.kotlinx.serialization.json)
+    // 仅依赖契约与领域模型；不依赖具体厂商 SDK（P6：DeepSeek/MiMo 延后）。
+    api(project(":provider:api"))
+    implementation(project(":core:model"))
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

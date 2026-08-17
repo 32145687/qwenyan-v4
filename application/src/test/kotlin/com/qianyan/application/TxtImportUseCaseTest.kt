@@ -10,6 +10,7 @@ import com.qianyan.model.NovelId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.txt.TxtEncoding
 import com.qianyan.model.txt.TxtParseStatus
+import com.qianyan.provider.impl.MockLLMGateway
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import kotlin.io.path.Path
@@ -29,7 +30,7 @@ import kotlin.test.assertTrue
  */
 class TxtImportUseCaseTest {
 
-    private fun container(): ApplicationContainer = ApplicationContainer.open()
+    private fun container(): ApplicationContainer = ApplicationContainer.open(analysisGateway = MockLLMGateway())
 
     private fun source(text: String, name: String = "novel.txt"): TxtSource =
         TxtSource(text.toByteArray(StandardCharsets.UTF_8), name)
@@ -211,11 +212,11 @@ class TxtImportUseCaseTest {
     fun `import persists across reopen in file database`() {
         val tmp = Files.createTempFile("qianyan-p5-import", ".db").toString()
         try {
-            val app = ApplicationContainer.open("jdbc:sqlite:$tmp")
+            val app = ApplicationContainer.open("jdbc:sqlite:$tmp", analysisGateway = MockLLMGateway())
             val first = app.txts.importTxtAsOriginal(source(validText, "novel.txt"), title = "T")
             assertFalse(first.isDuplicate)
 
-            val reopened = ApplicationContainer.open("jdbc:sqlite:$tmp")
+            val reopened = ApplicationContainer.open("jdbc:sqlite:$tmp", analysisGateway = MockLLMGateway())
             val second = reopened.txts.importTxtAsOriginal(source(validText, "novel.txt"), title = "T")
             assertTrue(second.isDuplicate)
             assertEquals(first.novelId, second.novelId)

@@ -48,4 +48,17 @@ sealed interface ApplicationError {
 
     /** TXT 确定性解析阶段失败。 */
     data class ParseFailed(val detail: String) : ApplicationError
-}
+
+            // ---- P6 新增：AI Analysis 相关错误（Provider / Analysis 异常归一，P6.6） ----
+            // 小心映射：ProviderException 具体子类 → 对应领域错误；AnalysisException → 解析/流程错误。
+            // 既不泄漏 Provider 底层细节，也不经 String message 判断类型。
+
+            /** AI Analysis 提供者不可用（超时 / 限流 / 网关不可用 / token 上限）。 */
+            data class ProviderUnavailable(val detail: String) : ApplicationError
+
+            /** AI 输出无法按结构解析或结构非法，无可用结构化结果。 */
+            data class InvalidAnalysisOutput(val detail: String) : ApplicationError
+
+            /** AI Analysis 流程级失败（预检/编排/其它）。 */
+            data class AnalysisFailed(val detail: String) : ApplicationError
+        }

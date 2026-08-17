@@ -35,4 +35,7 @@ interface VocabularyRepository {
 
     /** 保存候选词条。 */
     fun saveCandidate(candidate: VocabularyCandidate)
+
+    /** 查询某 Novel（variant 除外）的全部候选词条（P6：AI 提取候选回读校验入库与状态）。 */
+    fun findCandidatesByNovel(novelId: NovelId): List<VocabularyCandidate>
 }

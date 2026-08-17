@@ -23,6 +23,9 @@ insertCandidate:
 INSERT INTO VocabularyCandidate(candidate_id, vocabulary_id, novel_id, variant_id, scope_level, suggested, source, status, created_at)
 VALUES (:candidate_id, :vocabulary_id, :novel_id, :variant_id, :scope_level, :suggested, :source, :status, :created_at);
 
+selectCandidatesByNovel:
+SELECT * FROM VocabularyCandidate WHERE novel_id IS :novel_id;
+
 getAll:
 SELECT * FROM Vocabulary;
 
