@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P4）
+## 当前进度（P0–P5）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -26,8 +26,10 @@
 | P2 | Storage：SQLDelight 单 SQL 真源 + 5 仓储 + 写保护触发器 + Backup | ✅ |
 | P3 | Application：Use Case 层（DI / 错误边界 / 集成测试） | ✅ |
 | P4 | TXT Pipeline：确定性 导入 → 规范化 → 章节识别 → 结构化 → 持久化 | ✅ |
+| P5 | TXT Pipeline 接入 Application：TXT → 去重(contentHash) → Original Novel → novelId 绑定 → 原子持久化 → 结构化结果 + VariantContext(ORIGINAL) | ✅ |
 
-**尚未实现**：Agent 编排、TXT 语义分析、写作工作流、AI Provider、Android / Desktop UI、云端后端。
+**当前阶段**：P6 = AI Analysis（对 TXT 做语义分析，落地 AnalysisResult / Candidate / Vocabulary 提取），**尚未开始**。
+**尚未实现**：Agent 编排、AI Provider（含 DeepSeek / MiMo）、写作工作流、Android / Desktop UI、云端后端。
 
 ## 模块结构
 
