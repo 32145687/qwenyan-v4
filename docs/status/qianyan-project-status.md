@@ -37,13 +37,13 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 | P1 | Core Domain Model | DONE | `core:model` 全部领域模型落地 + P1DomainModelTest（11 用例）；V4.2 的 Vocabulary/World/Knowledge.scope 已实现 |
 | P2 | Storage | DONE | SQLDelight 单 SQL（TBD-4 已拍板落地）+ 4 仓储接口 + Sqlite 实现 + 3 守卫触发器 + Backup；StorageRepositoryTest 20 用例 |
 | P3 | Application / Agent Integration | IN_PROGRESS | Application 层已完整落地（DI/错误/用例/集成测试 11 用例）；**Agent 集成未开始**（agent:* 模块为空壳） |
-| P4 | TXT Pipeline | NOT STARTED | TXT 导入/章节解析/分析管线均未实现；`core:engine` 为空壳（文档 P5/P6/P12 未做） |
-| P5 | Writing Workflow | NOT STARTED | 仅领域模型存在 `WorkflowState` 枚举（13 态）；无 Agent 调用链/Checkpoint/HITL 实现 |
-| P6 | AI Provider | NOT STARTED | `provider` 模块为空壳；无 DeepSeek/Mock 真实调用（文档 P3 与 ISSUE-4 未落地） |
+| P4 | TXT Pipeline | DONE | `core:engine` 确定性 TXT Pipeline 落地（Importer/Normalizer/ChapterDetector + 文本重建 + contentHash）；`Txt.sq` 三表 + SqliteTxtRepository.saveImport/getChapters/getBlocks；TxtPipelineTest + TxtRepositoryTest 全绿 |
+| P5 | TXT → Application 集成 | DONE | `ImportTxtUseCase` 把 P4 管线接入 Application（TXT bytes→解析→去重→建 Original Novel→绑定 novelId→原子持久化→结构化结果+VariantContext(ORIGINAL)）；application→core:engine 依赖演进；TXT 错误归一（4 子类映射）；findByContentHash/findByNovelId；全绿 |
+| P6 | AI Analysis（后续） | NOT STARTED | AI Analysis / AnalysisResult / Knowledge-Character-Timeline 落地 / VocabularyCandidate 自动提取、Agent/Provider/Workflow 等留待 P6 及更后阶段 |
 | P7 | Android UI | NOT STARTED | 仅 P0 占位：无 Activity、无 Compose UI；APK 可构建但不可启动（文档 P11/P15 未做） |
 | P8 | Desktop UI | NOT STARTED | `app:desktop` 仅 `println` 占位（文档 P16 未做） |
 
-**结论：当前真实完成到 P3 的 Application 子层；P3 的 Agent 集成及 P4 之后全部未开始。**
+**结论：当前真实完成到 P5（确定性 TXT Pipeline 已接入 Application，可导入 TXT → Original Novel → TxtDocument 绑定 → 持久化 → 去重/查询）；P6（AI Analysis 等）及更后阶段未开始。**
 
 ---
 
@@ -101,8 +101,8 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 来源：[storage](file:///workspace/storage) 模块真实代码。
 
 - **数据库方案**：**SQLDelight + SQLite（JVM JDBC）**，单 SQL schema 真源（`storage/src/main/sqldelight/com/qianyan/storage/db/*.sq`）。TBD-4 存储选型已落地。
-- **Schema（Version 1，7 张表）**：Novel / NovelVariant / EntityOverride / Vocabulary / VocabularyEntry / VocabularyRule / VocabularyCandidate / MemoryEntry（共 8 张，均为 TEXT 存强类型 ID、INTEGER 存 epoch 毫秒时间）。
-- **Repository**：4 个接口（NovelRepository / VocabularyRepository / MemoryRepository / BackupStore）+ 4 个 Sqlite 实现 + StorageMappers 双向映射 + 3 个领域异常（OriginalImmutable / VariantBaseViolation / UniqueConflict）。
+- **Schema（Version 1，11 张表）**：Novel / NovelVariant / EntityOverride / Vocabulary / VocabularyEntry / VocabularyRule / VocabularyCandidate / MemoryEntry / **TxtDocument / TxtChapter / TextBlock（P4）**（均 TEXT 存强类型 ID、INTEGER 存 epoch 毫秒时间）。
+- **Repository**：5 个接口（NovelRepository / VocabularyRepository / MemoryRepository / BackupStore / **TxtRepository**，P5 新增 `findByContentHash` / `findByNovelId` 只读查询）+ 5 个 Sqlite 实现 + StorageMappers 双向映射 + 3 个领域异常（OriginalImmutable / VariantBaseViolation / UniqueConflict）。
 - **写保护**：3 个原生 SQL 守卫触发器（Original UPDATE/DELETE 拒绝；Variant base 必须为 ORIGINAL）。`QianyanDbFactory.open()` 幂等初始化（P2.9 可重复打开）。
 - **Backup**：`SqliteBackupStore` 全量导出结构化 JsonElement 快照，单事务 restore（需恢复至空库，因 Original 行受写保护）。
 - **Migration**：**Not Started**——仅 initial schema 建表，无 `.sqm` 跨版本迁移、无 `migrations/` 目录。
@@ -134,18 +134,21 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 
 来源：[application](file:///workspace/application) 模块（P3 已实现，本次会话完成）。
 
-- **DI**：`ApplicationContainer`（手动 DI 组合根），构造器注入 4 仓储接口，`fromDriver(SqlDriver)` / `open(url)` 装配 Sqlite 实现。
-- **Error handling**：`ApplicationError`（sealed，7 类）→ `ApplicationException` → `ErrorMapper` 将 StorageException 映射为领域错误（P3.4 错误边界）。
+- **DI**：`ApplicationContainer`（手动 DI 组合根），构造器注入 5 仓储接口 + `TxtPipeline`，`fromDriver(SqlDriver)` / `open(url)` 装配 Sqlite 实现。
+- **Error handling**：`ApplicationError`（sealed，11 类成员）→ `ApplicationException` → `ErrorMapper` 将 StorageException 与引擎 `TxtException` 映射为领域错误（P3.4 + P5.2 错误边界）。
 - **Application service / Use case**：
   - Novel：CreateOriginalNovel / CreateVariant / GetNovel / GetVariantContext
   - Override：AddOverride / RemoveOverride / ResolveVariantEntity（读穿透）/ overridesOf
   - Vocabulary：SaveVocabulary / saveEntry / QueryVocabulary
   - Memory：SaveMemoryEntry / QueryMemory
+  - TXT（P5）：ImportTxtUseCase —— `TxtPipeline` 确定性解析 → contentHash 去重 → 创建 Original Novel → 回填绑定 novelId → 原子持久化 Document/Chapter/TextBlock → 返回结构化结果 + `VariantContext(ORIGINAL)`。去重命中时不产生第二个 Novel / 不写重复 TXT。
 - **Context 传递**：统一 `VariantContext`（Original=variantId null；Variant=当前 variantId），Use Case 不自行判断 Variant。
-- **测试**：ApplicationIntegrationTest 11 用例，全部通过。
+- **测试**：ApplicationIntegrationTest 11 用例 + TxtImportUseCaseTest 13 用例 + TxtRepositoryP5QueryTest（storage）5 用例，全部通过。
 
-**已连接**：Application ↔ storage（仓储接口）；Application ↔ core:model（领域类型）。
+**已连接**：Application ↔ storage（仓储接口）；Application ↔ core:model（领域类型）；**Application ↔ core:engine（TXT 管线，P5 依赖演进）**。
 **未连接**：Application ↔ agent（agent 空壳）；Application ↔ app UI；Application ↔ provider。
+
+> **P5 依赖演进说明**：为把 P4 的确定性 TXT Pipeline 接入 Use Case，新增 `application → :core:engine`（application/build.gradle.kts）。依赖方向保持冻结 DAG 单向性：`application → core:engine → core:model` 且 `application → storage → core:model`；`core:engine` 不访问 Repository / Application / LLM，持久化仍走 storage 接口。
 
 ---
 
@@ -219,29 +222,32 @@ Qianyan（千言）是一款**本地优先的长篇创作辅助工具**，定位
 
 # 12. Build & Test Status
 
-本次会话实测（2026-08-17，环境 JDK 17）：
+本次 P5 会话实测（2026-08-18，环境 JDK 17；沙箱内已现场安装 Android SDK cmdline-tools + platforms;android-34 + build-tools;34.0.0 到 `/opt/android-sdk`，并为其配置 Gradle 全局代理以拉取 aapt2）：
 
 | 命令 | 结果 |
 |---|---|
-| `./gradlew test` | BUILD SUCCESSFUL（全模块） |
-| `./gradlew build` | BUILD SUCCESSFUL（141 任务） |
-| `./gradlew :app:android:assembleDebug` | BUILD SUCCESSFUL（APK 1.55MB） |
+| `gradle test --rerun-tasks`（全模块） | **BUILD SUCCESSFUL**（含 `:app:android:testDebugUnitTest` / `testReleaseUnitTest` 及全部 JVM 模块测试） |
+| `gradle :core:engine:test --rerun-tasks` | BUILD SUCCESSFUL |
+| `gradle :storage:test --rerun-tasks` | BUILD SUCCESSFUL |
+| `gradle :application:test --rerun-tasks` | BUILD SUCCESSFUL |
+| `gradle test assembleDebug --rerun-tasks` | **BUILD SUCCESSFUL**（104 actionable tasks；`assembleDebug` 产出 debug APK） |
 
-**测试统计（全部通过，0 failure / 0 error）：**
+> 说明：`./gradlew` 因 wrapper 发行包下载超时不可用，改用同版本系统 `gradle 8.14.5`。沙箱默认未装 Android SDK 且 `dl.google.com` 直连超时；已现场安装 SDK（命令 `sdkmanager --sdk_root=/opt/android-sdk "platforms;android-34" "build-tools;34.0.0"`）并在节点级 `~/.gradle/gradle.properties` 配置代理（`systemProp.https.proxyHost/Port=127.0.0.1:18080`）以经代理拉取 `aapt2`，从而完成 `assembleDebug`。该代理配置为节点级、不影响项目文件。`app:android` 不依赖 `application` 模块，因此 P5 的 `application` 改动不影响 Android 构建，且 Android 构建实测已通过。
+
+**测试统计（P5 后，全部通过，0 failure / 0 error）：**
 
 | 模块 | 测试类 | 用例数 |
 |---|---|---|
 | core:model | P1DomainModelTest + ModelSmokeTest | 11 + 1 |
-| storage | StorageRepositoryTest + StorageSmokeTest | 20 + 1 |
-| application | ApplicationIntegrationTest | 11 |
+| core:engine | TxtPipelineTest + EngineSmokeTest | 20 + 1 |
+| storage | StorageRepositoryTest + StorageSmokeTest + TxtRepositoryTest + **TxtRepositoryP5QueryTest** | 20 + 1 + 4 + 5 |
+| application | ApplicationIntegrationTest + **TxtImportUseCaseTest** | 11 + 13 |
 | agent:tool/runtime/agents/orchestration | 各 SmokeTest | 1×4 |
-| provider / runtime / core:engine / test:e2e | 各 SmokeTest | 1×4 |
-| app:android（debug+release） | AndroidAppSmokeTest | 2 |
-| app:desktop | DesktopAppSmokeTest | 1 |
+| provider / runtime / test:e2e / app:desktop | 各 SmokeTest | 1×4 |
 
-**总计 55 个测试，全部通过。**（其中 13 个为真实业务测试：P1 模型 11 + Application 11 + Storage 20 中 20 个真实；其余 14 个为 2+2 冒烟桩。）
+**P5 相关测试（新增）**：`storage` 的 TxtRepositoryP5QueryTest（findByContentHash 命中/缺失、findByNovelId 确定性顺序/空结果、文件库重开 5 用例）与 `application` 的 TxtImportUseCaseTest（正常导入/去重/建 Novel/绑定/章节段落/contentHash/VariantContext ORIGINAL/4 类错误映射/失败无半成品/确定性/文件库重开 13 用例）。
 
-> 注：55 = 13 真实类用例（P1 11 + storage 20 + application 11 = 42 真实业务）+ 14 冒烟。
+**总计 95 个测试，全部通过（0 failure / 0 error）。**（真实业务用例：P1 模型 11 + Engine 20 + Storage 24 + Application 24 = 79；其余为冒烟/占位桩。）
 
 **CI**：`.github/workflows/ci.yml` 存在，main push / PR 触发：JDK17 + Android SDK 34 + `./gradlew --no-daemon build` + `test`。
 

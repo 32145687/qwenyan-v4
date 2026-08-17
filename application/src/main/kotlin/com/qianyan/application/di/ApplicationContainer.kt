@@ -5,7 +5,9 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
+import com.qianyan.application.usecase.txt.TxtUseCases
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
+import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
@@ -28,6 +30,10 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
  * [TxtRepository] 五个仓储装配进来，并暴露各 Use Case 组。外部（app / runtime / agent 调用方）
  * 只通过本容器访问 Application 能力，不直接触碰 Sqlite 实现。
  *
+ * P5 演进：新增 [TxtPipeline]（core:engine 确定性解析）与 [TxtUseCases]。装配链：
+ * ApplicationContainer → TxtPipeline → TxtRepository → NovelRepository → TxtUseCases。
+ * TxtPipeline 不访问 Repository / Application / LLM；持久化仍走 storage 接口；仓储实现始终在 `:storage`。
+ *
  * 仓储实现始终位于 `:storage`；本模块只做装配，不包含任何 Repository 实现。
  */
 class ApplicationContainer(
@@ -36,6 +42,7 @@ class ApplicationContainer(
     val memoryRepository: MemoryRepository,
     val backupStore: BackupStore,
     val txtRepository: TxtRepository,
+    private val txtPipeline: TxtPipeline = TxtPipeline(),
 ) {
 
     val errorMapper: ErrorMapper = ErrorMapper
@@ -44,6 +51,7 @@ class ApplicationContainer(
     val overrides: OverrideUseCases get() = OverrideUseCases(novelRepository, errorMapper)
     val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, errorMapper)
     val memories: MemoryUseCases get() = MemoryUseCases(memoryRepository, errorMapper)
+    val txts: TxtUseCases get() = TxtUseCases(txtPipeline, txtRepository, novelRepository, errorMapper)
 
     companion object {
 

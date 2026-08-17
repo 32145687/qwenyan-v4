@@ -10,8 +10,11 @@ import java.util.UUID
  *
  * [guard] 把 Storage 层的 [StorageException]（及其子类）经 [ErrorMapper] 转换为
  * Application 领域错误 [ApplicationException]，业务代码无需逐处 try/catch。
+ *
+ * P5 演进：`errorMapper` 从 private 放开为 protected，供 TXT Use Case 在 guard 之外
+ * 把引擎层 [com.qianyan.engine.txt.TxtException] 同样归一为领域错误（引擎异常不是 StorageException）。
  */
-abstract class UseCase(private val errorMapper: ErrorMapper) {
+abstract class UseCase(protected val errorMapper: ErrorMapper) {
 
     protected fun <T> guard(block: () -> T): T =
         try {

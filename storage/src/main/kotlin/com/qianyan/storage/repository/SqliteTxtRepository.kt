@@ -1,5 +1,6 @@
 package com.qianyan.storage.repository
 
+import com.qianyan.model.NovelId
 import com.qianyan.model.TextBlockId
 import com.qianyan.model.TxtChapterId
 import com.qianyan.model.TxtDocumentId
@@ -45,6 +46,14 @@ class SqliteTxtRepository(
     override fun getDocument(documentId: TxtDocumentId): TxtDocument? =
         db.txtQueries.getTxtDocument(documentId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbTxtDocument(it) }
+
+    override fun findByContentHash(contentHash: String): TxtDocument? =
+        db.txtQueries.findByContentHash(contentHash).executeAsOneOrNull()
+            ?.let { StorageMappers.dbTxtDocument(it) }
+
+    override fun findByNovelId(novelId: NovelId): List<TxtDocument> =
+        db.txtQueries.findByNovelId(novelId.value).executeAsList()
+            .map { StorageMappers.dbTxtDocument(it) }
 
     override fun getChapters(documentId: TxtDocumentId): List<TxtChapter> =
         db.txtQueries.getTxtChapters(documentId.value).executeAsList()

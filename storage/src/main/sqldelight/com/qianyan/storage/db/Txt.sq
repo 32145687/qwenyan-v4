@@ -1,4 +1,5 @@
 -- P4 · TXT Pipeline 查询（QianyanDb 生成）
+-- P5 新增：按 content_hash 去重查询；按 novel_id 查询绑定关系（均只读、确定性顺序）。
 
 insertTxtDocument:
 INSERT INTO TxtDocument(document_id, novel_id, source_name, title, encoding, had_bom, byte_count, char_count, original_text, normalized_text, content_hash, rule_version, status, created_at)
@@ -6,6 +7,14 @@ VALUES (:document_id, :novel_id, :source_name, :title, :encoding, :had_bom, :byt
 
 getTxtDocument:
 SELECT * FROM TxtDocument WHERE document_id = :document_id;
+
+-- P5：按内容哈希精确匹配（用于导入去重）。不存在 → 该查询返回 0 行。
+findByContentHash:
+SELECT * FROM TxtDocument WHERE content_hash = :content_hash;
+
+-- P5：按 novelId 查询已绑定文档。确定性顺序：按 created_at 升序；同刻按 document_id 兜底稳定排序。
+findByNovelId:
+SELECT * FROM TxtDocument WHERE novel_id = :novel_id ORDER BY created_at, document_id;
 
 insertTxtChapter:
 INSERT INTO TxtChapter(chapter_id, document_id, novel_id, ordinal, title, source_start, source_end, first_block_ordinal, block_count)

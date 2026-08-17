@@ -1,5 +1,6 @@
 package com.qianyan.storage.repository
 
+import com.qianyan.model.NovelId
 import com.qianyan.model.TextBlockId
 import com.qianyan.model.TxtChapterId
 import com.qianyan.model.TxtDocumentId
@@ -22,6 +23,12 @@ interface TxtRepository {
 
     /** 查询 TXT 文档。不存在返回 null。 */
     fun getDocument(documentId: TxtDocumentId): TxtDocument?
+
+    /** 按内容哈希精确查询 TXT 文档（P5 导入去重）。不存在返回 null。 */
+    fun findByContentHash(contentHash: String): TxtDocument?
+
+    /** 按 NovelId 查询已绑定到该 Novel 的 TXT 文档（P5 绑定关系查询）。确定性顺序：created_at 升序。无绑定返回空列表。 */
+    fun findByNovelId(novelId: NovelId): List<TxtDocument>
 
     /** 按出现顺序（ordinal 升序）查询某文档的全部章节。 */
     fun getChapters(documentId: TxtDocumentId): List<TxtChapter>
