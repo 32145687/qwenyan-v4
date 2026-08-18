@@ -1,12 +1,14 @@
 package com.qianyan.storage.repository
 
 import com.qianyan.model.BaseNovelId
+import com.qianyan.model.CheckpointId
 import com.qianyan.model.MemoryEntryId
 import com.qianyan.model.NovelId
 import com.qianyan.model.OverrideId
 import com.qianyan.model.ProjectId
 import com.qianyan.model.ProjectSource
 import com.qianyan.model.ProjectStatus
+import com.qianyan.model.TaskId
 import com.qianyan.model.TextBlockId
 import com.qianyan.model.TxtChapterId
 import com.qianyan.model.TxtDocumentId
@@ -27,6 +29,10 @@ import com.qianyan.model.core.VariantScopeSpec
 import com.qianyan.model.core.VariantStatus
 import com.qianyan.model.memory.MemoryEntry as DomainMemoryEntry
 import com.qianyan.model.memory.MemoryLayer
+import com.qianyan.model.task.Checkpoint as DomainCheckpoint
+import com.qianyan.model.task.Task as DomainTask
+import com.qianyan.model.task.TaskStatus
+import com.qianyan.model.task.TaskType
 import com.qianyan.model.txt.SourceLocation
 import com.qianyan.model.txt.TextBlock as DomainTextBlock
 import com.qianyan.model.txt.TxtChapter as DomainTxtChapter
@@ -42,10 +48,12 @@ import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.model.vocabulary.VocabularyEntryType
 import com.qianyan.model.vocabulary.VocabularyRule as DomainVocabularyRule
 import com.qianyan.model.vocabulary.VocabularyScopeLevel
+import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
 import com.qianyan.storage.db.NovelVariant as DbNovelVariant
+import com.qianyan.storage.db.Task as DbTask
 import com.qianyan.storage.db.TextBlock as DbTextBlock
 import com.qianyan.storage.db.TxtChapter as DbTxtChapter
 import com.qianyan.storage.db.TxtDocument as DbTxtDocument
@@ -58,6 +66,7 @@ import kotlinx.datetime.Instant
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * 领域模型 <-> SQLDelight 生成 DTO 的双向映射（Repository 边界）。
@@ -352,5 +361,52 @@ internal object StorageMappers {
         ordinal = row.ordinal.toInt(),
         text = row.text,
         sourceLocation = SourceLocation(row.source_start.toInt(), row.source_end.toInt()),
+    )
+
+    /* ---------------- Task / Checkpoint ---------------- */
+
+    fun domainTask(t: DomainTask): DbTask = DbTask(
+        task_id = t.taskId.value,
+        type = t.type.name,
+        status = t.status.name,
+        progress = t.progress.toDouble(),
+        revision_count = t.revisionCount.toLong(),
+        error = t.error,
+        created_at = t.createdAt.toEpochMillis(),
+        updated_at = t.updatedAt.toEpochMillis(),
+    )
+
+    /**
+     * @param latestCheckpoint Task.checkpoint（最近检查点）为领域侧的派生视图，
+     * 由仓储在读取时以 Checkpoint 表的最新 revision 填充，Task 表不冗余存储。
+     */
+    fun dbTask(row: DbTask, latestCheckpoint: DomainCheckpoint? = null): DomainTask = DomainTask(
+        taskId = TaskId(row.task_id),
+        type = TaskType.valueOf(row.type),
+        status = TaskStatus.valueOf(row.status),
+        progress = row.progress.toFloat(),
+        checkpoint = latestCheckpoint,
+        revisionCount = row.revision_count.toInt(),
+        error = row.error,
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainCheckpoint(c: DomainCheckpoint): DbCheckpoint = DbCheckpoint(
+        checkpoint_id = c.checkpointId.value,
+        task_id = c.taskId.value,
+        revision = c.revision.toLong(),
+        stage = c.stage,
+        snapshot = c.snapshot?.let { json.encodeToString(JsonObject.serializer(), it) },
+        created_at = c.createdAt.toEpochMillis(),
+    )
+
+    fun dbCheckpoint(row: DbCheckpoint): DomainCheckpoint = DomainCheckpoint(
+        checkpointId = CheckpointId(row.checkpoint_id),
+        taskId = TaskId(row.task_id),
+        revision = row.revision.toInt(),
+        stage = row.stage,
+        snapshot = row.snapshot?.let { json.decodeFromString(JsonObject.serializer(), it) },
+        createdAt = epochMillisToInstant(row.created_at),
     )
 }

@@ -1,0 +1,25 @@
+-- Qianyan Storage · v1 → v2 migration（P8.1 Task / Checkpoint 持久化）
+-- 仅新增 Task / Checkpoint 两张表；不删除、不修改任何既有业务表，保证旧数据兼容。
+-- 与 Task.sq 中表结构保持一致（SQLDelight 迁移真源）。
+
+CREATE TABLE Task (
+    task_id         TEXT NOT NULL PRIMARY KEY,
+    type            TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    progress        REAL NOT NULL DEFAULT 0,
+    revision_count  INTEGER NOT NULL DEFAULT 0 CHECK (revision_count BETWEEN 0 AND 3),
+    error           TEXT,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+
+CREATE TABLE Checkpoint (
+    checkpoint_id   TEXT NOT NULL PRIMARY KEY,
+    task_id         TEXT NOT NULL,
+    revision        INTEGER NOT NULL CHECK (revision BETWEEN 1 AND 3),
+    stage           TEXT NOT NULL,
+    snapshot        TEXT,
+    created_at      INTEGER NOT NULL,
+    UNIQUE (task_id, revision),
+    FOREIGN KEY (task_id) REFERENCES Task(task_id)
+);

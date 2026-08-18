@@ -37,6 +37,8 @@ data class Task(
 data class Checkpoint(
     val checkpointId: CheckpointId,
     val taskId: TaskId,
+    val revision: Int,                  // 修订序号（1..3；P8 Preflight 冻结 revisionCount <= 3）
     val stage: String,                  // 恢复点：阶段标识
     val snapshot: JsonObject? = null,   // 恢复所需的上下文快照（结构化 JSON）
+    val createdAt: Instant,
 )
