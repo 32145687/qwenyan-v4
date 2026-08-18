@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P7）
+## 当前进度（P0–P8.1）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -29,10 +29,13 @@
 | P5 | TXT Pipeline 接入 Application：TXT → 去重(contentHash) → Original Novel → novelId 绑定 → 原子持久化 → 结构化结果 + VariantContext(ORIGINAL) | ✅ |
 | P6 | AI Analysis Pipeline：TXT → AnalysisInput → Provider(API/Impl) → AnalysisResult → Validation → VocabularyCandidate(PENDING) | ✅ |
 | P7 | Android 功能闭环：Database 初始化 → Application API → Compose → DI → Novel List → TXT 导入 → Analysis → Vocabulary Candidate → 验收 | ✅ |
+| P8.0 | Task System / Task Manager foundation：Task / Checkpoint persistence architecture | ✅ |
+| P8.1 | Task / Checkpoint persistence：Schema v2 + migration + repository + transaction + tests | ✅ |
 
-**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8 = NOT STARTED。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = NOT STARTED。
+**P8 说明**：P8（Task System / Task Manager）已开始，但仅完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）；TaskManager 状态机属 P8.2，尚未实现。
 **P6/P7 说明**：AI Analysis 使用 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
-**尚未实现**：Agent 编排、完整 AI Provider（DeepSeek / MiMo）、写作工作流、Desktop UI、PC / Cloud 后端。
+**尚未实现**：Task Manager 状态机（P8.2）、Agent 编排、Tool System、Agent Runtime、写作工作流（Workflow）、真实 DeepSeek / MiMo Provider、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Desktop UI、PC / Cloud 后端。
 
 ## P7 Android Functional Loop
 
@@ -147,6 +150,22 @@ VocabularyCandidate
 
 - ❌ 真实 DeepSeek / MiMo Provider　❌ Agent / Orchestration / Workflow　❌ Knowledge / Character / Event 正式系统　❌ Candidate 确认流程　❌ Desktop UI　❌ PC / Cloud Backend　❌ Hilt / Koin / Room / DataStore / Navigation Framework
 
+## P8.1 Task / Checkpoint Persistence
+
+P8.1 将领域层已存在的 `Task` / `Checkpoint` 模型落地为可持久化数据层（**不含 TaskManager 状态机**）：
+
+- **core:model**：`Checkpoint` 补齐 `revision`（1..3）与 `createdAt`（持久化必需的最小调整）。
+- **Schema v2**：新增 `Task` / `Checkpoint` 表（TEXT 强类型 ID、INTEGER epoch 毫秒、枚举名状态、JSON snapshot）。
+- **v1 → v2 migration**（`1.sqm`）：仅新增两表，不删除/修改既有 P0–P7 表，旧数据兼容，可重复幂等初始化。
+- **`TaskRepository` / `SqliteTaskRepository`**：`create / findById / update / delete / saveCheckpoint / findCheckpoints / findLatestCheckpoint`。
+- **Task ↔ Checkpoint 映射**（`StorageMappers`）与 Task 存储异常（`TaskNotFoundException` / `RevisionLimitExceededException`）。
+- **Checkpoint 持久化**：`saveCheckpoint` 同事务同步 Task `revision_count` / `updated_at`。
+- **revision 1..3 约束**：领域 / 仓储校验 + DB `CHECK`（`revision BETWEEN 1 AND 3`、`revision_count BETWEEN 0 AND 3`）。
+- **事务原子性**：create / update / delete / saveCheckpoint / migration 均为单事务，不留半成品数据。
+- **测试**：`TaskRepositoryTest`（14 用例）+ `TaskMigrationTest`（1 用例）+ 全量回归通过。
+
+> 明确：P8.1 **不实现** TaskManager / Task 状态机 / start-pause-resume-cancel-complete-fail 的 Application 管理（属 P8.2）。
+
 ## 模块结构
 
 ```
@@ -159,7 +178,7 @@ agent/agents       六个 Agent 定义（占位）
 agent/orchestration  Agent 编排（占位）
 provider/api       AI Provider 抽象契约（LLM 契约 + 请求/响应 + 异常，P6）
 provider/impl      AI Provider 实现（MockLLMGateway，P6）
-storage            SQLDelight + SQLite / Repository / Backup
+storage            SQLDelight + SQLite / Repository / Backup / Task·Checkpoint persistence（P8.1）
 application        Use Case 层（DI 容器 + 错误边界；含 P6 AnalysisUseCases）
 runtime            平台 Runtime 抽象（占位）
 app/android        Android 客户端（P7 功能验证 UI：列表 / TXT 导入 / Analysis）
@@ -188,13 +207,13 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 ## 构建与测试
 
 ```bash
-# 全量测试（P7 验收通过：133 tests / 0 failures / 0 errors）
+# 全量测试（P8.1 验证通过：133 tests / 0 failures / 0 errors）
 ./gradlew test
 
 # 关键模块测试（P4 TXT Pipeline / Storage）
 ./gradlew :core:engine:test :storage:test :application:test
 
-# Android 单元测试（P7：20 tests）
+# Android 单元测试（P8.1：20 tests）
 ./gradlew :app:android:testDebugUnitTest
 
 # Android Debug APK
