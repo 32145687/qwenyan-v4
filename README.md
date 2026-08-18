@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P6）
+## 当前进度（P0–P7）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -28,10 +28,124 @@
 | P4 | TXT Pipeline：确定性 导入 → 规范化 → 章节识别 → 结构化 → 持久化 | ✅ |
 | P5 | TXT Pipeline 接入 Application：TXT → 去重(contentHash) → Original Novel → novelId 绑定 → 原子持久化 → 结构化结果 + VariantContext(ORIGINAL) | ✅ |
 | P6 | AI Analysis Pipeline：TXT → AnalysisInput → Provider(API/Impl) → AnalysisResult → Validation → VocabularyCandidate(PENDING) | ✅ |
+| P7 | Android 功能闭环：Database 初始化 → Application API → Compose → DI → Novel List → TXT 导入 → Analysis → Vocabulary Candidate → 验收 | ✅ |
 
-**当前阶段**：P7（下一阶段，尚未开始）。
-**P6 说明**：AI Analysis 使用 **Mock Provider**；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`。
-**尚未实现**：Agent 编排、完整 AI Provider（DeepSeek / MiMo）、写作工作流、Android / Desktop UI、云端后端。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8 = NOT STARTED。
+**P6/P7 说明**：AI Analysis 使用 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
+**尚未实现**：Agent 编排、完整 AI Provider（DeepSeek / MiMo）、写作工作流、Desktop UI、PC / Cloud 后端。
+
+## P7 Android Functional Loop
+
+P7 形成 Android 端第一条完整功能闭环：
+
+```text
+Database
+    ↓
+Application API
+    ↓
+Compose
+    ↓
+Android DI
+    ↓
+Novel List
+    ↓
+TXT Import
+    ↓
+Analysis
+    ↓
+Vocabulary Candidate
+    ↓
+Validation
+```
+
+### P7.0 — Storage 驱动无关数据库初始化
+
+- `DatabaseInitializer.initializeDatabase(driver)`：建表 + 3 个守卫触发器（Original 只读写保护、禁止 Variant→Variant）+ 幂等初始化。
+- Android 使用 `AndroidSqliteDriver → DatabaseInitializer`；JVM 使用 `QianyanDbFactory.open()`（JDBC 专用入口）。两者共用同一套驱动无关初始化。
+
+### P7.1 — Application 查询 API
+
+- `NovelUseCases.listOriginals()`（Android 首页小说列表入口）。
+- `VocabularyUseCases.findCandidatesByNovel(novelId)`（候选词查询入口）。
+
+### P7.2 — Android Compose 构建基础
+
+- Kotlin Compose plugin + Compose Runtime / Foundation / Material3 / Activity Compose / Lifecycle Compose / ViewModel Compose。
+
+### P7.3 — Android DI
+
+```text
+QianyanApplication
+    ↓
+AndroidSqliteDriver
+    ↓
+DatabaseInitializer
+    ↓
+MockLLMGateway
+    ↓
+ApplicationContainer
+    ↓
+Application Use Cases
+```
+
+### P7.4 — 第一版功能 UI
+
+- Novel List：`NovelListScreen` / `NovelListViewModel` / `NovelListUiState`（Loading / Empty / Success / Error）+ 重试。
+- Compose Theme / Color / Type（Material3）+ `MainActivity` 装配。
+
+> **当前 UI 是功能验证版本，不是最终 UI 设计。** 采用 Apple-inspired 基础视觉方向（中性色 / 大标题 / 留白 / 圆角卡片，Material3 基础设施），最终 Apple-inspired UI/UX 将在后续 UI 重设计阶段完成。
+
+### P7.5 — TXT 导入（Android SAF）
+
+```text
+SAF
+ ↓
+Uri
+ ↓
+ByteArray + displayName
+ ↓
+NovelListViewModel
+ ↓
+TxtUseCases.importTxtAsOriginal
+ ↓
+TXT Pipeline
+ ↓
+Novel + Document
+```
+
+- 使用 Android SAF（`OpenDocument`），**无需存储权限**。
+- **Uri 只存在 Android 平台层**，不进入 Application / Domain。
+- 支持重复导入检测（contentHash → isDuplicate）、UTF-8 / 空文档错误处理（中文提示）。
+
+### P7.6 — Analysis（Mock）
+
+```text
+Novel
+ ↓
+TxtDocument
+ ↓
+Novel Vocabulary
+ ↓
+AnalysisUseCases
+ ↓
+MockLLMGateway
+ ↓
+AnalysisOutput
+ ↓
+VocabularyCandidate
+```
+
+- `AnalysisScreen` / `AnalysisViewModel` / `AnalysisUiState`（Idle / Loading / Success / SuccessWithWarnings / Error）已完成。
+- `AnalysisViewModel` 通过 `TxtUseCases.findDocumentsByNovel` → `VocabularyUseCases.getOrCreateNovelVocabulary`（创建/复用 NOVEL 词库）→ `AnalysisUseCases.analyzeTxtOriginal` → `findCandidatesByNovel` 完成候选查询与展示。
+- **当前仍然使用 `MockLLMGateway`**；**真实 DeepSeek / MiMo Provider 不属于 P7**。
+
+### P7.7 — 最终验收
+
+- 架构边界审计、错误处理审计、全量测试、Android Unit Test、assembleDebug、Git 审计。
+
+### P7 边界（未在 P7 实现）
+
+- ❌ 真实 DeepSeek / MiMo Provider　❌ Agent / Orchestration / Workflow　❌ Knowledge / Character / Event 正式系统　❌ Candidate 确认流程　❌ Desktop UI　❌ PC / Cloud Backend　❌ Hilt / Koin / Room / DataStore / Navigation Framework
 
 ## 模块结构
 
@@ -48,7 +162,7 @@ provider/impl      AI Provider 实现（MockLLMGateway，P6）
 storage            SQLDelight + SQLite / Repository / Backup
 application        Use Case 层（DI 容器 + 错误边界；含 P6 AnalysisUseCases）
 runtime            平台 Runtime 抽象（占位）
-app/android        Android 客户端（占位）
+app/android        Android 客户端（P7 功能验证 UI：列表 / TXT 导入 / Analysis）
 app/desktop        Desktop 客户端（占位）
 test/e2e           E2E 测试（占位）
 ```
@@ -66,22 +180,28 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 
 - Kotlin / JVM（toolchain 17）
 - Gradle（Version Catalog 统一依赖）
-- SQLDelight + SQLite（JDBC driver，JVM 可跑测试）
+- SQLDelight + SQLite（JDBC driver，JVM 可跑测试；Android driver，P7.3）
+- Android Compose（Material3 / Activity Compose / Lifecycle Compose / ViewModel Compose，P7）
 - kotlinx.serialization / kotlinx.datetime
 - JUnit 5 + kotlin.test
 
 ## 构建与测试
 
 ```bash
-# 全量测试
+# 全量测试（P7 验收通过：133 tests / 0 failures / 0 errors）
 ./gradlew test
 
 # 关键模块测试（P4 TXT Pipeline / Storage）
 ./gradlew :core:engine:test :storage:test :application:test
 
+# Android 单元测试（P7：20 tests）
+./gradlew :app:android:testDebugUnitTest
+
 # Android Debug APK
 ./gradlew :app:android:assembleDebug
 ```
+
+> 注：P7.7 验收实测 `./gradlew test`、`:app:android:testDebugUnitTest`、`:app:android:assembleDebug` 均 BUILD SUCCESSFUL；APK 生成于 `app/android/build/outputs/apk/debug/android-debug.apk`。
 
 ## TXT Pipeline（P4）
 
