@@ -88,6 +88,9 @@ class NovelUseCases(
     /** GetNovel：按 NovelId 读取 Original，不存在返回 null。 */
     fun getNovel(novelId: NovelId): Novel? = guard { repo.getNovel(novelId) }
 
+    /** ListOriginals：列出全部 Original Novel（按创建时间升序）。P7.1：Android UI 小说选择列表入口。 */
+    fun listOriginals(): List<Novel> = guard { repo.listOriginals() }
+
     /**
      * GetVariantContext：构建并校验调用链上下文（P3.3 统一传递）。
      *  - variantId = null → Original 上下文（baseNovelId = novelId）。

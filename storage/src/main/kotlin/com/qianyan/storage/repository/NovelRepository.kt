@@ -23,6 +23,9 @@ interface NovelRepository {
     /** 读取 Original。不存在返回 null。 */
     fun getNovel(novelId: NovelId): Novel?
 
+    /** 列出全部 Original Novel（按创建时间升序）。P7.1：Android UI 小说选择列表所需。 */
+    fun listOriginals(): List<Novel>
+
     /** 从一个 Original 创建 Variant（base 必须指向 scope=ORIGINAL 的 Novel）。返回强类型 VariantId。 */
     fun createVariant(variant: NovelVariant): VariantId
 

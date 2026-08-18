@@ -16,6 +16,7 @@ import com.qianyan.model.TxtDocumentId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.core.Novel
 import com.qianyan.model.core.VariantContext
+import com.qianyan.model.txt.TxtDocument
 import com.qianyan.model.txt.TxtEncoding
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.StorageException
@@ -119,6 +120,14 @@ class TxtUseCases(
             blockCount = blocks.size,
         )
     }
+
+    /**
+     * FindDocumentsByNovel（P7.6 最小 UI 查询入口）：查询绑定到某 Novel 的 TXT 文档。
+     *  - 供 Android Analysis 流程进入前取得 documentId（Application 仍只接收平台无关数据）；
+     *  - 确定性顺序：created_at 升序（仓储语义）；无绑定返回空列表；
+     *  - 只包装既有 [TxtRepository.findByNovelId]，不改 Schema / core:model。
+     */
+    fun findDocumentsByNovel(novelId: NovelId): List<TxtDocument> = guard { txtRepository.findByNovelId(novelId) }
 
     /**
      * guard 的引擎扩展：把引擎层 [TxtException] 与 Storage 层异常统一归一为 [ApplicationException]。

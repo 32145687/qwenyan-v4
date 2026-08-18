@@ -35,6 +35,9 @@ class SqliteNovelRepository(
     override fun getNovel(novelId: NovelId): Novel? =
         db.novelQueries.getNovel(novelId.value).executeAsOneOrNull()?.let { StorageMappers.dbNovel(it) }
 
+    override fun listOriginals(): List<Novel> =
+        db.novelQueries.getAllNovels().executeAsList().map { StorageMappers.dbNovel(it) }
+
     override fun createVariant(variant: NovelVariant): VariantId {
         // 应用层校验：base 必须是 ORIGINAL（Variant→Variant 拒绝）；物理触发器兜底。
         val base = getNovel(NovelId(variant.baseNovelId.value))

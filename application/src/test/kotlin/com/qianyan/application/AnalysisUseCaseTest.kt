@@ -207,4 +207,17 @@ class AnalysisUseCaseTest {
         }
         assertEquals(run(), run())
     }
+
+    /* 9. P7.1：经 Use Case 边界读取候选（Android UI 展示入口，不直连 Repository） */
+    @Test
+    fun `findCandidatesByNovel exposes persisted candidates through use case`() {
+        val app = ApplicationContainer.open(analysisGateway = MockLLMGateway())
+        val (docId, novelId) = import(app)
+        val vocabId = vocab(app, novelId)
+        app.analysis.analyzeTxtOriginal(com.qianyan.model.TxtDocumentId(docId), vocabId, originalContext(novelId))
+
+        val candidates = app.vocabularies.findCandidatesByNovel(com.qianyan.model.NovelId(novelId))
+        assertEquals(listOf("灵石", "丹田"), candidates.map { it.suggested.canonical })
+        assertTrue(candidates.all { it.status == VocabularyCandidateStatus.PENDING })
+    }
 }

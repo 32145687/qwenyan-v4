@@ -24,7 +24,9 @@ dependencies {
     api(project(":storage"))
 
     // P5 新增：TXT Use Case 经 TxtPipeline 做确定性解析（引擎不触库、不调 LLM）。
-    implementation(project(":core:engine"))
+    // P7.5 演进：public API（TxtUseCases.importTxtAsOriginal）签名暴露引擎类型 TxtSource，
+    // 故用 api 再导出，使 Android 上层能通过 :application 依赖消费（app → application 单向依赖不变）。
+    api(project(":core:engine"))
 
     // P6 新增：Analysis Use Case 只依赖 LLM 契约（:provider:api），不依赖具体 Provider 实现。
     // Provider(DeepSeek/MiMo/Mock) 实现始终在 :provider:impl；测试期通过 :provider:impl 注入 Mock。

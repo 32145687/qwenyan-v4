@@ -49,6 +49,20 @@ class ApplicationIntegrationTest {
         assertEquals(VariantScope.ORIGINAL, read.scope)
     }
 
+    /* 1b. 列出全部 Original（P7.1：Android UI 小说选择列表入口） */
+    @Test
+    fun `list originals returns all created originals`() {
+        val app = container()
+        val first = app.novels.createOriginal(title = "小说A")
+        val second = app.novels.createOriginal(title = "小说B")
+
+        val originals = app.novels.listOriginals()
+        assertEquals(2, originals.size)
+        assertTrue(originals.any { it.novelId == first })
+        assertTrue(originals.any { it.novelId == second })
+        assertTrue(originals.all { it.scope == VariantScope.ORIGINAL }, "列表应只含 Original，不含 Variant")
+    }
+
     /* 2. 创建 Variant */
     @Test
     fun `create variant from original`() {
