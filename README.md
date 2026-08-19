@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P8.3）
+## 当前进度（P0–P9）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -33,11 +33,13 @@
 | P8.1 | Task / Checkpoint persistence：Schema v2 + migration + repository + transaction + tests | ✅ |
 | P8.2 | Task Manager / Task State Machine：TaskManagerUseCases + 状态机 + Checkpoint revision 控制 + 类型化错误 | ✅ |
 | P8.3 | Task Execution：Application 层受管 Task 执行驱动（TaskRunner）+ IMPORT 纵向切片 + 类型化拒绝 + 测试 | ✅ |
+| P9 | 真实 LLM Provider 接入：DeepSeek-V4-Flash + MiMo-V2.5（JDK HttpClient transport + ProviderException 映射 + API Key 注入 + fake transport 测试） | ✅ |
 
-**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE。
-**P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）、P8.2（TaskManager 状态机 / Checkpoint 管理）与 P8.3（TaskRunner 受管执行 IMPORT 纵向切片）；**Task 生命周期 / 状态管理 / IMPORT 受管执行 = DONE，Agent / Tool / Workflow 编排 / 真实 Provider 执行 = NOT STARTED（后续阶段）**。
-**P6/P7 说明**：AI Analysis 使用 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
-**尚未实现**：ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P8.3 仅 IMPORT）、Agent 编排 / Tool System / Agent Runtime / 写作工作流（Workflow） / HITL / 自动 retry、真实 DeepSeek / MiMo Provider、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE；**P9 = DONE**。
+**P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）、P8.2（TaskManager 状态机 / Checkpoint 管理）与 P8.3（TaskRunner 受管执行 IMPORT 纵向切片）；**Task 生命周期 / 状态管理 / IMPORT 受管执行 = DONE，Agent / Tool / Workflow 编排 = NOT STARTED（后续阶段）**。
+**P9 说明**：真实 **DeepSeek-V4-Flash Provider = DONE**、**MiMo-V2.5 Provider = DONE**、**真实 LLM 接入 = DONE**（JDK HttpClient transport + ProviderException 结构化映射 + API Key 注入 + fake transport 测试）；**Agent / Tool / Workflow / 完整小说创作 Pipeline = NOT STARTED（后续阶段）**。
+**P6/P7 说明**：AI Analysis 默认仍走 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；P9 起装配方可注入 `DeepSeekLLMGateway` / `MiMoLLMGateway` 并选择 `ModelProfile.DEEPSEEK_V4_FLASH` / `MIMO_V2_5`；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
+**尚未实现**：ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P8.3 仅 IMPORT）、Agent 编排 / Tool System / Agent Runtime / 写作工作流（Workflow） / HITL / 自动 retry、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
 
 ## P7 Android Functional Loop
 
@@ -200,6 +202,19 @@ P8.3 在 P8.2 状态机之上，为 `Task` 提供 Application 层**受管执行*
 
 > 明确：P8.3 **完成 IMPORT 受管执行**；**ANALYSIS 执行（DEFER）/ Agent / Tool / Workflow 编排 / 真实 Provider 执行仍属后续阶段**。
 
+## P9 Real LLM Provider Integration
+
+P9 把两个真实写作模型作为**可靠 Provider** 接入现有 Provider 架构（`Application → LLMGateway → DeepSeekLLMGateway / MiMoLLMGateway / MockLLMGateway`），**不实现任何"如何写小说"逻辑**：
+
+- **真实 Provider**：`DeepSeekLLMGateway`（`deepseek-v4-flash`，`https://api.deepseek.com/chat/completions`，`Authorization: Bearer <key>`）与 `MiMoLLMGateway`（`mimo-v2.5-pro`，`https://api.xiaomimimo.com/v1/chat/completions`，`api-key: <key>`）；两者均为官方 OpenAI 兼容 API，复用共享 `OpenAiChatCompletion`（DTO/JSON 全部限定在 `provider:impl`）。
+- **HTTP Transport**：零第三方依赖，JDK 17 `java.net.http.HttpClient`（`JdkLlmHttpClient`）；经 `LlmHttpClient` 接缝注入 fake 实现保证普通测试不依赖真实网络。
+- **API Key 安全**：注入式构造参数，不进 Git / docs / README / 日志 / 异常 / 仓库 / UI；测试仅用 fake key（`test-key`）。
+- **ProviderException 映射**：复用既有 `ProviderException` 子类（Timeout / RateLimit / ProviderUnavailable / InvalidResponse / MalformedOutput / TokenLimit），仅按结构化字段（HTTP 状态码 + error.code）分类，禁止 message 子串匹配；API Key 缺失 → `ProviderUnavailable`。
+- **模型选择**：`ModelProfile` 新增 `DEEPSEEK_V4_FLASH` / `MIMO_V2_5`；`AnalysisUseCases` 通过现有 Provider seam 注入模型（默认 MOCK，行为不变）。
+- **测试**：DeepSeek（11）+ MiMo（10）网关契约测试（成功 / Key 缺失 / 超时 / 429 / 4xx / 5xx / 非法 JSON / 缺字段 / Token 超限）+ `RealProviderApplicationIntegrationTest`（3，真实网关经 fake transport 走通 AnalysisUseCases 全链路）；`MockLLMGateway` 原有测试全部保持通过。
+
+> 明确：P9 只负责把 **DeepSeek-V4-Flash / MiMo-V2.5** 可靠接入；**Agent / Tool / Workflow / Orchestrator / HITL / 完整小说创作 Pipeline = NOT STARTED（后续阶段）**。
+
 ## 模块结构
 
 ```
@@ -241,13 +256,13 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 ## 构建与测试
 
 ```bash
-# 全量测试（P8.3 验证通过：222 tests / 0 failures / 0 errors）
+# 全量测试（P9 验证通过：206 tests / 0 failures / 0 errors）
 ./gradlew test
 
 # 关键模块测试（P4 TXT Pipeline / Storage / Application）
 ./gradlew :core:engine:test :storage:test :application:test
 
-# Android 单元测试（P8.3：40 tests）
+# Android 单元测试（P9：20 tests）
 ./gradlew :app:android:testDebugUnitTest
 
 # Android Debug APK
