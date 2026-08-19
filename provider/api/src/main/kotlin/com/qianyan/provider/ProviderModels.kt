@@ -22,8 +22,20 @@ data class ModelProfile(
     val label: String = id,
 ) {
     companion object {
-        /** P6 阶段仅 Mock：真实 DeepSeek / MiMo id 延后到后续 Provider 落地。 */
+        /** P6 阶段 Mock（Analysis 默认链路）。 */
         val MOCK = ModelProfile("mock-v1")
+
+        /**
+         * P9 真实 Provider：DeepSeek-V4-Flash。
+         * 官方 OpenAI 兼容 API：base_url=https://api.deepseek.com，模型 ID `deepseek-v4-flash`。
+         */
+        val DEEPSEEK_V4_FLASH = ModelProfile(id = "deepseek-v4-flash", label = "DeepSeek-V4-Flash")
+
+        /**
+         * P9 真实 Provider：MiMo V2.5 系列。
+         * 官方 Xiaomi MiMo API 开放平台：base_url=https://api.xiaomimimo.com/v1，v2.5 系列官方模型 ID `mimo-v2.5-pro`。
+         */
+        val MIMO_V2_5 = ModelProfile(id = "mimo-v2.5-pro", label = "MiMo-V2.5")
     }
 }
 

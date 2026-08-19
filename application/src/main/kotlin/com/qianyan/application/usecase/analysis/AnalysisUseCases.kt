@@ -58,6 +58,8 @@ class AnalysisUseCases(
     private val inputBuilder: AnalysisInputBuilder = AnalysisInputBuilder,
     private val gateway: LLMGateway,
     errorMapper: ErrorMapper,
+    /** P9：Analysis 请求的模型 Profile（默认 Mock；真实 Provider 由装配方注入 DEEPSEEK_V4_FLASH / MIMO_V2_5）。 */
+    private val model: ModelProfile = ModelProfile.MOCK,
 ) : UseCase(errorMapper) {
 
     /**
@@ -97,7 +99,7 @@ class AnalysisUseCases(
 
         // 3) 经 Provider 契约取回 AI 文本（Mock；失败归一为 ProviderUnavailable 等）
         val request = ProviderRequest(
-            model = ModelProfile.MOCK,
+            model = model,
             messages = listOf(
                 ChatMessage(ChatRole.SYSTEM, SYSTEM_PROMPT),
                 ChatMessage(ChatRole.USER, render(input)),

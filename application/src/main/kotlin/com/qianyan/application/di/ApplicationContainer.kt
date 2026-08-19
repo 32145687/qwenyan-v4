@@ -13,6 +13,7 @@ import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.provider.LLMGateway
+import com.qianyan.provider.ModelProfile
 import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
@@ -44,6 +45,8 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
  * Analysis Use Case 只依赖 Provider 契约接口，不绑定具体实现；仓储实现始终在 `:storage`。
  * P8.2 演进：新增 [TaskRepository]（P8.1 持久化）与 [TaskManagerUseCases]（Task 状态机 / Checkpoint 管理）。
  * P8.3 演进：新增 [TaskRunner]（Task 执行驱动：受管执行 IMPORT，复用 TaskManager 生命周期）。
+ * P9 演进：真实 Provider 接入。容器仅暴露 [LLMGateway] 契约 seam；装配方注入 DeepSeek / MiMo / Mock 实现，
+ * 并通过 [analysisModel] 选择 Analysis 请求的模型（默认 MOCK，保持既有行为；真实模型见 :provider:impl）。
  */
 class ApplicationContainer(
     val novelRepository: NovelRepository,
@@ -53,6 +56,7 @@ class ApplicationContainer(
     val txtRepository: TxtRepository,
     val taskRepository: TaskRepository,
     private val analysisGateway: LLMGateway,
+    private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
 ) {
 
@@ -63,14 +67,18 @@ class ApplicationContainer(
     val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, errorMapper)
     val memories: MemoryUseCases get() = MemoryUseCases(memoryRepository, errorMapper)
     val txts: TxtUseCases get() = TxtUseCases(txtPipeline, txtRepository, novelRepository, errorMapper)
-    val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper)
+    val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper, model = analysisModel)
     val tasks: TaskManagerUseCases get() = TaskManagerUseCases(taskRepository, errorMapper)
     val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, errorMapper)
 
     companion object {
 
-        /** 由底层 [SqlDriver] 装配（测试 / 运行时注入数据库实现 + LLM 网关）。 */
-        fun fromDriver(driver: SqlDriver, analysisGateway: LLMGateway): ApplicationContainer {
+        /** 由底层 [SqlDriver] 装配（测试 / 运行时注入数据库实现 + LLM 网关 + 分析模型）。 */
+        fun fromDriver(
+            driver: SqlDriver,
+            analysisGateway: LLMGateway,
+            analysisModel: ModelProfile = ModelProfile.MOCK,
+        ): ApplicationContainer {
             val db = QianyanDb(driver)
             return ApplicationContainer(
                 novelRepository = SqliteNovelRepository(db),
@@ -80,11 +88,15 @@ class ApplicationContainer(
                 txtRepository = SqliteTxtRepository(db),
                 taskRepository = SqliteTaskRepository(db),
                 analysisGateway = analysisGateway,
+                analysisModel = analysisModel,
             )
         }
 
         /** 直接从 JDBC URL 打开数据库并装配（默认内存库；持久化测试传 `jdbc:sqlite:<path>`）。 */
-        fun open(url: String = JdbcSqliteDriver.IN_MEMORY, analysisGateway: LLMGateway): ApplicationContainer =
-            fromDriver(QianyanDbFactory.open(url).driver, analysisGateway)
+        fun open(
+            url: String = JdbcSqliteDriver.IN_MEMORY,
+            analysisGateway: LLMGateway,
+            analysisModel: ModelProfile = ModelProfile.MOCK,
+        ): ApplicationContainer = fromDriver(QianyanDbFactory.open(url).driver, analysisGateway, analysisModel)
     }
 }
