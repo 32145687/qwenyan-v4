@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P8.1）
+## 当前进度（P0–P8.2）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -31,11 +31,12 @@
 | P7 | Android 功能闭环：Database 初始化 → Application API → Compose → DI → Novel List → TXT 导入 → Analysis → Vocabulary Candidate → 验收 | ✅ |
 | P8.0 | Task System / Task Manager foundation：Task / Checkpoint persistence architecture | ✅ |
 | P8.1 | Task / Checkpoint persistence：Schema v2 + migration + repository + transaction + tests | ✅ |
+| P8.2 | Task Manager / Task State Machine：TaskManagerUseCases + 状态机 + Checkpoint revision 控制 + 类型化错误 | ✅ |
 
-**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = NOT STARTED。
-**P8 说明**：P8（Task System / Task Manager）已开始，但仅完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）；TaskManager 状态机属 P8.2，尚未实现。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE。
+**P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）与 P8.2（TaskManager 状态机 / Checkpoint 管理）；**Task 生命周期 / 状态管理 = DONE，真实任务执行引擎 / Agent / Tool / Workflow 编排 = NOT STARTED（后续阶段）**。
 **P6/P7 说明**：AI Analysis 使用 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
-**尚未实现**：Task Manager 状态机（P8.2）、Agent 编排、Tool System、Agent Runtime、写作工作流（Workflow）、真实 DeepSeek / MiMo Provider、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Desktop UI、PC / Cloud 后端。
+**尚未实现**：真实任务执行引擎 / Agent 编排 / Tool System / Agent Runtime / 写作工作流（Workflow） / HITL / 自动 retry、真实 DeepSeek / MiMo Provider、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
 
 ## P7 Android Functional Loop
 
@@ -166,6 +167,21 @@ P8.1 将领域层已存在的 `Task` / `Checkpoint` 模型落地为可持久化�
 
 > 明确：P8.1 **不实现** TaskManager / Task 状态机 / start-pause-resume-cancel-complete-fail 的 Application 管理（属 P8.2）。
 
+## P8.2 Task Manager / Task State Machine
+
+P8.2 在 P8.1 持久化之上为 `Task` / `Checkpoint` 提供严格生命周期的 Application 管理（`application/usecase/task/`）：
+
+- **`TaskManagerUseCases`**：`create / findById / start / pause / resume / cancel / complete / fail / saveCheckpoint / restoreCheckpoint / findCheckpoints`。所有操作读取 Task → 状态机校验 → 变更字段 + 更新 `updatedAt` → 经 `TaskRepository` 单事务持久化（不触碰 SQLDelight / 不写 SQL）。
+- **确定性 `TaskStateMachine`**（纯函数）：冻结转换表 `PENDING→RUNNING/CANCELLED`、`RUNNING→PAUSED/COMPLETED/FAILED/CANCELLED`、`PAUSED→RUNNING/COMPLETED/CANCELLED`；非法转换（如 PENDING→PAUSED、RUNNING→PENDING）一律拒绝；终态 `COMPLETED / CANCELLED / FAILED` 拒绝一切操作；**`FAILED→RUNNING` 自动 retry 不属于 P8.2（DEFER 至 Workflow 层）**。
+- **Checkpoint revision 严格顺序**：`nextRevision = revisionCount + 1`（0→1→2→3，上限 3），调用方不可指定 revision；P8.1 的 DB `CHECK` / `UNIQUE(task_id, revision)` 作为最后防线。
+- **Checkpoint**：`saveCheckpoint` 由 Manager 控制 revision；snapshot 沿用结构化 `JsonObject` 最小契约（`{type, input, output}`），不新增数据库列、不给 Task 增加 input/output 字段；`restoreCheckpoint` 只恢复最近 Checkpoint 上下文，**不重新执行、不调用 LLM/Agent/Tool**。
+- **类型化错误**：新增 `TaskNotFound / InvalidTaskStateTransition / RevisionLimitExceeded / CheckpointNotFound / TaskAlreadyCompleted / TaskAlreadyCancelled / RestoreFailure`；`ErrorMapper` 在 `UnknownStorage` 之前映射 Task 存储异常。
+- **ApplicationContainer 手动 DI**：注入 `TaskRepository`（P8.1），暴露 `tasks: TaskManagerUseCases`（`fromDriver` / `open` 均装配）。
+- **Android**：仅两处 sealed `ApplicationError` exhaustive `when` 编译修复（`AnalysisViewModel` / `NovelListViewModel`），无 Task UI / Navigation 变化。
+- **测试**：`TaskStateMachineTest`（4）+ `TaskManagerUseCaseTest`（26）+ `TaskManagerIntegrationTest`（6，含 SQLite close/reopen 状态保持）。
+
+> 明确：P8.2 **完成 Task 生命周期 / 状态管理**；**真实任务执行引擎 / Agent / Tool / Workflow 编排仍属后续阶段（P8.3+）**。
+
 ## 模块结构
 
 ```
@@ -179,7 +195,7 @@ agent/orchestration  Agent 编排（占位）
 provider/api       AI Provider 抽象契约（LLM 契约 + 请求/响应 + 异常，P6）
 provider/impl      AI Provider 实现（MockLLMGateway，P6）
 storage            SQLDelight + SQLite / Repository / Backup / Task·Checkpoint persistence（P8.1）
-application        Use Case 层（DI 容器 + 错误边界；含 P6 AnalysisUseCases）
+application        Use Case 层（DI 容器 + 错误边界；含 P6 AnalysisUseCases / P8.2 TaskManagerUseCases）
 runtime            平台 Runtime 抽象（占位）
 app/android        Android 客户端（P7 功能验证 UI：列表 / TXT 导入 / Analysis）
 app/desktop        Desktop 客户端（占位）
@@ -207,7 +223,7 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 ## 构建与测试
 
 ```bash
-# 全量测试（P8.1 验证通过：133 tests / 0 failures / 0 errors）
+# 全量测试（P8.2 验证通过：169 tests / 0 failures / 0 errors）
 ./gradlew test
 
 # 关键模块测试（P4 TXT Pipeline / Storage）
