@@ -123,6 +123,7 @@ class AnalysisViewModel(
         is ApplicationError.TaskAlreadyCompleted -> "任务已完成：${error.detail}"
         is ApplicationError.TaskAlreadyCancelled -> "任务已取消：${error.detail}"
         is ApplicationError.RestoreFailure -> "任务上下文恢复失败：${error.detail}"
+        is ApplicationError.UnsupportedTaskType -> "不支持的任务类型：${error.detail}"
         is ApplicationError.UnknownStorage -> "存储错误，请重试"
     }
 

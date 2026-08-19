@@ -86,4 +86,9 @@ sealed interface ApplicationError {
 
     /** 恢复失败：Checkpoint 上下文无法恢复。 */
     data class RestoreFailure(val detail: String) : ApplicationError
-        }
+
+    // ---- P8.3 新增：Task 执行相关错误（P8.3） ----
+
+    /** P8.3 尚不支持执行的 TaskType（WRITING / PLANNING / KNOWLEDGE_UPDATE 等）。 */
+    data class UnsupportedTaskType(val detail: String) : ApplicationError
+}
