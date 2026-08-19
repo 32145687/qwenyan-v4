@@ -61,4 +61,29 @@ sealed interface ApplicationError {
 
             /** AI Analysis 流程级失败（预检/编排/其它）。 */
             data class AnalysisFailed(val detail: String) : ApplicationError
+
+    // ---- P8.2 新增：Task / Task Manager 状态机相关错误（P8.2） ----
+    // 类型化错误，禁止经 String / contains 判断状态机错误；ErrorMapper 将 Storage 层
+    // Task 异常映射到此处，其余由 TaskManagerUseCases 直接抛 ApplicationException。
+
+    /** 引用的 Task 不存在（create/update/checkpoint 目标缺失）。 */
+    data class TaskNotFound(val detail: String) : ApplicationError
+
+    /** 非法状态转换：状态机拒绝（如 PENDING→PAUSED、RUNNING→PENDING）。 */
+    data class InvalidTaskStateTransition(val detail: String) : ApplicationError
+
+    /** 违反 revision 上限（revisionCount <= 3）或顺序约束。 */
+    data class RevisionLimitExceeded(val detail: String) : ApplicationError
+
+    /** Checkpoint 不存在（如 restoreCheckpoint 目标缺失）。 */
+    data class CheckpointNotFound(val detail: String) : ApplicationError
+
+    /** 对已 COMPLETED 的 Task 再次执行生命周期操作。 */
+    data class TaskAlreadyCompleted(val detail: String) : ApplicationError
+
+    /** 对已 CANCELLED 的 Task 再次执行生命周期操作。 */
+    data class TaskAlreadyCancelled(val detail: String) : ApplicationError
+
+    /** 恢复失败：Checkpoint 上下文无法恢复。 */
+    data class RestoreFailure(val detail: String) : ApplicationError
         }

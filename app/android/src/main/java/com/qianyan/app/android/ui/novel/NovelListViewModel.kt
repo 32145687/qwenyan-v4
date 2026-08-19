@@ -110,6 +110,13 @@ class NovelListViewModel(
         is ApplicationError.ProviderUnavailable -> "分析服务不可用，请稍后重试"
         is ApplicationError.InvalidAnalysisOutput -> "分析结果无效，请重试"
         is ApplicationError.AnalysisFailed -> "分析失败，请重试"
+        is ApplicationError.TaskNotFound -> "任务不存在：${error.detail}"
+        is ApplicationError.InvalidTaskStateTransition -> "任务状态不允许该操作：${error.detail}"
+        is ApplicationError.RevisionLimitExceeded -> "任务检查点数量已达上限：${error.detail}"
+        is ApplicationError.CheckpointNotFound -> "未找到可恢复的检查点：${error.detail}"
+        is ApplicationError.TaskAlreadyCompleted -> "任务已完成：${error.detail}"
+        is ApplicationError.TaskAlreadyCancelled -> "任务已取消：${error.detail}"
+        is ApplicationError.RestoreFailure -> "任务上下文恢复失败：${error.detail}"
     }
 
     companion object {

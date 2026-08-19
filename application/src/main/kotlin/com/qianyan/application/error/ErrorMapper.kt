@@ -3,7 +3,9 @@ package com.qianyan.application.error
 import com.qianyan.engine.txt.TxtException
 import com.qianyan.provider.ProviderException
 import com.qianyan.storage.repository.OriginalImmutableException
+import com.qianyan.storage.repository.RevisionLimitExceededException
 import com.qianyan.storage.repository.StorageException
+import com.qianyan.storage.repository.TaskNotFoundException
 import com.qianyan.storage.repository.UniqueConflictException
 import com.qianyan.storage.repository.VariantBaseViolation
 
@@ -37,6 +39,8 @@ object ErrorMapper {
         is TxtException.EmptyDocument -> ApplicationException(ApplicationError.EmptyDocument(throwable.message ?: ""))
         is TxtException.InvalidText -> ApplicationException(ApplicationError.InvalidText(throwable.message ?: ""))
         is TxtException.ParseFailed -> ApplicationException(ApplicationError.ParseFailed(throwable.message ?: ""))
+        is TaskNotFoundException -> ApplicationException(ApplicationError.TaskNotFound(throwable.message ?: ""))
+        is RevisionLimitExceededException -> ApplicationException(ApplicationError.RevisionLimitExceeded(throwable.message ?: ""))
         is StorageException -> ApplicationException(ApplicationError.UnknownStorage(throwable))
         else -> ApplicationException(ApplicationError.UnknownStorage(throwable))
     }

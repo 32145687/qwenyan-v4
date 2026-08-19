@@ -116,6 +116,13 @@ class AnalysisViewModel(
         is ApplicationError.EmptyDocument -> "文件内容为空"
         is ApplicationError.InvalidText -> "不是合法的文本文件"
         is ApplicationError.ParseFailed -> "解析失败：${error.detail}"
+        is ApplicationError.TaskNotFound -> "任务不存在：${error.detail}"
+        is ApplicationError.InvalidTaskStateTransition -> "任务状态不允许该操作：${error.detail}"
+        is ApplicationError.RevisionLimitExceeded -> "任务检查点数量已达上限：${error.detail}"
+        is ApplicationError.CheckpointNotFound -> "未找到可恢复的检查点：${error.detail}"
+        is ApplicationError.TaskAlreadyCompleted -> "任务已完成：${error.detail}"
+        is ApplicationError.TaskAlreadyCancelled -> "任务已取消：${error.detail}"
+        is ApplicationError.RestoreFailure -> "任务上下文恢复失败：${error.detail}"
         is ApplicationError.UnknownStorage -> "存储错误，请重试"
     }
 
