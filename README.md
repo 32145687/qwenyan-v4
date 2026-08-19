@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P8.2）
+## 当前进度（P0–P8.3）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -32,11 +32,12 @@
 | P8.0 | Task System / Task Manager foundation：Task / Checkpoint persistence architecture | ✅ |
 | P8.1 | Task / Checkpoint persistence：Schema v2 + migration + repository + transaction + tests | ✅ |
 | P8.2 | Task Manager / Task State Machine：TaskManagerUseCases + 状态机 + Checkpoint revision 控制 + 类型化错误 | ✅ |
+| P8.3 | Task Execution：Application 层受管 Task 执行驱动（TaskRunner）+ IMPORT 纵向切片 + 类型化拒绝 + 测试 | ✅ |
 
-**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE。
-**P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）与 P8.2（TaskManager 状态机 / Checkpoint 管理）；**Task 生命周期 / 状态管理 = DONE，真实任务执行引擎 / Agent / Tool / Workflow 编排 = NOT STARTED（后续阶段）**。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE。
+**P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）、P8.2（TaskManager 状态机 / Checkpoint 管理）与 P8.3（TaskRunner 受管执行 IMPORT 纵向切片）；**Task 生命周期 / 状态管理 / IMPORT 受管执行 = DONE，Agent / Tool / Workflow 编排 / 真实 Provider 执行 = NOT STARTED（后续阶段）**。
 **P6/P7 说明**：AI Analysis 使用 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；真实 **DeepSeek / MiMo Provider DEFER**；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
-**尚未实现**：真实任务执行引擎 / Agent 编排 / Tool System / Agent Runtime / 写作工作流（Workflow） / HITL / 自动 retry、真实 DeepSeek / MiMo Provider、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
+**尚未实现**：ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P8.3 仅 IMPORT）、Agent 编排 / Tool System / Agent Runtime / 写作工作流（Workflow） / HITL / 自动 retry、真实 DeepSeek / MiMo Provider、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
 
 ## P7 Android Functional Loop
 
@@ -182,6 +183,23 @@ P8.2 在 P8.1 持久化之上为 `Task` / `Checkpoint` 提供严格生命周期�
 
 > 明确：P8.2 **完成 Task 生命周期 / 状态管理**；**真实任务执行引擎 / Agent / Tool / Workflow 编排仍属后续阶段（P8.3+）**。
 
+## P8.3 Task Execution
+
+P8.3 在 P8.2 状态机之上，为 `Task` 提供 Application 层**受管执行**的最小纵向切片（`application/usecase/task/`）：
+
+- **`TaskRunner`（薄执行适配器）**：只复用 `TaskManagerUseCases` 的 `start / saveCheckpoint / complete / fail`，**不绕过状态机**（禁止 `task.copy(status=...)` 直写 Repository）。
+- **IMPORT 纵向切片**：`PENDING → RUNNING → 真实调用 TxtUseCases.importTxtAsOriginal(source, title) → saveCheckpoint → COMPLETED`；失败 `RUNNING → fail → FAILED`（记录错误并继续抛出类型化错误）。
+- **Checkpoint snapshot（结构化 JSON）**：`{type:"IMPORT", input:{title, source}, output:{documentId, novelId, isDuplicate, contentHash, encoding, charCount, chapterCount, blockCount}}`；输入只存元信息（不持久化 bytes），不新增 DB 列 / 不给 Task 加 input/output 字段。
+- **类型化拒绝**：`WRITING / PLANNING / KNOWLEDGE_UPDATE`（及 ANALYSIS）→ `ApplicationError.UnsupportedTaskType`（P8.3 无执行能力），不经字符串判断错误。
+- **错误复用**：`TxtImportFailed / UnsupportedEncoding / EmptyDocument / InvalidText / ParseFailed / TaskNotFound / InvalidTaskStateTransition / RevisionLimitExceeded / TaskAlreadyCompleted / TaskAlreadyCancelled` 等全部走类型化 `ApplicationError`。
+- **恢复语义**：`restoreCheckpoint()` 只恢复最近 Checkpoint 上下文，**不重新执行任务**；不实现 retry / resume execution / 自动重试 / 超时 / 取消令牌 / 后台 worker（全部 DEFER）。
+- **ApplicationContainer 手动 DI**：新增 `taskRunner: TaskRunner`（复用 `tasks` + `txts` + `errorMapper`）。
+- **ANALYSIS**：SHOULD，**DEFER**（`analyzeTxtOriginal` 需要前置 IMPORT 产出的 `documentId` / `vocabularyId`，属跨任务依赖，P8.3 不做以保持最小范围）。
+- **Android**：仅两处 sealed `ApplicationError` exhaustive `when` 编译修复（`AnalysisViewModel` / `NovelListViewModel`），无 Task UI / Navigation 变化。
+- **测试**：`TaskRunnerTest`（8）+ `TaskExecutionTest`（3）+ `TaskExecutionIntegrationTest`（2，真实调用 `importTxtAsOriginal` + SQLite close/reopen 后 COMPLETED 与 checkpoint 均保留）。
+
+> 明确：P8.3 **完成 IMPORT 受管执行**；**ANALYSIS 执行（DEFER）/ Agent / Tool / Workflow 编排 / 真实 Provider 执行仍属后续阶段**。
+
 ## 模块结构
 
 ```
@@ -223,13 +241,13 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 ## 构建与测试
 
 ```bash
-# 全量测试（P8.2 验证通过：169 tests / 0 failures / 0 errors）
+# 全量测试（P8.3 验证通过：222 tests / 0 failures / 0 errors）
 ./gradlew test
 
-# 关键模块测试（P4 TXT Pipeline / Storage）
+# 关键模块测试（P4 TXT Pipeline / Storage / Application）
 ./gradlew :core:engine:test :storage:test :application:test
 
-# Android 单元测试（P8.1：20 tests）
+# Android 单元测试（P8.3：40 tests）
 ./gradlew :app:android:testDebugUnitTest
 
 # Android Debug APK
