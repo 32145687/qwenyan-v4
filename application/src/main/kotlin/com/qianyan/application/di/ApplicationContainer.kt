@@ -10,6 +10,7 @@ import com.qianyan.application.usecase.txt.TxtUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.task.TaskRunner
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
+import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.provider.LLMGateway
@@ -70,6 +71,9 @@ class ApplicationContainer(
     val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper, model = analysisModel)
     val tasks: TaskManagerUseCases get() = TaskManagerUseCases(taskRepository, errorMapper)
     val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, errorMapper)
+
+    /** P11.1 写作 Use Case 骨架：真实创作属 P11.2+；postProcessDraft seam 本阶段即生效（默认直通）。 */
+    val writing: WritingUseCases get() = WritingUseCases(errorMapper)
 
     companion object {
 

@@ -178,6 +178,13 @@ value class BackupId(val value: String)
 @Serializable
 value class SchemaVersion(val value: String)
 
+/* ---- P11 创作写作（正文草稿）；与 TXT 原始文本结构不同源 ---- */
+
+/** 创作草稿正文 ID（P11 写作 Pipeline 产物；≠ TXT 原始文本结构）。 */
+@JvmInline
+@Serializable
+value class DraftId(val value: String)
+
 /* ---- P4 TXT Pipeline（原始文本结构聚合，与创作规划 Chapter 不同源） ---- */
 
 /** TXT 文档 ID（导入后作为 Original Source 持久化）。 */

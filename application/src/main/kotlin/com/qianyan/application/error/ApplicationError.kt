@@ -91,4 +91,10 @@ sealed interface ApplicationError {
 
     /** P8.3 尚不支持执行的 TaskType（WRITING / PLANNING / KNOWLEDGE_UPDATE 等）。 */
     data class UnsupportedTaskType(val detail: String) : ApplicationError
+
+    // ---- P11.1 新增：Writing Use Case 骨架（真实创作编排属 P11.2+） ----
+    // 骨架入口存在但明确未实现：调用方经此收到类型化"未实现"信号，绝不伪装具备真实创作能力。
+
+    /** P11.1 写作 Use Case 仅为骨架：该阶段入口未被实现。detail 说明具体阶段（plan/write/critique/revise）。 */
+    data class WritingScaffoldNotImplemented(val detail: String) : ApplicationError
 }
