@@ -15,7 +15,6 @@ dependencies {
     // P6：只依赖 Provider 契约（:provider:api），不依赖具体实现（:provider:impl）。
     implementation(project(":provider:api"))
     implementation(project(":agent:tool"))
-    implementation(project(":core:engine"))
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.junit.jupiter)

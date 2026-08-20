@@ -12,7 +12,6 @@ kotlin {
 
 dependencies {
     api(project(":core:model"))
-    implementation(project(":core:engine"))
     implementation(libs.kotlinx.serialization.json)
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.junit.jupiter)
