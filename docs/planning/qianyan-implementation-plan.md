@@ -1,5 +1,14 @@
 # Qianyan V4.1 Implementation Plan
 
+> ⚠️ **本文档为历史规划文档（V4.1，P0–P18 旧编号），已被现行路线取代。**
+>
+> 本文档使用的阶段编号与**现行唯一阶段口径不同**：
+> - 本文档 `P8 = Tool System`、`P9 = Agent Runtime`、`P11 = Writing Workflow + 最小 Android UI`、`P12 = TXT Vertical Slice` 等，均为 **V4.1 历史细分计划的旧编号**。
+> - **现行路线**以 [README.md](../../README.md#current-development-roadmap现行路线唯一阶段口径) 的「Current Development Roadmap」为准：`P8.1 = Task Storage`、`P8.2 = Task Manager / State Machine`、`P8.3 = Task Execution`、`P9 = Real LLM Provider（DONE）`、`P10 = Agent Runtime + Tool System`、`P11 = Writing Workflow / 完整小说创作 Pipeline`、`P12+ = 高级能力`。
+> - 请勿把本文档的 P 编号当现行阶段；涉及阶段进度一律以 README / 当前状态文档 / completion report 为准。
+>
+> 本文档内容保留作为 **V4.1 历史规划档案**，不依据旧编号推导当前状态。
+
 > **For agentic workers:** 本计划以 **Codex 为执行对象**。请严格按照本文档 Phase 顺序与各 Phase 内任务执行；每完成一个任务执行一遍：编译 → 测试 → 架构检查 → 更新文档 → Commit。禁止一次修改数百个文件。
 >
 > **架构约束（不可违反）**：以 [qianyan-master-plan.md](qianyan-master-plan.md)（V4.1，冻结）为唯一依据。**不修改架构、不新增 Agent、不重新设计系统**。若实现中发现架构层冲突，禁止自行改架构，须标记 `[IMPLEMENTATION ISSUE]` 并上报。

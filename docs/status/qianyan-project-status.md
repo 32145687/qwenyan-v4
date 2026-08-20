@@ -1,5 +1,17 @@
 # Qianyan Project Status Report
 
+> ⚠️ **本文档为历史状态快照（生成于 2026-08-18，反映 P6 完成时的状态），已被现行状态取代。**
+>
+> 本文档使用 **旧的 P0–P8 阶段编号**（其中 `P7 = Android UI`、`P8 = Desktop UI`），与**现行唯一阶段口径不同**：
+> - **现行路线**以 [README.md](../../README.md#current-development-roadmap现行路线唯一阶段口径) 的「Current Development Roadmap」为准：
+>   `P8.1 = Task Storage` ✅ DONE · `P8.2 = Task Manager / State Machine` ✅ DONE · `P8.3 = Task Execution` ✅ DONE ·
+>   `P9 = Real LLM Provider（DeepSeek / MiMo / LLMGateway / HTTP Transport / Provider Error Handling）` ✅ DONE ·
+>   `P10 = Agent Runtime + Tool System` ⬜ NOT STARTED · `P11 = Writing Workflow / 完整小说创作 Pipeline` ⬜ NOT STARTED ·
+>   `P12+ = 高级能力` 🔮 FUTURE。**Current Phase = P10**。
+> - 请勿把本文档的 P 编号当现行阶段；当前进度请以正文中的「Current Development Roadmap」与各 completion report 为准。
+>
+> 本文档内容保留作为 **历史状态档案**，不依据旧编号推导当前状态。
+
 > 生成日期：2026-08-18
 > 性质：状态记录文档（非开发计划）
 > 数据来源：真实读取代码仓库 / Git 状态 / Gradle 构建与测试结果 / 规划文档

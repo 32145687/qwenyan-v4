@@ -41,6 +41,47 @@
 **P6/P7 说明**：AI Analysis 默认仍走 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；P9 起装配方可注入 `DeepSeekLLMGateway` / `MiMoLLMGateway` 并选择 `ModelProfile.DEEPSEEK_V4_FLASH` / `MIMO_V2_5`；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
 **尚未实现**：ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P8.3 仅 IMPORT）、Agent 编排 / Tool System / Agent Runtime / 写作工作流（Workflow） / HITL / 自动 retry、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
 
+---
+
+## Current Development Roadmap（现行路线，唯一阶段口径）
+
+> 以**当前实际开发路线**为准，本表为仓库唯一现行阶段编号。
+> 该编号与历史规划文档（见 [docs/planning/qianyan-implementation-plan.md](docs/planning/qianyan-implementation-plan.md) 的旧 P0–P18 编号）**不同**；历史文档的旧编号已被本表取代。
+
+| 阶段 | 定义 | 状态 |
+|---|---|---|
+| P8.1 | Task Storage | ✅ DONE |
+| P8.2 | Task Manager / State Machine | ✅ DONE |
+| P8.3 | Task Execution / TaskRunner | ✅ DONE |
+| P9 | Real LLM Provider（DeepSeek / MiMo / LLMGateway / HTTP Transport / Provider Error Handling） | ✅ DONE |
+| P10 | Agent Runtime + Tool System（Agent Contract / Agent State / Execution Context / Runtime / Tool Contract / Tool Execution / Tool Registry / Tool Result / 基础 Agent 生命周期） | ⬜ NOT STARTED |
+| P11 | Writing Workflow / 完整小说创作 Pipeline | ⬜ NOT STARTED |
+| P12+ | 后续高级能力（Critique→Revision 完整循环 / HITL 完整流程 / PC UI / Android UI / 自动后台任务 / 知识更新闭环等） | 🔮 FUTURE |
+
+**Current Phase = P10**（下阶段任务：Agent Runtime + Tool System）。
+
+### 关于「什么时候才能真正开始小说创作」
+
+重要区分状态（避免把"模型已接入"误认为"已能创作"）：
+
+| 阶段完成 | 意味着 | 不意味着 |
+|---|---|---|
+| **P9 DONE** | LLM 可以被系统**正确调用**（DeepSeek / MiMo 已作为可靠 Provider 接入，经 `LLMGateway` 注入 API Key 与 fake transport 测试） | ❌ 已经可以完成小说创作 |
+| **P10 = NOT STARTED** | （完成后）Agent / Tool 执行基础具备 | ❌（完成前）尚无 Agent / Tool 执行能力 |
+| **P11 = NOT STARTED** | （后完成）完整小说创作 Pipeline 基础闭环建立 | ❌ 当前未实现 |
+
+**当前状态**：`P9 DONE` / `P10 NOT STARTED` / `P11 NOT STARTED` → **完整小说创作 = NOT STARTED**。
+
+### MiMo 特殊写作处理（规划登记，不在 P9/P10 实现）
+
+后续已登记需求：部分模型（尤其 MiMo）可能有**过度解释 / 额外说明 / 元话语 / 不符合小说正文风格**的输出。**不在 Provider 层处理**，未来在 **P11 的最终创作输出流程**中处理：
+
+```text
+Writing → Output Post-processing → MiMo-specific handling → Final Review → Final Novel Text
+```
+
+> **MiMo writing-specific post-processing = P11**（本次禁止实现，仅做规划登记）。
+
 ## P7 Android Functional Loop
 
 P7 形成 Android 端第一条完整功能闭环：
