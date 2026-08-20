@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P9）
+## 当前进度（P0–P10）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -34,12 +34,14 @@
 | P8.2 | Task Manager / Task State Machine：TaskManagerUseCases + 状态机 + Checkpoint revision 控制 + 类型化错误 | ✅ |
 | P8.3 | Task Execution：Application 层受管 Task 执行驱动（TaskRunner）+ IMPORT 纵向切片 + 类型化拒绝 + 测试 | ✅ |
 | P9 | 真实 LLM Provider 接入：DeepSeek-V4-Flash + MiMo-V2.5（JDK HttpClient transport + ProviderException 映射 + API Key 注入 + fake transport 测试） | ✅ |
+| P10 | Agent Runtime + Tool System：最小同步 Agent Runtime + Tool 契约/注册表/执行器 + LLM/Tool 循环 + maxSteps + 类型化错误 + 测试 | ✅ |
 
-**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE；**P9 = DONE**。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE；P9 = DONE；**P10 = DONE**。
 **P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）、P8.2（TaskManager 状态机 / Checkpoint 管理）与 P8.3（TaskRunner 受管执行 IMPORT 纵向切片）；**Task 生命周期 / 状态管理 / IMPORT 受管执行 = DONE，Agent / Tool / Workflow 编排 = NOT STARTED（后续阶段）**。
 **P9 说明**：真实 **DeepSeek-V4-Flash Provider = DONE**、**MiMo-V2.5 Provider = DONE**、**真实 LLM 接入 = DONE**（JDK HttpClient transport + ProviderException 结构化映射 + API Key 注入 + fake transport 测试）；**Agent / Tool / Workflow / 完整小说创作 Pipeline = NOT STARTED（后续阶段）**。
+**P10 说明**：最小 **Agent Runtime = DONE**、**Tool System = DONE**（`core:model` Tool 领域模型 + `:agent:tool` Tool 契约/Registry/Executor + `:agent:runtime` 同步执行循环），Agent 只依赖 `:provider:api` 的 `LLMGateway` 契约，可完成 **LLM → Tool call → ToolResult → LLM → Final** 的真实执行链，带 `maxSteps` 防护与类型化错误（ToolNotFound / InvalidToolRequest / ToolExecutionFailed / MaxStepsExceeded）；**Writing/Planning/Critique/Revision Agent、Novel Workflow、HITL、KnowledgeUpdate、完整小说创作 Pipeline = NOT STARTED（DEFER 到 P11+）**。
 **P6/P7 说明**：AI Analysis 默认仍走 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；P9 起装配方可注入 `DeepSeekLLMGateway` / `MiMoLLMGateway` 并选择 `ModelProfile.DEEPSEEK_V4_FLASH` / `MIMO_V2_5`；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
-**尚未实现**：ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P8.3 仅 IMPORT）、Agent 编排 / Tool System / Agent Runtime / 写作工作流（Workflow） / HITL / 自动 retry、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
+**尚未实现**：ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P8.3 仅 IMPORT）、写作工作流（Workflow） / Writing/Planning/Critique/Revision Agent / HITL / 自动 retry、完整小说创作 Pipeline、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
 
 ---
 
@@ -54,11 +56,11 @@
 | P8.2 | Task Manager / State Machine | ✅ DONE |
 | P8.3 | Task Execution / TaskRunner | ✅ DONE |
 | P9 | Real LLM Provider（DeepSeek / MiMo / LLMGateway / HTTP Transport / Provider Error Handling） | ✅ DONE |
-| P10 | Agent Runtime + Tool System（Agent Contract / Agent State / Execution Context / Runtime / Tool Contract / Tool Execution / Tool Registry / Tool Result / 基础 Agent 生命周期） | ⬜ NOT STARTED |
+| P10 | Agent Runtime + Tool System（Agent Contract / Agent State / Execution Context / Runtime / Tool Contract / Tool Execution / Tool Registry / Tool Result / 基础 Agent 生命周期） | ✅ DONE |
 | P11 | Writing Workflow / 完整小说创作 Pipeline | ⬜ NOT STARTED |
 | P12+ | 后续高级能力（Critique→Revision 完整循环 / HITL 完整流程 / PC UI / Android UI / 自动后台任务 / 知识更新闭环等） | 🔮 FUTURE |
 
-**Current Phase = P10**（下阶段任务：Agent Runtime + Tool System）。
+**Current Phase = P11**（下阶段任务：Writing Workflow / 完整小说创作 Pipeline）。
 
 ### 关于「什么时候才能真正开始小说创作」
 
@@ -67,10 +69,10 @@
 | 阶段完成 | 意味着 | 不意味着 |
 |---|---|---|
 | **P9 DONE** | LLM 可以被系统**正确调用**（DeepSeek / MiMo 已作为可靠 Provider 接入，经 `LLMGateway` 注入 API Key 与 fake transport 测试） | ❌ 已经可以完成小说创作 |
-| **P10 = NOT STARTED** | （完成后）Agent / Tool 执行基础具备 | ❌（完成前）尚无 Agent / Tool 执行能力 |
+| **P10 = DONE** | Agent / Tool 执行基础已具备（Agent 可经 `LLMGateway` 调用 LLM、调用 Tool、读取 ToolResult、继续执行、受 `maxSteps` 保护正常结束） | ❌ 已经可以完成小说创作（Writing Agent / Workflow 属 P11） |
 | **P11 = NOT STARTED** | （后完成）完整小说创作 Pipeline 基础闭环建立 | ❌ 当前未实现 |
 
-**当前状态**：`P9 DONE` / `P10 NOT STARTED` / `P11 NOT STARTED` → **完整小说创作 = NOT STARTED**。
+**当前状态**：`P9 DONE` / `P10 DONE` / `P11 NOT STARTED` → **Agent Runtime + Tool System = DONE，完整小说创作 Pipeline = NOT STARTED**。
 
 ### MiMo 特殊写作处理（规划登记，不在 P9/P10 实现）
 
@@ -256,18 +258,31 @@ P9 把两个真实写作模型作为**可靠 Provider** 接入现有 Provider �
 
 > 明确：P9 只负责把 **DeepSeek-V4-Flash / MiMo-V2.5** 可靠接入；**Agent / Tool / Workflow / Orchestrator / HITL / 完整小说创作 Pipeline = NOT STARTED（后续阶段）**。
 
+## P10 Agent Runtime + Tool System
+
+P10 在 P8 之上（不动 `TaskRunner` 职责）与 P9 之上（复用 `LLMGateway` 契约）落地**最小同步 Agent Runtime + Tool System**，**不做任何小说创作**：
+
+- **Tool 领域模型**（`core:model/tool`）：`ToolName`（复用于 `:model:agent` 已有类型）/ `ToolParameterSpec` / `ToolDefinition` / `ToolRequest` / `ToolResult`，参数用结构化 `JsonObject`，不引入复杂 Schema Framework。
+- **Tool System**（`:agent:tool`）：`Tool` 契约 + `ToolRegistry`（注册/查找/覆盖）+ `ToolExecutor`（请求校验：必填参数/未知参数 + 执行 + 未归一异常归一） + `ToolContext`（最小跨工具追踪）+ 类型化 `ToolError` / `ToolException`（`ToolNotFound` / `InvalidToolRequest` / `ToolExecutionFailed`）。不实现 Tool Discovery / 动态插件 / 权限系统。
+- **Agent Runtime**（`:agent:runtime`）：`AgentExecutionContext` + `AgentStep`（Final / Tool）+ `AgentResponseParser` + `AgentResult` + 同步 `AgentRuntime` 执行循环（`IDLE → RUNNING ─Tool→ RUNNING → COMPLETED / FAILED`），支持 **LLM → Tool call → ToolResult → LLM → Final** 全链；`maxSteps` 防无限循环（超限抛 `AgentException.MaxStepsExceeded`，`AgentState.FAILED`）。
+- **架构边界**：`:agent:runtime` 只依赖 `:provider:api` 的 `LLMGateway`（不接触 `provider:impl` / HTTP / API Key / SQLite / Android）；Tool 只经 `ToolExecutor` 调用。**未接 `TaskRunner`**（P10 测试独立运行 AgentRuntime，避免为"接起来"产生耦合）。
+- **Persistence / Concurrency**：默认 **transient、无新表、无 migration**；**同步执行**，无 Coroutine / Flow / Worker。
+- **测试**：`ToolRegistryTest`（5）/ `ToolExecutionTest`（8）/ `AgentRuntimeTest`（6）/ `AgentToolIntegrationTest`（2）/ `AgentProviderIntegrationTest`（2），全部用 `FakeProvider`（`LLMGateway` 脚本化假实现）+ `EchoToolForAgent`，**无真实 DeepSeek / MiMo 网络请求**。
+
+> 明确：P10 只验证 **Agent 能调用 LLM / 调用 Tool / 读取 ToolResult / 继续执行 / 正常结束**；**Writing/Planning/Critique/Revision Agent、Novel Workflow、HITL、KnowledgeUpdate、完整小说创作 Pipeline = NOT STARTED（DEFER 到 P11+）**。
+
 ## 模块结构
 
 ```
-core/model         领域模型（纯数据，零依赖）
+core/model         领域模型（纯数据，零依赖；含 P10 Tool 模型）
 core/engine        TXT 确定性引擎（纯 JVM，零 AI 依赖）
 core/engine/analysis 确定性 TXT → AnalysisInput 构建（P6，零 AI/存储依赖）
-agent/tool         工具系统 / 权限矩阵（占位）
-agent/runtime      Agent Runtime（占位）
+agent/tool         Tool 系统（Tool 契约 / Registry / Executor / Context / Error，P10）
+agent/runtime      Agent Runtime（同步执行循环 / maxSteps / Step 解析 / Result，P10）
 agent/agents       六个 Agent 定义（占位）
 agent/orchestration  Agent 编排（占位）
 provider/api       AI Provider 抽象契约（LLM 契约 + 请求/响应 + 异常，P6）
-provider/impl      AI Provider 实现（MockLLMGateway，P6）
+provider/impl      AI Provider 实现（Mock / DeepSeek / MiMo，P6 / P9）
 storage            SQLDelight + SQLite / Repository / Backup / Task·Checkpoint persistence（P8.1）
 application        Use Case 层（DI 容器 + 错误边界；含 P6 AnalysisUseCases / P8.2 TaskManagerUseCases）
 runtime            平台 Runtime 抽象（占位）
@@ -297,11 +312,14 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 ## 构建与测试
 
 ```bash
-# 全量测试（P9 验证通过：206 tests / 0 failures / 0 errors）
+# 全量测试（P9/P10 验证通过：JVM test BUILD SUCCESSFUL，含 Agent/Tool 测试）
 ./gradlew test
 
 # 关键模块测试（P4 TXT Pipeline / Storage / Application）
 ./gradlew :core:engine:test :storage:test :application:test
+
+# Agent Runtime + Tool System 测试（P10 新增）
+./gradlew :agent:tool:test :agent:runtime:test
 
 # Android 单元测试（P9：20 tests）
 ./gradlew :app:android:testDebugUnitTest
