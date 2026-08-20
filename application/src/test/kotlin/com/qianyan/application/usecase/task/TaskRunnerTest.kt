@@ -75,11 +75,12 @@ class TaskRunnerTest {
         assertTrue(app.tasks.findCheckpoints(id).isEmpty())
     }
 
-    /* Unsupported TaskType：WRITING / PLANNING / KNOWLEDGE_UPDATE 一律类型化拒绝，Task 保持 PENDING */
+    /* Unsupported TaskType：WRITING / KNOWLEDGE_UPDATE 无真实执行入口，字节源 execute 一律类型化拒绝，
+       Task 保持 PENDING。（P11.2 起 PLANNING 已放开，走 executePlanning 专用入口。） */
     @Test
     fun `unsupported task types are rejected with typed error`() {
         val app = container()
-        for (type in listOf(TaskType.WRITING, TaskType.PLANNING, TaskType.KNOWLEDGE_UPDATE)) {
+        for (type in listOf(TaskType.WRITING, TaskType.KNOWLEDGE_UPDATE)) {
             val id = app.tasks.create(type)
             val ex = assertFailsWith<ApplicationException> {
                 app.taskRunner.execute(id, source())

@@ -97,4 +97,13 @@ sealed interface ApplicationError {
 
     /** P11.1 写作 Use Case 仅为骨架：该阶段入口未被实现。detail 说明具体阶段（plan/write/critique/revise）。 */
     data class WritingScaffoldNotImplemented(val detail: String) : ApplicationError
+
+    // ---- P11.2 新增：Planning 相关错误（Planner 输出 / 流程失败，P11.2） ----
+    // 类型化错误，绝不靠 String message 判断类型；PlannerAgent / ErrorMapper 按具体类型归一到此处。
+
+    /** AI Planner 输出无法解析为合法 ChapterPlan（空输出 / 非 JSON / 缺字段 / 类型错误）。 */
+    data class InvalidPlanningOutput(val detail: String) : ApplicationError
+
+    /** Planning 流程级失败（Agent loop / 工具 / 编排等）。 */
+    data class PlanningFailed(val detail: String) : ApplicationError
 }

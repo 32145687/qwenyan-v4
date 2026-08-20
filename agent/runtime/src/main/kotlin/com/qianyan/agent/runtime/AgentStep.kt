@@ -4,6 +4,7 @@ import com.qianyan.model.agent.ToolName
 import com.qianyan.model.tool.ToolRequest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
@@ -42,11 +43,11 @@ object AgentResponseParser {
         if (root == null) {
             return AgentStep.Final(content)
         }
-        root["tool"]?.jsonPrimitive?.contentOrNull?.let { name ->
+        root["tool"]?.takeIf { it is JsonPrimitive }?.jsonPrimitive?.contentOrNull?.let { name ->
             val args = root["arguments"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: buildJsonObject { }
             return AgentStep.Tool(ToolRequest(toolName = ToolName(name), arguments = args))
         }
-        root["answer"]?.jsonPrimitive?.contentOrNull?.let { answer ->
+        root["answer"]?.takeIf { it is JsonPrimitive }?.jsonPrimitive?.contentOrNull?.let { answer ->
             return AgentStep.Final(answer)
         }
         return AgentStep.Final(content)

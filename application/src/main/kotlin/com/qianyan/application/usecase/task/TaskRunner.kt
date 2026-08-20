@@ -5,8 +5,11 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.txt.TxtUseCases
+import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.engine.txt.TxtSource
 import com.qianyan.model.TaskId
+import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.task.Task
 import com.qianyan.model.task.TaskType
 import kotlinx.serialization.json.JsonObject
@@ -23,43 +26,46 @@ import kotlinx.serialization.json.put
  *  - 执行失败：PENDING → RUNNING → fail → FAILED（记录错误，继续抛出类型化错误）；
  *  - 执行上下文经 [Checkpoint.snapshot]（JsonObject）保存：输入仅存元信息（title / source 显示名），
  *    不持久化 TxtSource 的 bytes（不改 core:model / 不加字段）；
- *  - P8.3 仅支持 TaskType.IMPORT；ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 抛类型化
- *    [ApplicationError.UnsupportedTaskType]（不靠字符串判断错误）；
+ *  - 支持类型：IMPORT（字节源）、PLANNING（P11.2，规划经 [PlanningExecutionUseCase]）；
+ *    ANALYSIS / WRITING / KNOWLEDGE_UPDATE 仍抛类型化 [ApplicationError.UnsupportedTaskType]；
  *  - restoreCheckpoint 仍只是恢复上下文，本类不重新执行任务（P8.2 语义）。
  *
- * 明确范围外（P8.3 不做）：Agent / Tool / Orchestrator / Workflow / HITL / 真实 Provider /
- * retry / 异步执行 / 取消 / 超时 —— 属 P8.4+。
+ * 明确范围外：Agent loop（在 AgentRuntime 中）/ Orchestrator / Workflow / HITL / 真实 Provider /
+ * retry / 异步执行 / 取消 / 超时 —— 不属本类，也不属 P11.2。
  */
 class TaskRunner(
     private val taskManager: TaskManagerUseCases,
     private val txtUseCases: TxtUseCases,
+    private val planning: PlanningExecutionUseCase,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
     /**
-     * 执行受管任务（当前仅 IMPORT 有真实执行能力）。
+     * 执行字节源受管任务（当前仅 IMPORT 有真实执行能力）。
      *
      * @param taskId 已创建（PENDING）的 Task
      * @param source TXT 原始字节（仅本次执行使用；snapshot 不保存 bytes）
      * @param title  导入标题
-     * @return 执行结束后的 Task（COMPLETED / FAILED）
-     * @throws ApplicationException 执行失败抛类型化错误；不支持的 TaskType 抛 UnsupportedTaskType
+     * @throws ApplicationException 执行失败抛类型化错误；非 IMPORT 字节源任务抛 UnsupportedTaskType
      */
     fun execute(taskId: TaskId, source: TxtSource, title: String = ""): Task {
         val task = taskManager.findById(taskId)
         return when (task.type) {
             TaskType.IMPORT -> executeImport(task, source, title)
-            TaskType.ANALYSIS,
-            TaskType.WRITING,
-            TaskType.PLANNING,
-            TaskType.KNOWLEDGE_UPDATE,
-            -> throw ApplicationException(
-                ApplicationError.UnsupportedTaskType("P8.3 尚不支持执行 ${task.type} 类型任务: ${taskId.value}"),
+            else -> throw ApplicationException(
+                ApplicationError.UnsupportedTaskType("字节源执行入口仅支持 IMPORT 任务; ${task.type} 请走对应专用入口: ${taskId.value}"),
             )
         }
     }
 
-    // ---- IMPORT：P8.3 唯一受管执行类型 ----
+    /**
+     * 执行 PLANNING 受管任务（P11.2）：PENDING → start → PlanningExecutionUseCase
+     * （Context Assembly → PlannerAgent → ChapterPlan → Checkpoint）→ COMPLETED / FAILED。
+     */
+    fun executePlanning(taskId: TaskId, request: UserWritingRequest): ChapterPlan =
+        planning.execute(taskId, request)
+
+    // ---- IMPORT：字节源受管执行类型 ----
 
     /** PENDING → RUNNING → 真实执行 TxtUseCases.importTxtAsOriginal → checkpoint → COMPLETED / FAILED。 */
     private fun executeImport(task: Task, source: TxtSource, title: String): Task {

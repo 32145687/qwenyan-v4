@@ -11,6 +11,9 @@ import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.task.TaskRunner
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.writing.WritingUseCases
+import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
+import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
+import com.qianyan.application.usecase.writing.planning.PlannerAgent
 import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.provider.LLMGateway
@@ -70,7 +73,20 @@ class ApplicationContainer(
     val txts: TxtUseCases get() = TxtUseCases(txtPipeline, txtRepository, novelRepository, errorMapper)
     val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper, model = analysisModel)
     val tasks: TaskManagerUseCases get() = TaskManagerUseCases(taskRepository, errorMapper)
-    val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, errorMapper)
+
+    /** P11.2 Planning 上下文组装（复用仓储，最小投影）。 */
+    val planningContextAssembly: PlanningContextAssembly
+        get() = PlanningContextAssembly(novelRepository, memoryRepository, vocabularyRepository, errorMapper)
+
+    /** P11.2 Planner Agent：经 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
+    val planner: PlannerAgent
+        get() = PlannerAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan。 */
+    val planning: PlanningExecutionUseCase
+        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, errorMapper)
+
+    val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, planning, errorMapper)
 
     /** P11.1 写作 Use Case 骨架：真实创作属 P11.2+；postProcessDraft seam 本阶段即生效（默认直通）。 */
     val writing: WritingUseCases get() = WritingUseCases(errorMapper)

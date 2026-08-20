@@ -33,6 +33,13 @@ dependencies {
     implementation(project(":provider:api"))
     testImplementation(project(":provider:impl"))
 
+    // P11.2 新增：Planning Use Case 复用 P10 的 AgentRuntime（经其调用 :provider:api 的 LLMGateway）。
+    // 依赖方向符合架构硬约束：application → :agent:runtime / :agent:tool → :provider:api；不依赖具体 Provider/Storage.
+    implementation(project(":agent:runtime"))
+    // PlannerAgent 直接装配 ToolExecutor/ToolRegistry 并处理 ToolException，需显式依赖 :agent:tool
+    // （:agent:runtime 以 implementation 暴露 :agent:tool，不对外传递，故在此补充）。
+    implementation(project(":agent:tool"))
+
     // 领域类型携带的序列化/时间类型（core:model 以 implementation 声明，需在此显式补充以编译/运行）。
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.datetime)
