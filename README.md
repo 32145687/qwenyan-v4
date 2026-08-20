@@ -35,8 +35,9 @@
 | P8.3 | Task Execution：Application 层受管 Task 执行驱动（TaskRunner）+ IMPORT 纵向切片 + 类型化拒绝 + 测试 | ✅ |
 | P9 | 真实 LLM Provider 接入：DeepSeek-V4-Flash + MiMo-V2.5（JDK HttpClient transport + ProviderException 映射 + API Key 注入 + fake transport 测试） | ✅ |
 | P10 | Agent Runtime + Tool System：最小同步 Agent Runtime + Tool 契约/注册表/执行器 + LLM/Tool 循环 + maxSteps + 类型化错误 + 测试 | ✅ |
+| P11.1 | Writing Scaffold：写作领域最小模型 Draft + Application 写作 Use Case 骨架（plan/write/critique/revise，诚实 NOT-implemented）+ MiMo 后处理 seam（接口位置，默认直通）+ 测试 | ✅ |
 
-**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE；P9 = DONE；**P10 = DONE**。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE；P9 = DONE；**P10 = DONE**；**P11.1 Scaffold = DONE（完整小说创作 Pipeline 仍 NOT STARTED，真实创作编排属 P11.2+）**。
 **P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）、P8.2（TaskManager 状态机 / Checkpoint 管理）与 P8.3（TaskRunner 受管执行 IMPORT 纵向切片）；**Task 生命周期 / 状态管理 / IMPORT 受管执行 = DONE，Agent / Tool / Workflow 编排 = NOT STARTED（后续阶段）**。
 **P9 说明**：真实 **DeepSeek-V4-Flash Provider = DONE**、**MiMo-V2.5 Provider = DONE**、**真实 LLM 接入 = DONE**（JDK HttpClient transport + ProviderException 结构化映射 + API Key 注入 + fake transport 测试）；**Agent / Tool / Workflow / 完整小说创作 Pipeline = NOT STARTED（后续阶段）**。
 **P10 说明**：最小 **Agent Runtime = DONE**、**Tool System = DONE**（`core:model` Tool 领域模型 + `:agent:tool` Tool 契约/Registry/Executor + `:agent:runtime` 同步执行循环），Agent 只依赖 `:provider:api` 的 `LLMGateway` 契约，可完成 **LLM → Tool call → ToolResult → LLM → Final** 的真实执行链，带 `maxSteps` 防护与类型化错误（ToolNotFound / InvalidToolRequest / ToolExecutionFailed / MaxStepsExceeded）；**Writing/Planning/Critique/Revision Agent、Novel Workflow、HITL、KnowledgeUpdate、完整小说创作 Pipeline = NOT STARTED（DEFER 到 P11+）**。
@@ -57,10 +58,28 @@
 | P8.3 | Task Execution / TaskRunner | ✅ DONE |
 | P9 | Real LLM Provider（DeepSeek / MiMo / LLMGateway / HTTP Transport / Provider Error Handling） | ✅ DONE |
 | P10 | Agent Runtime + Tool System（Agent Contract / Agent State / Execution Context / Runtime / Tool Contract / Tool Execution / Tool Registry / Tool Result / 基础 Agent 生命周期） | ✅ DONE |
-| P11 | Writing Workflow / 完整小说创作 Pipeline | ⬜ NOT STARTED |
+| P11 | Writing Workflow / 完整小说创作 Pipeline | 🔶 IN PROGRESS（P11.1 Scaffold = ✅ DONE；Planning/Writing/Critique/Revision 真实编排 = NOT STARTED） |
 | P12+ | 后续高级能力（Critique→Revision 完整循环 / HITL 完整流程 / PC UI / Android UI / 自动后台任务 / 知识更新闭环等） | 🔮 FUTURE |
 
-**Current Phase = P11**（下阶段任务：Writing Workflow / 完整小说创作 Pipeline）。
+**Current Phase = P11**（下阶段任务：Writing Workflow / 完整小说创作 Pipeline；**P11.1 Scaffold = DONE，P11.2+ 真实创作编排尚未开始**）。
+
+### P11.1 Writing Scaffold（已同步）
+
+P11.1 建立写作 Pipeline 的最小领域/应用骨架边界，**不实现真实创作**（明确 NOT-implemented，不伪装具备创作能力）：
+
+```text
+Task
+  ↓
+WritingUseCases (plan → write → critique → revise)   ← P11.1 骨架（抛 WritingScaffoldNotImplemented）
+  ↓
+AgentRuntime → LLMGateway → DeepSeek / MiMo          ← 真实编排属 P11.2+
+  ↓
+Draft → WritingPostProcessor（MiMo seam，P11.1 默认直通）
+```
+
+- **core:model**：新增最小 `Draft` 领域模型（含 `VariantScope` 作用域推导 / `DraftStatus` / `DraftId`）；复用已有 `ChapterPlan` / `UserWritingRequest` / `ValidationResult`，不重复建模。
+- **application**：`WritingUseCases` 骨架（plan/write/critique/revise 存在但抛类型化 `WritingScaffoldNotImplemented`）+ `WritingPostProcessor` seam（默认 `PassthroughWritingPostProcessor`，MiMo 专用后处理 **DEFER P11.5**）。
+- **边界**：正文持久化（SQLDelight / Repository）**DEFER P11.3**；不放开 `TaskRunner`、不改 P8/P9/P10 核心逻辑；无 Android/Desktop UI；无真实小说生成。
 
 ### 关于「什么时候才能真正开始小说创作」
 
@@ -70,19 +89,22 @@
 |---|---|---|
 | **P9 DONE** | LLM 可以被系统**正确调用**（DeepSeek / MiMo 已作为可靠 Provider 接入，经 `LLMGateway` 注入 API Key 与 fake transport 测试） | ❌ 已经可以完成小说创作 |
 | **P10 = DONE** | Agent / Tool 执行基础已具备（Agent 可经 `LLMGateway` 调用 LLM、调用 Tool、读取 ToolResult、继续执行、受 `maxSteps` 保护正常结束） | ❌ 已经可以完成小说创作（Writing Agent / Workflow 属 P11） |
-| **P11 = NOT STARTED** | （后完成）完整小说创作 Pipeline 基础闭环建立 | ❌ 当前未实现 |
+| **P11 = IN PROGRESS** | **P11.1 Scaffold = DONE**：写作 Pipeline 的最小领域/应用骨架边界已建立（Draft 模型 + `WritingUseCases` 诚实骨架 + `WritingPostProcessor` seam），但 **plan/write/critique/revise 均 NOT-implemented** | ❌ 当前不能生成小说（真实创作编排属 P11.2 → P11.5） |
 
-**当前状态**：`P9 DONE` / `P10 DONE` / `P11 NOT STARTED` → **Agent Runtime + Tool System = DONE，完整小说创作 Pipeline = NOT STARTED**。
+**当前状态**：`P9 DONE` / `P10 DONE` / `P11 IN PROGRESS（P11.1 Scaffold = DONE）` → **Agent Runtime + Tool System = DONE，Writing Scaffold 边界 = DONE，完整小说创作编排 = NOT STARTED（P11.2+）**。
 
-### MiMo 特殊写作处理（规划登记，不在 P9/P10 实现）
+### MiMo 特殊写作处理（P11.1 已建立 seam 位置，算法 DEFER P11.5）
 
-后续已登记需求：部分模型（尤其 MiMo）可能有**过度解释 / 额外说明 / 元话语 / 不符合小说正文风格**的输出。**不在 Provider 层处理**，未来在 **P11 的最终创作输出流程**中处理：
+部分模型（尤其 MiMo）可能有**过度解释 / 额外说明 / 元话语 / 不符合小说正文风格**的输出。**不在 Provider 层处理**，归属 **Application 写作编排层**的 `WritingPostProcessor` seam（P11.1 已建立接口，默认 `PassthroughWritingPostProcessor` 直通，不特判模型）：
 
 ```text
-Writing → Output Post-processing → MiMo-specific handling → Final Review → Final Novel Text
+Writing → LLM → Draft → 写作完成
+  → 若模型 == MiMo（mimo-v2.5-pro）
+  → MiMo 专用写作后处理 seam（WritingPostProcessor 的模型特判实现）
+  → Final Draft
 ```
 
-> **MiMo writing-specific post-processing = P11**（本次禁止实现，仅做规划登记）。
+> **MiMo writing post-processing = P11（具体算法实现 DEFER P11.5）**；P11.1 只登记/建立 seam 接口位置与默认直通实现。
 
 ## P7 Android Functional Loop
 
