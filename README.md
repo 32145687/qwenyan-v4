@@ -17,7 +17,7 @@
 - **Repository 隔离**：上层只面向仓储接口，不直接操作 Storage。
 - **Agent 受控**：Agent 通过 Tool → Engine → Repository 消费能力，不反向耦合、不越权访问存储。
 
-## 当前进度（P0–P10）
+## 当前进度（P0–P11.2）
 
 | 阶段 | 内容 | 状态 |
 |---|---|---|
@@ -36,13 +36,14 @@
 | P9 | 真实 LLM Provider 接入：DeepSeek-V4-Flash + MiMo-V2.5（JDK HttpClient transport + ProviderException 映射 + API Key 注入 + fake transport 测试） | ✅ |
 | P10 | Agent Runtime + Tool System：最小同步 Agent Runtime + Tool 契约/注册表/执行器 + LLM/Tool 循环 + maxSteps + 类型化错误 + 测试 | ✅ |
 | P11.1 | Writing Scaffold：写作领域最小模型 Draft + Application 写作 Use Case 骨架（plan/write/critique/revise，诚实 NOT-implemented）+ MiMo 后处理 seam（接口位置，默认直通）+ 测试 | ✅ |
+| P11.2 | Context + Planning：UserWritingRequest → 写作上下文（Novel/Variant/Memory/Vocabulary 最小投影）→ Planner Agent（经 AgentRuntime → LLMGateway，默认 Mock）→ ChapterPlan → Task Checkpoint（PLANNING 执行到 COMPLETED）+ 类型化错误 + 测试 | ✅ |
 
-**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE；P9 = DONE；**P10 = DONE**；**P11.1 Scaffold = DONE（完整小说创作 Pipeline 仍 NOT STARTED，真实创作编排属 P11.2+）**。
+**当前阶段**：P7 = DONE（Android 功能闭环已完成并验收）；P8.0 = DONE；P8.1 = DONE；P8.2 = DONE；P8.3 = DONE；P9 = DONE；**P10 = DONE**；**P11.1 Scaffold = DONE**；**P11.2 Context + Planning = DONE（真实写作 / Critique / Revision / 完整小说生成属 P11.3+，仍 NOT STARTED）**。
 **P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）、P8.2（TaskManager 状态机 / Checkpoint 管理）与 P8.3（TaskRunner 受管执行 IMPORT 纵向切片）；**Task 生命周期 / 状态管理 / IMPORT 受管执行 = DONE，Agent / Tool / Workflow 编排 = NOT STARTED（后续阶段）**。
 **P9 说明**：真实 **DeepSeek-V4-Flash Provider = DONE**、**MiMo-V2.5 Provider = DONE**、**真实 LLM 接入 = DONE**（JDK HttpClient transport + ProviderException 结构化映射 + API Key 注入 + fake transport 测试）；**Agent / Tool / Workflow / 完整小说创作 Pipeline = NOT STARTED（后续阶段）**。
 **P10 说明**：最小 **Agent Runtime = DONE**、**Tool System = DONE**（`core:model` Tool 领域模型 + `:agent:tool` Tool 契约/Registry/Executor + `:agent:runtime` 同步执行循环），Agent 只依赖 `:provider:api` 的 `LLMGateway` 契约，可完成 **LLM → Tool call → ToolResult → LLM → Final** 的真实执行链，带 `maxSteps` 防护与类型化错误（ToolNotFound / InvalidToolRequest / ToolExecutionFailed / MaxStepsExceeded）；**Writing/Planning/Critique/Revision Agent、Novel Workflow、HITL、KnowledgeUpdate、完整小说创作 Pipeline = NOT STARTED（DEFER 到 P11+）**。
 **P6/P7 说明**：AI Analysis 默认仍走 **Mock Provider（MockLLMGateway）**，仅用于验证完整应用调用链；P9 起装配方可注入 `DeepSeekLLMGateway` / `MiMoLLMGateway` 并选择 `ModelProfile.DEEPSEEK_V4_FLASH` / `MIMO_V2_5`；正式 **Knowledge / Character / Event / Timeline / World 持久化 DEFER**；**Variant Analysis DEFER**；`AnalysisResult` 为 transient（不建表）；AI 提取仅进入 PENDING `VocabularyCandidate`，不直接写正式 `VocabularyEntry`；**Candidate 确认 / 转正式词条流程 DEFER**。
-**尚未实现**：ANALYSIS / WRITING / PLANNING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P8.3 仅 IMPORT）、写作工作流（Workflow） / Writing/Planning/Critique/Revision Agent / HITL / 自动 retry、完整小说创作 Pipeline、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
+**尚未实现**：WRITING / KNOWLEDGE_UPDATE 等其余 TaskType 的真实执行（P11.2 已放开 PLANNING）、Draft 正文生成（P11.3+）、写作工作流（Workflow） / Writing/Critique/Revision Agent / HITL / 自动 retry、完整小说创作 Pipeline、Knowledge / Character / Event / Timeline / World 正式持久化、Candidate 确认流程、Android Task UI、Desktop UI、PC / Cloud 后端。
 
 ---
 
@@ -58,10 +59,12 @@
 | P8.3 | Task Execution / TaskRunner | ✅ DONE |
 | P9 | Real LLM Provider（DeepSeek / MiMo / LLMGateway / HTTP Transport / Provider Error Handling） | ✅ DONE |
 | P10 | Agent Runtime + Tool System（Agent Contract / Agent State / Execution Context / Runtime / Tool Contract / Tool Execution / Tool Registry / Tool Result / 基础 Agent 生命周期） | ✅ DONE |
-| P11 | Writing Workflow / 完整小说创作 Pipeline | 🔶 IN PROGRESS（P11.1 Scaffold = ✅ DONE；Planning/Writing/Critique/Revision 真实编排 = NOT STARTED） |
+| P11.1 | Writing Scaffold（Draft 模型 + WritingUseCases 诚实骨架 + MiMo 后处理 seam） | ✅ DONE |
+| P11.2 | Context + Planning（写作上下文组装 + Planner Agent（经 AgentRuntime → LLMGateway，默认 Mock）+ ChapterPlan 解析 + PLANNING Task 执行到 Checkpoint/COMPLETED） | ✅ DONE |
+| P11 | Writing Workflow / 完整小说创作 Pipeline | 🔶 IN PROGRESS（P11.1 Scaffold = ✅ DONE；P11.2 Context + Planning = ✅ DONE；P11.3+ Writing/Critique/Revision 真实编排 = NOT STARTED） |
 | P12+ | 后续高级能力（Critique→Revision 完整循环 / HITL 完整流程 / PC UI / Android UI / 自动后台任务 / 知识更新闭环等） | 🔮 FUTURE |
 
-**Current Phase = P11**（下阶段任务：Writing Workflow / 完整小说创作 Pipeline；**P11.1 Scaffold = DONE，P11.2+ 真实创作编排尚未开始**）。
+**Current Phase = P11**（下阶段任务：Writing Workflow / 完整小说创作 Pipeline；**P11.1 Scaffold = DONE，P11.2 Context + Planning = DONE，P11.3+ 真实创作编排尚未开始**）。
 
 ### P11.1 Writing Scaffold（已同步）
 
@@ -81,6 +84,31 @@ Draft → WritingPostProcessor（MiMo seam，P11.1 默认直通）
 - **application**：`WritingUseCases` 骨架（plan/write/critique/revise 存在但抛类型化 `WritingScaffoldNotImplemented`）+ `WritingPostProcessor` seam（默认 `PassthroughWritingPostProcessor`，MiMo 专用后处理 **DEFER P11.5**）。
 - **边界**：正文持久化（SQLDelight / Repository）**DEFER P11.3**；不放开 `TaskRunner`、不改 P8/P9/P10 核心逻辑；无 Android/Desktop UI；无真实小说生成。
 
+### P11.2 Context + Planning（已同步）
+
+P11.2 建立第一条**用户创作要求 → 写作上下文 → Planner Agent → ChapterPlan → Checkpoint** 最小可运行链路，**不写正文、不做 Critique/Revision**（明确 P11.3+ 范围外）：
+
+```text
+Task (PLANNING)
+  ↓
+TaskRunner.executePlanning
+  ↓
+PlanningExecutionUseCase
+  ↓
+PlanningContextAssembly  →  PlanningContext（Novel/Variant/Memory/Vocabulary 最小投影）
+  ↓
+PlannerAgent → AgentRuntime → LLMGateway（默认 Mock）
+  ↓
+ChapterPlanParser → ChapterPlan
+  ↓
+Checkpoint（PLANNING）→ COMPLETED
+```
+
+- **复用**：不改 P8/P9/P10 核心（TaskManager 状态机 / Checkpoint / AgentRuntime / ToolExecutor / LLMGateway 原样复用）；不新增数据库表 / migration；不新增第二套 Context 模型。
+- **application**：`PlanningContextAssembly`（UserWritingRequest + Novel/Variant + 作用域可见 Memory/Vocabulary 最小投影，Character 因无持久化仓储暂空投影）+ `PlannerAgent`（经 `AgentRuntime` → `LLMGateway`，默认 Mock，禁止直连 Provider/HTTP/API Key/Storage）+ `ChapterPlanParser`（合法/非法 JSON/缺字段/空输出/类型错误 → 类型化 `InvalidPlanningOutput`）+ `PlanningExecutionUseCase`（Task 生命周期 + Checkpoint 保存/恢复）+ `PlanningSnapshot`（ChapterPlan ↔ Checkpoint JsonObject）。
+- **TaskRunner**：仅放开 `TaskType.PLANNING`（新增 `executePlanning` 专用入口），不改成 Workflow Engine / Orchestrator；WRITING / KNOWLEDGE_UPDATE 仍类型化拒绝。
+- **边界**：Draft 正文生成 / Writing / Critique / Revision / Knowledge Update / Final Review / MiMo 写作后处理算法 / HITL / Workflow Orchestrator / Android/Desktop UI / 自动 retry / 真实网络调用 / 新 Provider / 新数据库 = **NOT STARTED（P11.3+）**。
+
 ### 关于「什么时候才能真正开始小说创作」
 
 重要区分状态（避免把"模型已接入"误认为"已能创作"）：
@@ -89,9 +117,9 @@ Draft → WritingPostProcessor（MiMo seam，P11.1 默认直通）
 |---|---|---|
 | **P9 DONE** | LLM 可以被系统**正确调用**（DeepSeek / MiMo 已作为可靠 Provider 接入，经 `LLMGateway` 注入 API Key 与 fake transport 测试） | ❌ 已经可以完成小说创作 |
 | **P10 = DONE** | Agent / Tool 执行基础已具备（Agent 可经 `LLMGateway` 调用 LLM、调用 Tool、读取 ToolResult、继续执行、受 `maxSteps` 保护正常结束） | ❌ 已经可以完成小说创作（Writing Agent / Workflow 属 P11） |
-| **P11 = IN PROGRESS** | **P11.1 Scaffold = DONE**：写作 Pipeline 的最小领域/应用骨架边界已建立（Draft 模型 + `WritingUseCases` 诚实骨架 + `WritingPostProcessor` seam），但 **plan/write/critique/revise 均 NOT-implemented** | ❌ 当前不能生成小说（真实创作编排属 P11.2 → P11.5） |
+| **P11 = IN PROGRESS** | **P11.1 Scaffold = DONE**：写作 Pipeline 的最小领域/应用骨架边界已建立（Draft 模型 + `WritingUseCases` 诚实骨架 + `WritingPostProcessor` seam），但 **plan/write/critique/revise 均 NOT-implemented**；**P11.2 Context + Planning = DONE**：`UserWritingRequest → 写作上下文 → Planner Agent → ChapterPlan → Checkpoint` 已可运行（默认 Mock LLM），但**不产生正文** | ❌ 当前不能生成小说（真实创作编排属 P11.3 → P11.5） |
 
-**当前状态**：`P9 DONE` / `P10 DONE` / `P11 IN PROGRESS（P11.1 Scaffold = DONE）` → **Agent Runtime + Tool System = DONE，Writing Scaffold 边界 = DONE，完整小说创作编排 = NOT STARTED（P11.2+）**。
+**当前状态**：`P9 DONE` / `P10 DONE` / `P11 IN PROGRESS（P11.1 Scaffold = DONE，P11.2 Context + Planning = DONE）` → **Agent Runtime + Tool System = DONE，Writing Scaffold 边界 = DONE，Context + Planning 最小链路 = DONE，Draft 正文生成 / Critique / Revision = NOT STARTED（P11.3+）**。
 
 ### MiMo 特殊写作处理（P11.1 已建立 seam 位置，算法 DEFER P11.5）
 
@@ -334,7 +362,7 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 ## 构建与测试
 
 ```bash
-# 全量测试（P9/P10 验证通过：JVM test BUILD SUCCESSFUL，含 Agent/Tool 测试）
+# 全量测试（P11.2 验证通过：JVM test BUILD SUCCESSFUL；含 Agent/Tool/Planning 测试）
 ./gradlew test
 
 # 关键模块测试（P4 TXT Pipeline / Storage / Application）
@@ -343,6 +371,9 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 # Agent Runtime + Tool System 测试（P10 新增）
 ./gradlew :agent:tool:test :agent:runtime:test
 
+# Planning（P11.2 新增）
+./gradlew :application:test --tests "com.qianyan.application.usecase.writing.planning.*"
+
 # Android 单元测试（P9：20 tests）
 ./gradlew :app:android:testDebugUnitTest
 
@@ -350,7 +381,7 @@ UI → Application → Task Manager → Agent Orchestrator → 6 Agent
 ./gradlew :app:android:assembleDebug
 ```
 
-> 注：P7.7 验收实测 `./gradlew test`、`:app:android:testDebugUnitTest`、`:app:android:assembleDebug` 均 BUILD SUCCESSFUL；APK 生成于 `app/android/build/outputs/apk/debug/android-debug.apk`。
+> 注：P7.7 验收实测 `./gradlew test`、`:app:android:testDebugUnitTest`、`:app:android:assembleDebug` 均 BUILD SUCCESSFUL；APK 生成于 `app/android/build/outputs/apk/debug/android-debug.apk`。P11.2 在本环境（无 Android SDK）重跑 `:app:android:testDebugUnitTest` / `assembleDebug` 会失败于 SDK 解析（`local.properties` 的 `sdk.dir` 指向不存在的目录），JVM 全量测试已通过。
 
 ## TXT Pipeline（P4）
 
