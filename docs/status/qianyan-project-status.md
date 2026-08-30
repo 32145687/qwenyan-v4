@@ -6,8 +6,9 @@
 > - **现行路线**以 [README.md](../../README.md#current-development-roadmap现行路线唯一阶段口径) 的「Current Development Roadmap」为准：
 >   `P8.1 = Task Storage` ✅ DONE · `P8.2 = Task Manager / State Machine` ✅ DONE · `P8.3 = Task Execution` ✅ DONE ·
 >   `P9 = Real LLM Provider（DeepSeek / MiMo / LLMGateway / HTTP Transport / Provider Error Handling）` ✅ DONE ·
->   `P10 = Agent Runtime + Tool System` ⬜ NOT STARTED · `P11 = Writing Workflow / 完整小说创作 Pipeline` ⬜ NOT STARTED ·
->   `P12+ = 高级能力` 🔮 FUTURE。**Current Phase = P10**。
+>   `P10 = Agent Runtime + Tool System` ✅ DONE ·
+>   `P11.1 = Writing Scaffold` ✅ DONE · `P11.2 = Context + Planning` ✅ DONE · `P11.3 = Writing 最小链路` ✅ DONE ·
+>   `P11.4 / P11.5 = Critique/Revision + MiMo 后处理算法` ⬜ NOT STARTED · `P12+ = 高级能力` 🔮 FUTURE。**Current Phase = P11（P11.3 完成）**。
 > - 请勿把本文档的 P 编号当现行阶段；当前进度请以正文中的「Current Development Roadmap」与各 completion report 为准。
 >
 > 本文档内容保留作为 **历史状态档案**，不依据旧编号推导当前状态。
