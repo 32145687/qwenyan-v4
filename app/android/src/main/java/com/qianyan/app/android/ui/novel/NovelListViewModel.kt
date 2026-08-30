@@ -118,6 +118,9 @@ class NovelListViewModel(
         is ApplicationError.TaskAlreadyCancelled -> "任务已取消：${error.detail}"
         is ApplicationError.RestoreFailure -> "任务上下文恢复失败：${error.detail}"
         is ApplicationError.UnsupportedTaskType -> "不支持的任务类型：${error.detail}"
+        is ApplicationError.InvalidPlanningOutput -> "规划输出无效，请重试"
+        is ApplicationError.PlanningFailed -> "规划失败，请重试"
+        is ApplicationError.WritingScaffoldNotImplemented -> "该写作能力暂未开放"
     }
 
     companion object {
