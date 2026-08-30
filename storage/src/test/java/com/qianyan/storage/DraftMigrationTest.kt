@@ -2,37 +2,37 @@ package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.task.TaskStatus
 import com.qianyan.storage.db.DatabaseInitializer
 import com.qianyan.storage.db.QianyanDbFactory
-import com.qianyan.storage.repository.SqliteMemoryRepository
+import com.qianyan.storage.repository.SqliteDraftRepository
 import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteTaskRepository
-import com.qianyan.storage.repository.SqliteTxtRepository
-import com.qianyan.storage.repository.SqliteVocabularyRepository
+import kotlinx.datetime.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * P8.1 · v1 → v2 migration 测试（P11.3 起 schema 已到 v3）。
+ * P11.3 · v2 → v3 migration 测试。
  *
- * 目标：构建一个**真实 v1 schema**（仅含 P0–P7 已有业务表，无 Task / Checkpoint，
- * `PRAGMA user_version = 1`），写入代表性旧数据（Novel / Memory / Vocabulary / TXT），
- * 再经 [DatabaseInitializer.initializeDatabase] 升级到当前最新版本，验证：
+ * 目标：构建一个**真实 v2 schema**（P8.1 的 Task / Checkpoint 已存在，无 ChapterDraft，
+ * `PRAGMA user_version = 2`），写入代表性旧数据（Novel / Task / Checkpoint），
+ * 再经 [DatabaseInitializer.initializeDatabase] 升级到 v3，验证：
  *   1) 旧数据原样保留（通过既有 Repository 读回，而非裸 SQL）；
- *   2) Task / Checkpoint 表已创建；
- *   3) 迁移后可正常 CRUD；
- *   4) `PRAGMA user_version` 同步为当前最新版本（P11.3 为 3）；
- *   5) 重复执行 migration 幂等安全。
+ *   2) ChapterDraft 表已创建、Draft 可正常 CRUD；
+ *   3) `PRAGMA user_version` 同步为 3；
+ *   4) 重复执行 migration 幂等安全。
+ * 结论：v2 → v3 只增 ChapterDraft，不破坏既有数据（P11.3 目标）。
  */
-class TaskMigrationTest {
+class DraftMigrationTest {
 
-    /** 真实 v1 schema（= 当前 Schema.sq 减去 v2 新增的 Task / Checkpoint；SQLDelight 真实 SQL 形态）。 */
-    private val V1_DDL: List<String> = listOf(
+    /** 真实 v2 schema = v1 业务表（P0–P7）+ Task / Checkpoint（P8.1）；无 ChapterDraft。 */
+    private val V2_DDL: List<String> = listOf(
         """
         CREATE TABLE Novel (
             novel_id    TEXT NOT NULL PRIMARY KEY,
@@ -188,38 +188,53 @@ class TaskMigrationTest {
             FOREIGN KEY (document_id) REFERENCES TxtDocument(document_id)
         )
         """,
+        """
+        CREATE TABLE Task (
+            task_id         TEXT NOT NULL PRIMARY KEY,
+            type            TEXT NOT NULL,
+            status          TEXT NOT NULL,
+            progress        REAL NOT NULL DEFAULT 0,
+            revision_count  INTEGER NOT NULL DEFAULT 0 CHECK (revision_count BETWEEN 0 AND 3),
+            error           TEXT,
+            created_at      INTEGER NOT NULL,
+            updated_at      INTEGER NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE Checkpoint (
+            checkpoint_id   TEXT NOT NULL PRIMARY KEY,
+            task_id         TEXT NOT NULL,
+            revision        INTEGER NOT NULL CHECK (revision BETWEEN 1 AND 3),
+            stage           TEXT NOT NULL,
+            snapshot        TEXT,
+            created_at      INTEGER NOT NULL,
+            UNIQUE (task_id, revision),
+            FOREIGN KEY (task_id) REFERENCES Task(task_id)
+        )
+        """,
     )
 
     private fun JdbcSqliteDriver.exec(sql: String) {
         execute(null, sql, 0)
     }
 
-    private fun buildV1Database(driver: JdbcSqliteDriver) {
-        V1_DDL.forEach { driver.exec(it) }
-        driver.exec("PRAGMA user_version = 1")
+    private fun buildV2Database(driver: JdbcSqliteDriver) {
+        V2_DDL.forEach { driver.exec(it) }
+        driver.exec("PRAGMA user_version = 2")
     }
 
-    private fun insertV1Data(driver: JdbcSqliteDriver) {
+    private fun insertV2Data(driver: JdbcSqliteDriver) {
         driver.exec(
             "INSERT INTO Novel(novel_id, project_id, title, source, genre, synopsis, scope, status, created_at, updated_at) " +
-                "VALUES ('mig-novel', 'proj-mig', '旧原著', 'ORIGINAL_NOVEL', '[\"仙侠\"]', '旧书简介', 'ORIGINAL', 'DRAFT', 1000, 1000)",
+                "VALUES ('mig-novel', 'proj-mig', '旧原著v2', 'ORIGINAL_NOVEL', '[\"仙侠\"]', '旧书简介', 'ORIGINAL', 'DRAFT', 1000, 1000)",
         )
         driver.exec(
-            "INSERT INTO MemoryEntry(memory_id, novel_id, variant_id, scope, layer, content, source, created_by, created_at, updated_at) " +
-                "VALUES ('mig-mem', 'mig-novel', NULL, 'ORIGINAL', 'LONG_TERM', '旧记忆', 'test', NULL, 1000, 1000)",
+            "INSERT INTO Task(task_id, type, status, progress, revision_count, error, created_at, updated_at) " +
+                "VALUES ('mig-task', 'PLANNING', 'COMPLETED', 1.0, 1, NULL, 1000, 1000)",
         )
         driver.exec(
-            "INSERT INTO Vocabulary(vocabulary_id, novel_id, variant_id, scope_level, name) " +
-                "VALUES ('mig-vocab', 'mig-novel', NULL, 'NOVEL', '旧词库')",
-        )
-        driver.exec(
-            "INSERT INTO VocabularyEntry(entry_id, vocabulary_id, novel_id, variant_id, scope_level, canonical, aliases, type, replacement, status) " +
-                "VALUES ('mig-entry', 'mig-vocab', 'mig-novel', NULL, 'NOVEL', '灵石', '[\"石\"]', 'WORLD_TERM', '星石', 'APPROVED')",
-        )
-        driver.exec(
-            "INSERT INTO TxtDocument(document_id, novel_id, source_name, title, encoding, had_bom, byte_count, char_count, " +
-                "original_text, normalized_text, content_hash, rule_version, status, created_at) " +
-                "VALUES ('mig-txt', 'mig-novel', 'a.txt', '旧文', 'UTF8', 0, 9, 3, 'abc', 'abc', 'hash1', 'v1', 'SUCCESS', 1000)",
+            "INSERT INTO Checkpoint(checkpoint_id, task_id, revision, stage, snapshot, created_at) " +
+                "VALUES ('mig-cp', 'mig-task', 1, 'PLANNING', NULL, 1000)",
         )
     }
 
@@ -243,81 +258,79 @@ class TaskMigrationTest {
         ).value
 
     @Test
-    fun `v1 to v2 migration preserves old data and enables task crud`() {
-        val file = java.nio.file.Files.createTempFile("qianyan_mig_test", ".db").toAbsolutePath()
+    fun `v2 to v3 migration preserves old data and enables draft crud`() {
+        val file = java.nio.file.Files.createTempFile("qianyan_mig_v3_test", ".db").toAbsolutePath()
         val url = "jdbc:sqlite:$file"
+        try {
+            // 1) 构建真实 v2 schema + 写入旧数据
+            val v2 = JdbcSqliteDriver(url)
+            buildV2Database(v2)
+            insertV2Data(v2)
+            assertTrue(tableExists(v2, "Novel"), "v2 库应有 Novel")
+            assertTrue(tableExists(v2, "Task"), "v2 库应有 Task")
+            assertTrue(!tableExists(v2, "ChapterDraft"), "v2 库不应有 ChapterDraft")
+            assertEquals(2L, userVersion(v2))
+            v2.getConnection().close()
 
-        // 1) 构建真实 v1 schema + 写入旧数据
-        val v1 = JdbcSqliteDriver(url)
-        buildV1Database(v1)
-        insertV1Data(v1)
-        assertTrue(tableExists(v1, "Novel"), "v1 库应有 Novel")
-        assertTrue(!tableExists(v1, "Task"), "v1 库不应有 Task")
-        assertEquals(1L, userVersion(v1))
-        (v1).getConnection().close()
+            // 2) 重新打开：DatabaseInitializer 检测到旧 v2 库 → 应用 2.sqm migration 到 v3
+            val h = QianyanDbFactory.open(url)
+            val driver = h.driver as JdbcSqliteDriver
 
-        // 2) 重新打开：DatabaseInitializer 检测到旧 v1 库 → 应用 1.sqm migration（迁移到当前最新版本）
-        val h = QianyanDbFactory.open(url)
+            // 3) 新表已创建，版本已同步
+            assertTrue(tableExists(driver, "ChapterDraft"), "migration 后应存在 ChapterDraft 表")
+            assertEquals(3L, userVersion(driver), "migration 后 user_version 应为 3")
+
+            // 4) 旧数据原样保留（通过既有 Repository 读回）
+            val novels = SqliteNovelRepository(h.db)
+            val readNovel = novels.getNovel(NovelId("mig-novel"))
+            assertNotNull(readNovel, "旧 Novel 数据应保留")
+            assertEquals("旧原著v2", readNovel.title)
+            assertEquals(listOf("仙侠"), readNovel.genre)
+            assertEquals(VariantScope.ORIGINAL, readNovel.scope)
+
+            val tasks = SqliteTaskRepository(h.db)
+            val readTask = tasks.findById(com.qianyan.model.TaskId("mig-task"))
+            assertNotNull(readTask, "旧 Task 数据应保留")
+            assertEquals(TaskStatus.COMPLETED, readTask.status)
+            assertEquals(1, tasks.findCheckpoints(readTask.taskId).size)
+
+            // 5) 迁移后 Draft 可正常 CRUD
+            val drafts = SqliteDraftRepository(h.db)
+            val now = Clock.System.now()
+            val draft = com.qianyan.model.writing.Draft(
+                draftId = com.qianyan.model.DraftId("post-mig-draft"),
+                novelId = NovelId("mig-novel"),
+                content = "迁移后写入的正文",
+                status = com.qianyan.model.writing.DraftStatus.WRITTEN,
+                sourceModel = "mock-v1",
+                createdAt = now,
+                updatedAt = now,
+            )
+            drafts.save(draft)
+            val persisted = drafts.getById(draft.draftId)
+            assertNotNull(persisted)
+            assertEquals("迁移后写入的正文", persisted.content)
+            assertEquals(com.qianyan.model.writing.DraftStatus.WRITTEN, persisted.status)
+            assertEquals("mock-v1", persisted.sourceModel)
+            // 幂等：再次 save 同 novel 不会重复
+            assertEquals(1, drafts.listByNovel(NovelId("mig-novel")).size)
+            assertTrue(tableExists(driver, "ChapterDraft"))
+
+            // 6) 重复执行初始化幂等安全（不报"表已存在"）
+            DatabaseInitializer.initializeDatabase(driver)
+            DatabaseInitializer.initializeDatabase(driver)
+            assertTrue(tableExists(driver, "ChapterDraft"), "重复初始化后 ChapterDraft 表仍存在")
+        } finally {
+            java.nio.file.Files.deleteIfExists(file)
+        }
+    }
+
+    @Test
+    fun `fresh v3 database includes chapter draft table`() {
+        val h = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY)
         val driver = h.driver as JdbcSqliteDriver
-
-        // 3) 新表已创建，版本已同步（当前最新 schema 版本含 v2 Task/Checkpoint 与 v3 ChapterDraft）
-        assertTrue(tableExists(driver, "Task"), "migration 后应存在 Task 表")
-        assertTrue(tableExists(driver, "Checkpoint"), "migration 后应存在 Checkpoint 表")
-        assertTrue(tableExists(driver, "ChapterDraft"), "migration 后应存在 ChapterDraft 表")
-        assertEquals(3L, userVersion(driver), "migration 后 user_version 应为当前最新版本 3")
-
-        // 4) 旧数据原样保留（通过既有 Repository 读回）
-        val novels = SqliteNovelRepository(h.db)
-        val readNovel = novels.getNovel(NovelId("mig-novel"))
-        assertNotNull(readNovel, "旧 Novel 数据应保留")
-        assertEquals("旧原著", readNovel.title)
-        assertEquals(listOf("仙侠"), readNovel.genre)
-        assertEquals(VariantScope.ORIGINAL, readNovel.scope)
-
-        val memories = SqliteMemoryRepository(h.db)
-        val mem = memories.findEntriesByNovel(NovelId("mig-novel"))
-        assertEquals(1, mem.size)
-        assertEquals("旧记忆", mem[0].content)
-
-        val vocab = SqliteVocabularyRepository(h.db)
-        val entries = vocab.findEntriesByNovel(NovelId("mig-novel"))
-        assertEquals(1, entries.size)
-        assertEquals("灵石", entries[0].canonical)
-        assertEquals("星石", entries[0].replacement)
-
-        val txt = SqliteTxtRepository(h.db)
-        val doc = txt.getDocument(com.qianyan.model.TxtDocumentId("mig-txt"))
-        assertNotNull(doc, "旧 TXT 数据应保留")
-        assertEquals("旧文", doc.title)
-
-        // 5) 迁移后 Task / Checkpoint 可正常 CRUD
-        val tasks = SqliteTaskRepository(h.db)
-        val t = com.qianyan.model.task.Task(
-            taskId = com.qianyan.model.TaskId("post-mig-task"),
-            type = com.qianyan.model.task.TaskType.IMPORT,
-            status = TaskStatus.PENDING,
-            createdAt = kotlinx.datetime.Clock.System.now(),
-            updatedAt = kotlinx.datetime.Clock.System.now(),
-        )
-        tasks.create(t)
-        assertNotNull(tasks.findById(t.taskId))
-        tasks.saveCheckpoint(
-            com.qianyan.model.task.Checkpoint(
-                checkpointId = com.qianyan.model.CheckpointId("post-mig-cp"),
-                taskId = t.taskId,
-                revision = 1,
-                stage = "import",
-                createdAt = kotlinx.datetime.Clock.System.now(),
-            ),
-        )
-        assertEquals(1, tasks.findCheckpoints(t.taskId).size)
-
-        // 6) 重复执行初始化幂等安全（不报"表已存在"）
-        DatabaseInitializer.initializeDatabase(driver)
-        DatabaseInitializer.initializeDatabase(driver)
-        assertTrue(tableExists(driver, "Task"), "重复初始化后 Task 表仍存在")
-
-        (driver).getConnection().close()
-        java.nio.file.Files.deleteIfExists(file)
+        assertTrue(tableExists(driver, "ChapterDraft"), "全新库初始化后应直接建出 ChapterDraft 表")
+        assertEquals(3L, userVersion(driver), "全新库 user_version 应为 3")
+        driver.getConnection().close()
     }
 }

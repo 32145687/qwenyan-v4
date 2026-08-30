@@ -106,4 +106,13 @@ sealed interface ApplicationError {
 
     /** Planning 流程级失败（Agent loop / 工具 / 编排等）。 */
     data class PlanningFailed(val detail: String) : ApplicationError
+
+    // ---- P11.3 新增：Writing 相关错误（Writer 输出 / 流程失败，P11.3） ----
+    // 类型化错误，绝不靠 String message 判断类型；WriterAgent / ErrorMapper 按具体类型归一到此处。
+
+    /** AI Writer 输出无法解析为合法 Draft（空输出 / 非 JSON / 缺 content / 类型错误）。 */
+    data class InvalidWritingOutput(val detail: String) : ApplicationError
+
+    /** Writing 流程级失败（Agent loop / 工具 / 编排等）。 */
+    data class WritingFailed(val detail: String) : ApplicationError
 }

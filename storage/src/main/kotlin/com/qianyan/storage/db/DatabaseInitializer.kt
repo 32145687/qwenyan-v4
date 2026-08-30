@@ -13,10 +13,12 @@ import app.cash.sqldelight.db.SqlDriver
  * 幂等语义：
  *  - SQLDelight 生成的 [QianyanDb.Schema.create] / [QianyanDb.Schema.migrate] 是**裸 DDL**
  *    （不带 IF NOT EXISTS），重复执行会报"表已存在"，故先经 `sqlite_master` 判断当前状态：
- *    全新库（无 Novel）→ `Schema.create` 建出完整 v2 schema（含 Task / Checkpoint）；
+ *    全新库（无 Novel）→ `Schema.create` 建出完整 v3 schema（含 Task / Checkpoint / ChapterDraft）；
  *    旧 v1 库（有 Novel 无 Task）→ `Schema.migrate(1, 2)` 应用 `1.sqm` 迁移（仅新增
  *    Task / Checkpoint，不删除/修改既有业务表，旧数据原样保留）；
- *    已 v2 → 跳过建表/迁移。
+ *    旧 v2 库（有 Task 无 ChapterDraft）→ `Schema.migrate(2, 3)` 应用 `2.sqm` 迁移（仅新增
+ *    ChapterDraft，P11.3）；
+ *    已 v3 → 跳过建表/迁移。
  *  - 每次建表/迁移都在单事务内执行并同步 `PRAGMA user_version`（与 AndroidSqliteDriver
  *    由 SQLiteOpenHelper 管理版本一致），保证原子性 + 版本簿记正确（供后续 P8.x 迁移）。
  *  - 守卫触发器一律使用 `CREATE TRIGGER IF NOT EXISTS`，天然幂等，每次初始化都执行，
@@ -27,6 +29,9 @@ object DatabaseInitializer {
 
     /** v1 起始版本（迁移调用起点）。 */
     private const val V1 = 1L
+
+    /** v2（P8.1 Task / Checkpoint）→ v3（P11.3 ChapterDraft）迁移起点。 */
+    private const val V2 = 2L
 
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
@@ -78,6 +83,12 @@ object DatabaseInitializer {
             !tableExists(driver, "Task") -> withTransaction(driver) {
                 // v1 → v2：仅新增 Task / Checkpoint；不删除/修改既有业务表，旧数据原样保留。
                 QianyanDb.Schema.migrate(driver, V1, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "ChapterDraft") -> withTransaction(driver) {
+                // v2 → v3：仅新增 ChapterDraft；不删除/修改既有业务表，旧数据原样保留（P11.3）。
+                QianyanDb.Schema.migrate(driver, V2, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

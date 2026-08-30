@@ -1,0 +1,35 @@
+-- P11.3 · Draft 持久化（正文产出，Schema v3）
+-- ChapterDraft 表承载写作 Pipeline 产出的正文草稿（core:model writing.Draft 的持久化投影）。
+-- 字段与 Draft 领域模型一一对应：draft_id / novel_id / variant_id / scope / chapter_id /
+-- chapter_plan_id / content / status / source_model / created_at / updated_at。
+-- 约束：
+--   - scope 与原领域一致表达作用域（ORIGINAL 的正文写入由应用层拒绝，见 ImmutableOriginal）；
+--   - 不加正文版本管理列（多稿/历史由后续 Phase 决定，禁止提前建列）；
+--   - 不引用 MemoryEntry / Checkpoint（正文是正式写作产物，不混入 Memory 语义）。
+
+CREATE TABLE ChapterDraft (
+    draft_id        TEXT NOT NULL PRIMARY KEY,
+    novel_id        TEXT NOT NULL,
+    variant_id      TEXT,
+    scope           TEXT NOT NULL,             -- VariantScope 枚举名
+    chapter_id      TEXT,                      -- 目标章节（可空：尚未落到具体章节）
+    chapter_plan_id TEXT,                      -- 依据的章节规划 ID
+    content         TEXT NOT NULL,             -- 正文（必填）
+    status          TEXT NOT NULL,             -- DraftStatus 枚举名
+    source_model    TEXT NOT NULL DEFAULT '',  -- 产出模型标识（ModelProfile.id，领域层字符串承载）
+    created_at      INTEGER NOT NULL,          -- epoch 毫秒
+    updated_at      INTEGER NOT NULL,          -- epoch 毫秒
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+insertDraft:
+INSERT OR REPLACE INTO ChapterDraft(draft_id, novel_id, variant_id, scope, chapter_id, chapter_plan_id,
+                                     content, status, source_model, created_at, updated_at)
+VALUES (:draft_id, :novel_id, :variant_id, :scope, :chapter_id, :chapter_plan_id,
+        :content, :status, :source_model, :created_at, :updated_at);
+
+getDraftById:
+SELECT * FROM ChapterDraft WHERE draft_id = :draft_id;
+
+listDraftsByNovel:
+SELECT * FROM ChapterDraft WHERE novel_id = :novel_id ORDER BY created_at ASC, draft_id ASC;

@@ -2,6 +2,7 @@ package com.qianyan.storage.repository
 
 import com.qianyan.model.BaseNovelId
 import com.qianyan.model.CheckpointId
+import com.qianyan.model.DraftId
 import com.qianyan.model.MemoryEntryId
 import com.qianyan.model.NovelId
 import com.qianyan.model.OverrideId
@@ -48,7 +49,10 @@ import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.model.vocabulary.VocabularyEntryType
 import com.qianyan.model.vocabulary.VocabularyRule as DomainVocabularyRule
 import com.qianyan.model.vocabulary.VocabularyScopeLevel
+import com.qianyan.model.writing.Draft as DomainDraft
+import com.qianyan.model.writing.DraftStatus
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
+import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -408,5 +412,35 @@ internal object StorageMappers {
         stage = row.stage,
         snapshot = row.snapshot?.let { json.decodeFromString(JsonObject.serializer(), it) },
         createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    /* ---------------- Draft (P11.3) ---------------- */
+
+    fun domainDraft(d: DomainDraft): DbChapterDraft = DbChapterDraft(
+        draft_id = d.draftId.value,
+        novel_id = d.novelId.value,
+        variant_id = d.variantId?.value,
+        scope = d.scope.name,
+        chapter_id = d.chapterId?.value,
+        chapter_plan_id = d.planId?.value,
+        content = d.content,
+        status = d.status.name,
+        source_model = d.sourceModel,
+        created_at = d.createdAt.toEpochMillis(),
+        updated_at = d.updatedAt.toEpochMillis(),
+    )
+
+    fun dbDraft(row: DbChapterDraft): DomainDraft = DomainDraft(
+        draftId = DraftId(row.draft_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        planId = row.chapter_plan_id?.let { com.qianyan.model.ChapterPlanId(it) },
+        content = row.content,
+        status = DraftStatus.valueOf(row.status),
+        sourceModel = row.source_model,
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
     )
 }

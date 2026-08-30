@@ -1,5 +1,6 @@
 package com.qianyan.application.error
 
+import com.qianyan.application.usecase.writing.WritingException
 import com.qianyan.application.usecase.writing.planning.PlanningException
 import com.qianyan.engine.txt.TxtException
 import com.qianyan.provider.ProviderException
@@ -40,6 +41,9 @@ object ErrorMapper {
         // P11.2：Planner 输出解析 / 流程失败 → 类型化 Planning 错误（不经 String 判断类型）。
         is PlanningException.InvalidOutput -> ApplicationException(ApplicationError.InvalidPlanningOutput(throwable.message ?: ""))
         is PlanningException.Failed -> ApplicationException(ApplicationError.PlanningFailed(throwable.message ?: ""))
+        // P11.3：Writer 输出解析 / 流程失败 → 类型化 Writing 错误（不经 String 判断类型）。
+        is WritingException.InvalidOutput -> ApplicationException(ApplicationError.InvalidWritingOutput(throwable.message ?: ""))
+        is WritingException.Failed -> ApplicationException(ApplicationError.WritingFailed(throwable.message ?: ""))
         is TxtException.UnsupportedEncoding -> ApplicationException(ApplicationError.UnsupportedEncoding(throwable.message ?: ""))
         is TxtException.EmptyDocument -> ApplicationException(ApplicationError.EmptyDocument(throwable.message ?: ""))
         is TxtException.InvalidText -> ApplicationException(ApplicationError.InvalidText(throwable.message ?: ""))

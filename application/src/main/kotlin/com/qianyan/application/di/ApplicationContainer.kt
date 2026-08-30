@@ -11,6 +11,8 @@ import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.task.TaskRunner
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.writing.WritingUseCases
+import com.qianyan.application.usecase.writing.WritingExecutionUseCase
+import com.qianyan.application.usecase.writing.WriterAgent
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
@@ -22,9 +24,11 @@ import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
 import com.qianyan.storage.repository.BackupStore
+import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.SqliteBackupStore
+import com.qianyan.storage.repository.SqliteDraftRepository
 import com.qianyan.storage.repository.SqliteMemoryRepository
 import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteTaskRepository
@@ -39,7 +43,7 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
  * Application 层组合根（手动 DI，P3.1）。
  *
  * 职责：把 [NovelRepository]、[VocabularyRepository]、[MemoryRepository]、[BackupStore]、
- * [TxtRepository]、[TaskRepository] 六个仓储装配进来，并暴露各 Use Case 组。外部（app / runtime / agent 调用方）
+ * [TxtRepository]、[TaskRepository]、[DraftRepository] 七个仓储装配进来，并暴露各 Use Case 组。外部（app / runtime / agent 调用方）
  * 只通过本容器访问 Application 能力，不直接触碰 Sqlite 实现。
  *
  * P5 演进：新增 [TxtPipeline]（core:engine 确定性解析）与 [TxtUseCases]。
@@ -59,6 +63,7 @@ class ApplicationContainer(
     val backupStore: BackupStore,
     val txtRepository: TxtRepository,
     val taskRepository: TaskRepository,
+    val draftRepository: DraftRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -86,7 +91,15 @@ class ApplicationContainer(
     val planning: PlanningExecutionUseCase
         get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, errorMapper)
 
-    val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, planning, errorMapper)
+    /** P11.3 Writer Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
+    val writer: WriterAgent
+        get() = WriterAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** P11.3 Writing 执行 Use Case：Task 生命周期 + Draft 持久化 + WRITING Checkpoint。 */
+    val writingExecution: WritingExecutionUseCase
+        get() = WritingExecutionUseCase(tasks, planningContextAssembly, writer, draftRepository, errorMapper)
+
+    val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, planning, writingExecution, errorMapper)
 
     /** P11.1 写作 Use Case 骨架：真实创作属 P11.2+；postProcessDraft seam 本阶段即生效（默认直通）。 */
     val writing: WritingUseCases get() = WritingUseCases(errorMapper)
@@ -107,6 +120,7 @@ class ApplicationContainer(
                 backupStore = SqliteBackupStore(QianyanDbHandle(db, driver)),
                 txtRepository = SqliteTxtRepository(db),
                 taskRepository = SqliteTaskRepository(db),
+                draftRepository = SqliteDraftRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

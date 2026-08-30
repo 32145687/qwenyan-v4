@@ -1,0 +1,18 @@
+-- Qianyan Storage · v2 → v3 migration（P11.3 Draft 正文持久化）
+-- 仅新增 ChapterDraft 一张表；不删除、不修改任何既有业务表，保证旧数据兼容。
+-- 与 Draft.sq 中表结构保持一致（SQLDelight 迁移真源）。
+
+CREATE TABLE ChapterDraft (
+    draft_id        TEXT NOT NULL PRIMARY KEY,
+    novel_id        TEXT NOT NULL,
+    variant_id      TEXT,
+    scope           TEXT NOT NULL,
+    chapter_id      TEXT,
+    chapter_plan_id TEXT,
+    content         TEXT NOT NULL,
+    status          TEXT NOT NULL,
+    source_model    TEXT NOT NULL DEFAULT '',
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);

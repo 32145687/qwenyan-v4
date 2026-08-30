@@ -5,6 +5,7 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.txt.TxtUseCases
+import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.engine.txt.TxtSource
 import com.qianyan.model.TaskId
@@ -12,6 +13,7 @@ import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.task.Task
 import com.qianyan.model.task.TaskType
+import com.qianyan.model.writing.Draft
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -26,17 +28,19 @@ import kotlinx.serialization.json.put
  *  - 执行失败：PENDING → RUNNING → fail → FAILED（记录错误，继续抛出类型化错误）；
  *  - 执行上下文经 [Checkpoint.snapshot]（JsonObject）保存：输入仅存元信息（title / source 显示名），
  *    不持久化 TxtSource 的 bytes（不改 core:model / 不加字段）；
- *  - 支持类型：IMPORT（字节源）、PLANNING（P11.2，规划经 [PlanningExecutionUseCase]）；
- *    ANALYSIS / WRITING / KNOWLEDGE_UPDATE 仍抛类型化 [ApplicationError.UnsupportedTaskType]；
+ *  - 支持类型：IMPORT（字节源）、PLANNING（P11.2，经 [PlanningExecutionUseCase]）、
+ *    WRITING（P11.3，经 [WritingExecutionUseCase]，专用入口 executeWriting）；
+ *    ANALYSIS / KNOWLEDGE_UPDATE 仍抛类型化 [ApplicationError.UnsupportedTaskType]；
  *  - restoreCheckpoint 仍只是恢复上下文，本类不重新执行任务（P8.2 语义）。
  *
  * 明确范围外：Agent loop（在 AgentRuntime 中）/ Orchestrator / Workflow / HITL / 真实 Provider /
- * retry / 异步执行 / 取消 / 超时 —— 不属本类，也不属 P11.2。
+ * retry / 异步执行 / 取消 / 超时 —— 不属本类，也不属 P11.2 / P11.3。
  */
 class TaskRunner(
     private val taskManager: TaskManagerUseCases,
     private val txtUseCases: TxtUseCases,
     private val planning: PlanningExecutionUseCase,
+    private val writing: WritingExecutionUseCase,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -64,6 +68,14 @@ class TaskRunner(
      */
     fun executePlanning(taskId: TaskId, request: UserWritingRequest): ChapterPlan =
         planning.execute(taskId, request)
+
+    /**
+     * 执行 WRITING 受管任务（P11.3）：PENDING → start → WritingExecutionUseCase
+     * （Context Assembly → WriterAgent → DraftParser → DraftRepository.save → WRITING Checkpoint）
+     * → COMPLETED / FAILED。INPUT 为规划恢复的 [ChapterPlan]。
+     */
+    fun executeWriting(taskId: TaskId, request: UserWritingRequest, plan: ChapterPlan): Draft =
+        writing.execute(taskId, request, plan)
 
     // ---- IMPORT：字节源受管执行类型 ----
 
