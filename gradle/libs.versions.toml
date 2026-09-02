@@ -19,7 +19,7 @@ sqldelight = "2.0.2"
 
 # --- 后续 Phase 引入（P0 暂不使用；见各 Phase 计划）---
 koin = "4.0.0"
-sqliteJdbc = "3.46.0.0"
+sqliteJdbc = "3.50.2.0"
 mockk = "1.13.13"
 androidx-core-ktx = "1.15.0"
 compose = "1.7.5"

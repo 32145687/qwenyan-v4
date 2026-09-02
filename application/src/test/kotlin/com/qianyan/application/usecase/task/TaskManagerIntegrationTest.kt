@@ -5,6 +5,8 @@ import com.qianyan.model.task.TaskStatus
 import com.qianyan.model.task.TaskType
 import com.qianyan.provider.impl.MockLLMGateway
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.db.QianyanDbHandle
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -23,8 +25,19 @@ import kotlin.test.assertTrue
  */
 class TaskManagerIntegrationTest {
 
-    private fun container(url: String = JdbcSqliteDriver.IN_MEMORY): ApplicationContainer =
-        ApplicationContainer.open(url, analysisGateway = MockLLMGateway())
+    // 记录本测试打开的所有句柄，删除文件前统一显式关闭底层 JDBC Connection（Windows 文件锁）。
+    private val openHandles = mutableListOf<QianyanDbHandle>()
+
+    private fun container(url: String = JdbcSqliteDriver.IN_MEMORY): ApplicationContainer {
+        val handle = QianyanDbFactory.open(url)
+        openHandles += handle
+        return ApplicationContainer.fromDriver(handle.driver, analysisGateway = MockLLMGateway())
+    }
+
+    private fun closeOpenHandles() {
+        openHandles.forEach { (it.driver as JdbcSqliteDriver?)?.getConnection()?.close() }
+        openHandles.clear()
+    }
 
     private fun analysisSnapshot(): JsonObject = buildJsonObject {
         put("type", "ANALYSIS")
@@ -65,6 +78,7 @@ class TaskManagerIntegrationTest {
             assertEquals(TaskStatus.COMPLETED, task.status)
             assertEquals(1f, task.progress)
         } finally {
+            closeOpenHandles()
             Files.deleteIfExists(Path(tmp))
         }
     }
@@ -81,6 +95,7 @@ class TaskManagerIntegrationTest {
             val reopened = container("jdbc:sqlite:$tmp")
             assertEquals(TaskStatus.RUNNING, reopened.tasks.findById(id).status)
         } finally {
+            closeOpenHandles()
             Files.deleteIfExists(Path(tmp))
         }
     }
@@ -100,6 +115,7 @@ class TaskManagerIntegrationTest {
             assertEquals(TaskStatus.PAUSED, task.status)
             assertEquals(0.6f, task.progress)
         } finally {
+            closeOpenHandles()
             Files.deleteIfExists(Path(tmp))
         }
     }
@@ -126,6 +142,7 @@ class TaskManagerIntegrationTest {
             assertEquals(listOf(1, 2, 3), reopened.tasks.findCheckpoints(id).map { it.revision })
             assertEquals(3, reopened.tasks.restoreCheckpoint(id).revision)
         } finally {
+            closeOpenHandles()
             Files.deleteIfExists(Path(tmp))
         }
     }

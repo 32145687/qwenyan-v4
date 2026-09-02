@@ -11,6 +11,7 @@ import com.qianyan.model.txt.TxtDocument
 import com.qianyan.model.txt.TxtEncoding
 import com.qianyan.model.txt.TxtParseStatus
 import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.db.QianyanDbHandle
 import com.qianyan.storage.repository.SqliteTxtRepository
 import com.qianyan.storage.repository.UniqueConflictException
 import kotlinx.datetime.Instant
@@ -109,15 +110,21 @@ class TxtRepositoryTest {
     @Test
     fun `file database persists across reopen`() {
         val tmp = Files.createTempFile("qianyan-txt", ".db").toString()
+        var writer: QianyanDbHandle? = null
+        var reader: QianyanDbHandle? = null
         try {
-            SqliteTxtRepository(QianyanDbFactory.open("jdbc:sqlite:$tmp").db)
-                .saveImport(document(), chapters(), blocks())
+            writer = QianyanDbFactory.open("jdbc:sqlite:$tmp")
+            SqliteTxtRepository(writer.db).saveImport(document(), chapters(), blocks())
 
-            val reopened = SqliteTxtRepository(QianyanDbFactory.open("jdbc:sqlite:$tmp").db)
+            reader = QianyanDbFactory.open("jdbc:sqlite:$tmp")
+            val reopened = SqliteTxtRepository(reader.db)
             assertEquals(document(), reopened.getDocument(docId))
             assertEquals(chapters(), reopened.getChapters(docId))
             assertEquals(blocks(), reopened.getBlocks(docId))
         } finally {
+            // 显式关闭底层 JDBC Connection 释放 Windows 文件句柄后再删除临时文件。
+            (reader?.driver as JdbcSqliteDriver?)?.getConnection()?.close()
+            (writer?.driver as JdbcSqliteDriver?)?.getConnection()?.close()
             Files.deleteIfExists(Path(tmp))
         }
     }

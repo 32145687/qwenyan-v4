@@ -8,6 +8,8 @@ import com.qianyan.model.task.TaskStatus
 import com.qianyan.model.task.TaskType
 import com.qianyan.provider.impl.MockLLMGateway
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.db.QianyanDbHandle
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import java.nio.charset.StandardCharsets
@@ -29,8 +31,19 @@ import kotlin.test.assertTrue
  */
 class TaskExecutionIntegrationTest {
 
-    private fun container(url: String = JdbcSqliteDriver.IN_MEMORY): ApplicationContainer =
-        ApplicationContainer.open(url, analysisGateway = MockLLMGateway())
+    // 记录本测试打开的所有句柄，删除文件前统一显式关闭底层 JDBC Connection（Windows 文件锁）。
+    private val openHandles = mutableListOf<QianyanDbHandle>()
+
+    private fun container(url: String = JdbcSqliteDriver.IN_MEMORY): ApplicationContainer {
+        val handle = QianyanDbFactory.open(url)
+        openHandles += handle
+        return ApplicationContainer.fromDriver(handle.driver, analysisGateway = MockLLMGateway())
+    }
+
+    private fun closeOpenHandles() {
+        openHandles.forEach { (it.driver as JdbcSqliteDriver?)?.getConnection()?.close() }
+        openHandles.clear()
+    }
 
     private fun source(text: String = "第一章\n\n正文一。\n\n第二章\n\n正文二。", name: String = "integration.txt"): TxtSource =
         TxtSource(text.toByteArray(StandardCharsets.UTF_8), name)
@@ -71,6 +84,7 @@ class TaskExecutionIntegrationTest {
             assertNotNull(reopened.txtRepository.getDocument(documentId))
             assertTrue(reopened.txtRepository.getChapters(documentId).isNotEmpty())
         } finally {
+            closeOpenHandles()
             Files.deleteIfExists(Path(tmp))
         }
     }
@@ -94,6 +108,7 @@ class TaskExecutionIntegrationTest {
             assertTrue(failed.error!!.isNotBlank())
             assertEquals(0, failed.revisionCount)
         } finally {
+            closeOpenHandles()
             Files.deleteIfExists(Path(tmp))
         }
     }

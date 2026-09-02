@@ -11,6 +11,9 @@ import com.qianyan.model.VariantScope
 import com.qianyan.model.txt.TxtEncoding
 import com.qianyan.model.txt.TxtParseStatus
 import com.qianyan.provider.impl.MockLLMGateway
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.db.QianyanDbHandle
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import kotlin.io.path.Path
@@ -211,12 +214,16 @@ class TxtImportUseCaseTest {
     @Test
     fun `import persists across reopen in file database`() {
         val tmp = Files.createTempFile("qianyan-p5-import", ".db").toString()
+        var h1: QianyanDbHandle? = null
+        var h2: QianyanDbHandle? = null
         try {
-            val app = ApplicationContainer.open("jdbc:sqlite:$tmp", analysisGateway = MockLLMGateway())
+            h1 = QianyanDbFactory.open("jdbc:sqlite:$tmp")
+            val app = ApplicationContainer.fromDriver(h1.driver, analysisGateway = MockLLMGateway())
             val first = app.txts.importTxtAsOriginal(source(validText, "novel.txt"), title = "T")
             assertFalse(first.isDuplicate)
 
-            val reopened = ApplicationContainer.open("jdbc:sqlite:$tmp", analysisGateway = MockLLMGateway())
+            h2 = QianyanDbFactory.open("jdbc:sqlite:$tmp")
+            val reopened = ApplicationContainer.fromDriver(h2.driver, analysisGateway = MockLLMGateway())
             val second = reopened.txts.importTxtAsOriginal(source(validText, "novel.txt"), title = "T")
             assertTrue(second.isDuplicate)
             assertEquals(first.novelId, second.novelId)
@@ -224,6 +231,9 @@ class TxtImportUseCaseTest {
             assertEquals(first.contentHash, second.contentHash)
             assertEquals(1, reopened.txtRepository.findByNovelId(first.novelId).size)
         } finally {
+            // 显式关闭底层 JDBC Connection 释放 Windows 文件句柄后再删除临时文件。
+            (h1?.driver as JdbcSqliteDriver?)?.getConnection()?.close()
+            (h2?.driver as JdbcSqliteDriver?)?.getConnection()?.close()
             Files.deleteIfExists(Path(tmp))
         }
     }

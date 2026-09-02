@@ -10,7 +10,9 @@ import com.qianyan.model.txt.TxtChapter
 import com.qianyan.model.txt.TxtDocument
 import com.qianyan.model.txt.TxtEncoding
 import com.qianyan.model.txt.TxtParseStatus
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.db.QianyanDbHandle
 import com.qianyan.storage.repository.SqliteTxtRepository
 import kotlinx.datetime.Instant
 import java.nio.file.Files
@@ -97,15 +99,21 @@ class TxtRepositoryP5QueryTest {
     @Test
     fun `queries survive file reopen`() {
         val tmp = Files.createTempFile("qianyan-txt-p5", ".db").toString()
+        var writer: QianyanDbHandle? = null
+        var reader: QianyanDbHandle? = null
         try {
+            writer = QianyanDbFactory.open("jdbc:sqlite:$tmp")
             val doc = boundDocument(docId1, "hash-persist", "a.txt", Instant.parse("2026-01-01T00:00:00Z"))
-            SqliteTxtRepository(QianyanDbFactory.open("jdbc:sqlite:$tmp").db)
-                .saveImport(doc, chapters(docId1), blocks(docId1))
+            SqliteTxtRepository(writer.db).saveImport(doc, chapters(docId1), blocks(docId1))
 
-            val reopened = SqliteTxtRepository(QianyanDbFactory.open("jdbc:sqlite:$tmp").db)
+            reader = QianyanDbFactory.open("jdbc:sqlite:$tmp")
+            val reopened = SqliteTxtRepository(reader.db)
             assertEquals(doc, reopened.findByContentHash("hash-persist"))
             assertEquals(listOf(doc), reopened.findByNovelId(novelId))
         } finally {
+            // 显式关闭底层 JDBC Connection 释放 Windows 文件句柄后再删除临时文件。
+            (reader?.driver as JdbcSqliteDriver?)?.getConnection()?.close()
+            (writer?.driver as JdbcSqliteDriver?)?.getConnection()?.close()
             Files.deleteIfExists(Path(tmp))
         }
     }
