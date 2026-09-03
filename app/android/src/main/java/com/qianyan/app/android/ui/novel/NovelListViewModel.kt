@@ -123,6 +123,11 @@ class NovelListViewModel(
         is ApplicationError.WritingScaffoldNotImplemented -> "该写作能力暂未开放"
         is ApplicationError.InvalidWritingOutput -> "写作输出无效，请重试"
         is ApplicationError.WritingFailed -> "写作失败，请重试"
+        is ApplicationError.InvalidCritiqueOutput -> "评审输出无效，请重试"
+        is ApplicationError.CritiqueFailed -> "评审失败，请重试"
+        is ApplicationError.RevisionNotAllowed -> "修订次数已达上限"
+        is ApplicationError.InvalidRevisionOutput -> "修订输出无效，请重试"
+        is ApplicationError.RevisionFailed -> "修订失败，请重试"
     }
 
     companion object {

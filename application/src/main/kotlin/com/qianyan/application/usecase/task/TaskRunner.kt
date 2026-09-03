@@ -6,10 +6,13 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.txt.TxtUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
+import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
+import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
 import com.qianyan.engine.txt.TxtSource
 import com.qianyan.model.TaskId
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.spec.ValidationResult
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.task.Task
 import com.qianyan.model.task.TaskType
@@ -41,6 +44,8 @@ class TaskRunner(
     private val txtUseCases: TxtUseCases,
     private val planning: PlanningExecutionUseCase,
     private val writing: WritingExecutionUseCase,
+    private val critique: CritiqueExecutionUseCase,
+    private val revision: RevisionExecutionUseCase,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -76,6 +81,21 @@ class TaskRunner(
      */
     fun executeWriting(taskId: TaskId, request: UserWritingRequest, plan: ChapterPlan): Draft =
         writing.execute(taskId, request, plan)
+
+    /**
+     * 执行 WRITING Task 上的 Critique（P11.4）：CritiqueAgent → ValidationResult → CRITIQUE Checkpoint。
+     * INPUT 为当前 [Draft]；不触发 Task 状态变迁（只读评审）。
+     */
+    fun executeCritique(taskId: TaskId, draft: Draft): ValidationResult =
+        critique.execute(taskId, draft)
+
+    /**
+     * 执行 WRITING Task 上的 Revision（P11.4）：RevisionGate（revisionCount<3）→ RevisionAgent
+     * → REVISED Draft 持久化 → REVISION Checkpoint（revisionCount+1）。INPUT 为当前 [Draft] + [ValidationResult]。
+     * revision 达上限 → [ApplicationError.RevisionNotAllowed]，不调用 LLM。
+     */
+    fun executeRevision(taskId: TaskId, currentDraft: Draft, critiqueResult: ValidationResult): Draft =
+        revision.execute(taskId, currentDraft, critiqueResult)
 
     // ---- IMPORT：字节源受管执行类型 ----
 

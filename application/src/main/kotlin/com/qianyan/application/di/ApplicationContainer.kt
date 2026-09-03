@@ -13,9 +13,13 @@ import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
+import com.qianyan.application.usecase.writing.critique.CritiqueAgent
+import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
+import com.qianyan.application.usecase.writing.revision.RevisionAgent
+import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
 import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.provider.LLMGateway
@@ -99,7 +103,23 @@ class ApplicationContainer(
     val writingExecution: WritingExecutionUseCase
         get() = WritingExecutionUseCase(tasks, planningContextAssembly, writer, draftRepository, errorMapper)
 
-    val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, planning, writingExecution, errorMapper)
+    /** P11.4 Critic Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
+    val critic: CritiqueAgent
+        get() = CritiqueAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** P11.4 Critique 执行 Use Case：Task 校验 + CRITIQUE Checkpoint 承载 ValidationResult。 */
+    val critique: CritiqueExecutionUseCase
+        get() = CritiqueExecutionUseCase(tasks, critic, errorMapper)
+
+    /** P11.4 Revision Agent：复用 AgentRuntime → LLMGateway + DraftParser，默认 Mock。 */
+    val rewriter: RevisionAgent
+        get() = RevisionAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** P11.4 Revision 执行 Use Case：RevisionGate + 修订 Draft 持久化 + REVISION Checkpoint。 */
+    val revision: RevisionExecutionUseCase
+        get() = RevisionExecutionUseCase(tasks, rewriter, draftRepository, errorMapper)
+
+    val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, planning, writingExecution, critique, revision, errorMapper)
 
     /** P11.1 写作 Use Case 骨架：真实创作属 P11.2+；postProcessDraft seam 本阶段即生效（默认直通）。 */
     val writing: WritingUseCases get() = WritingUseCases(errorMapper)

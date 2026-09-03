@@ -1,7 +1,9 @@
 package com.qianyan.application.error
 
 import com.qianyan.application.usecase.writing.WritingException
+import com.qianyan.application.usecase.writing.critique.CritiqueException
 import com.qianyan.application.usecase.writing.planning.PlanningException
+import com.qianyan.application.usecase.writing.revision.RevisionException
 import com.qianyan.engine.txt.TxtException
 import com.qianyan.provider.ProviderException
 import com.qianyan.storage.repository.OriginalImmutableException
@@ -44,6 +46,12 @@ object ErrorMapper {
         // P11.3：Writer 输出解析 / 流程失败 → 类型化 Writing 错误（不经 String 判断类型）。
         is WritingException.InvalidOutput -> ApplicationException(ApplicationError.InvalidWritingOutput(throwable.message ?: ""))
         is WritingException.Failed -> ApplicationException(ApplicationError.WritingFailed(throwable.message ?: ""))
+        // P11.4：Critique 输出解析 / 流程失败 → 类型化 Critique 错误（不经 String 判断类型）。
+        is CritiqueException.InvalidOutput -> ApplicationException(ApplicationError.InvalidCritiqueOutput(throwable.message ?: ""))
+        is CritiqueException.Failed -> ApplicationException(ApplicationError.CritiqueFailed(throwable.message ?: ""))
+        // P11.4：Revision 输出解析 / 流程失败 → 类型化 Revision 错误（不经 String 判断类型）。
+        is RevisionException.InvalidOutput -> ApplicationException(ApplicationError.InvalidRevisionOutput(throwable.message ?: ""))
+        is RevisionException.Failed -> ApplicationException(ApplicationError.RevisionFailed(throwable.message ?: ""))
         is TxtException.UnsupportedEncoding -> ApplicationException(ApplicationError.UnsupportedEncoding(throwable.message ?: ""))
         is TxtException.EmptyDocument -> ApplicationException(ApplicationError.EmptyDocument(throwable.message ?: ""))
         is TxtException.InvalidText -> ApplicationException(ApplicationError.InvalidText(throwable.message ?: ""))

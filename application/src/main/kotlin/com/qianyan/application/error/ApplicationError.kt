@@ -115,4 +115,22 @@ sealed interface ApplicationError {
 
     /** Writing 流程级失败（Agent loop / 工具 / 编排等）。 */
     data class WritingFailed(val detail: String) : ApplicationError
+
+    // ---- P11.4 新增：Critique / Revision 相关错误（Critic / Revision 输出或流程失败，P11.4） ----
+    // 类型化错误，绝不靠 String message 判断类型；CritiqueAgent / RevisionAgent / ErrorMapper 按具体类型归一到此处。
+
+    /** AI Critic 输出无法解析为合法 ValidationResult（空输出 / 非 JSON / 缺 passed / 字段类型错误）。 */
+    data class InvalidCritiqueOutput(val detail: String) : ApplicationError
+
+    /** Critique 流程级失败（Agent loop / 工具 / 编排等）。 */
+    data class CritiqueFailed(val detail: String) : ApplicationError
+
+    /** Revision Gate 拒绝：task.revisionCount 已达上限（P8 语义，<= 3），不得继续修订。 */
+    data class RevisionNotAllowed(val detail: String) : ApplicationError
+
+    /** AI Revision 输出无法解析为合法修订 Draft（空输出 / 非 JSON / 缺 content / 类型错误）。 */
+    data class InvalidRevisionOutput(val detail: String) : ApplicationError
+
+    /** Revision 流程级失败（Agent loop / 工具 / 编排等）。 */
+    data class RevisionFailed(val detail: String) : ApplicationError
 }
