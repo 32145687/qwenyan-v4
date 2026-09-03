@@ -4,6 +4,7 @@ import com.qianyan.model.CharacterId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
 import com.qianyan.model.VariantScope
+import com.qianyan.model.context.StoryWorldContext
 import com.qianyan.model.context.UserWritingRequest
 import kotlinx.serialization.Serializable
 
@@ -32,10 +33,12 @@ data class PlanningContext(
     val variantDirective: String = "",
     /** 与本次规划相关的既有 Character 最小投影（name + personality + goals）。 */
     val characters: List<CharacterLite> = emptyList(),
-    /** 与本次规划相关的既有 Memory 最小投影（content）。 */
+    /** 与本次规划相关的既有 Memory 最小投影（canon 优先的确定性顺序，P11.6）。 */
     val memories: List<String> = emptyList(),
     /** 与本次规划相关的既有 Vocabulary 最小投影（canonical + aliases + replacement）。 */
     val vocabulary: List<VocabularyLite> = emptyList(),
+    /** 确定性组装的故事世界上下文视图（canon/layer 分层，P11.6；供渲染与检索，非新持久化）。 */
+    val worldContext: StoryWorldContext? = null,
 ) {
     val isOriginal: Boolean get() = scope == VariantScope.ORIGINAL
 }

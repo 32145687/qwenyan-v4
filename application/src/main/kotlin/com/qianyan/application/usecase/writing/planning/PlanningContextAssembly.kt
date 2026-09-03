@@ -4,27 +4,31 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
+import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.model.NovelId
 import com.qianyan.model.context.UserWritingRequest
-import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.VocabularyRepository
 
 /**
- * Planning Context Assembly（P11.2）。
+ * Planning Context Assembly（P11.2 + P11.6）。
  *
  * 把用户创作要求 + 必要的既有领域信息组装为最小 [PlanningContext]，供 Planner Agent 使用。
  * 只收集 Planning 真正需要的信息：请求本体 + Novel / Variant 背景 + 当前作用域下可见的
- * Memory / Vocabulary（Character 无持久化仓储，P11.2 保持空投影，见 Known Issue）。
+ * Memory / Vocabulary（Character 无持久化仓储，保持空投影，见 Known Issue）。
  *
- * 复用已有仓储契约（[NovelRepository] / [MemoryRepository] / [VocabularyRepository]），
+ * P11.6：Memory / Story World 经确定性 [StoryWorldContextResolver] 解析为 canon 优先、按 layer 分层的
+ * [com.qianyan.model.context.StoryWorldContext]，并以确定性顺序投影到 [PlanningContext.memories]；
+ * PlannerAgent 仍只拿组装好的 Context，**不直读 Repository**。
+ *
+ * 复用已有仓储契约（[NovelRepository] / [VocabularyRepository]）与 [MemoryRepository]（经 Resolver），
  * 不新增仓储、不触碰 SQLDelight。错误类型化：缺 Novel / Variant → EntityNotFound；
  * 请求缺 baseNovelId → InvalidOperation；Variant 与 Novel 不匹配 → VariantMismatch。
  */
 class PlanningContextAssembly(
     private val novelRepository: NovelRepository,
-    private val memoryRepository: MemoryRepository,
     private val vocabularyRepository: VocabularyRepository,
+    private val worldContextResolver: StoryWorldContextResolver,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -51,19 +55,23 @@ class PlanningContextAssembly(
             )
         }
 
-        // 3) 当前作用域可见 Memory / Vocabulary（Variant 上下文只取该 Variant，不读其它 Variant）
-        val memories = if (variantId != null) {
-            guard { memoryRepository.findEntriesByVariant(novel.novelId, variantId) }
-        } else {
-            guard { memoryRepository.findEntriesByNovel(novel.novelId) }
-        }
+        // 3) 当前作用域可见 Vocabulary
         val vocabulary = if (variantId != null) {
             guard { vocabularyRepository.findEntriesByVariant(variantId) }
         } else {
             guard { vocabularyRepository.findEntriesByNovel(novel.novelId) }
         }
 
-        // 4) 组装最小投影（Character 无持久化仓储 → 空列表，见 Known Issue）
+        // 4) P11.6：确定性 Story World Context（canon/layer 分层，canon 优先），并投影到 memories
+        val scope = if (variantId == null) com.qianyan.model.VariantScope.ORIGINAL else com.qianyan.model.VariantScope.VARIANT
+        val worldContext = worldContextResolver.resolve(
+            novelId = novel.novelId,
+            variantId = variantId,
+            scope = scope,
+            worldSummary = listOfNotNull(novel.title, novel.synopsis.takeIf { it.isNotBlank() }).joinToString("\n"),
+        )
+
+        // 5) 组装最小投影（Character 无持久化仓储 → 空列表，见 Known Issue）
         return PlanningContext(
             request = request,
             novelId = novel.novelId,
@@ -77,8 +85,9 @@ class PlanningContextAssembly(
                 variant?.scopeSpec?.directive,
             ).joinToString("\n"),
             characters = emptyList(),
-            memories = memories.map { it.content },
+            memories = worldContext.orderedVisible,
             vocabulary = vocabulary.map { VocabularyLite(canonical = it.canonical, aliases = it.aliases, replacement = it.replacement) },
+            worldContext = worldContext,
         )
     }
 }

@@ -17,6 +17,7 @@ import com.qianyan.application.usecase.writing.critique.CritiqueAgent
 import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
+import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
@@ -85,9 +86,13 @@ class ApplicationContainer(
     val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper, model = analysisModel)
     val tasks: TaskManagerUseCases get() = TaskManagerUseCases(taskRepository, errorMapper)
 
-    /** P11.2 Planning 上下文组装（复用仓储，最小投影）。 */
+    /** P11.2/P11.6 确定性 Story World Context 解析器（分层 + canon 优先）。 */
+    val storyWorldContextResolver: StoryWorldContextResolver
+        get() = StoryWorldContextResolver(memoryRepository, errorMapper)
+
+    /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文）。 */
     val planningContextAssembly: PlanningContextAssembly
-        get() = PlanningContextAssembly(novelRepository, memoryRepository, vocabularyRepository, errorMapper)
+        get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, errorMapper)
 
     /** P11.2 Planner Agent：经 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
     val planner: PlannerAgent
