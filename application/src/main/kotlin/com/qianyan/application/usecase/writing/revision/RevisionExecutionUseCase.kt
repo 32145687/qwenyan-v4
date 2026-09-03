@@ -56,10 +56,28 @@ class RevisionExecutionUseCase(
         RevisionGate.requireAllowed(task)
 
         val revised = rewriter.revise(currentDraft, critique)
+        // P12.0.1 P4：防御性确保修订 Draft 与当前 Draft 属于同一 Novel/Variant/Chapter（previousDraftId 同 scope，不跨实体）。
+        ensureSameScope(currentDraft, revised)
         guard { draftRepository.save(revised) }
         // 复用 WritingSnapshot 承载 Draft；saveCheckpoint 自动 revisionCount+1（上限 3 内部兜底）。
         taskManager.saveCheckpoint(taskId, REVISION_STAGE, WritingSnapshot.encode(revised))
         return revised
+    }
+
+    /** P12.0.1 P4：Draft lineage scope 防御——修订稿必须与当前稿同 Novel/Variant/Chapter；否则跨实体污染 → 类型化拒绝。 */
+    private fun ensureSameScope(current: Draft, revised: Draft) {
+        val mismatches = buildList {
+            if (revised.novelId != current.novelId) add("novel")
+            if (revised.variantId != current.variantId) add("variant")
+            if (revised.chapterId != current.chapterId) add("chapter")
+        }
+        if (mismatches.isNotEmpty()) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation(
+                    "修订 Draft(${revised.draftId.value}) 与当前 Draft(${current.draftId.value}) 作用域不一致（不一致: ${mismatches.joinToString()}）",
+                ),
+            )
+        }
     }
 
     companion object {

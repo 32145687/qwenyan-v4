@@ -72,27 +72,46 @@ class PlanningExecutionUseCase(
         }
     }
 
-    /** P0-4：把 [ChapterPlan] 绑定到真实 Chapter（不存在则创建；chapterId 不再长期为 null）。 */
+    /**
+     * P0-4/P12.0.1：把 [ChapterPlan] 绑定到真实 Chapter。
+     *  - plan.chapterId 存在 → 校验该 Chapter 归属（novel/variant/scope 必须与 plan 一致，否则跨实体污染 → 类型化拒绝）；
+     *  - plan.chapterId 为空 → 经 [ChapterRepository.createNextChapter] **原子创建**（事务内计算 order，避免并发重复 order）。
+     * 返回的 ChapterPlan.chapterId 非空。
+     */
     private fun bindChapter(plan: ChapterPlan): ChapterPlan {
         val existing = plan.chapterId?.let { guard { chapterRepository.findById(it) } }
-        val chapter = existing ?: run {
-            val newId = ChapterId(nextId())
+        val chapter = existing?.also { ensureOwnership(plan, it) } ?: run {
             val now = Clock.System.now()
             val created = Chapter(
-                chapterId = newId,
+                chapterId = ChapterId(nextId()),
                 novelId = plan.novelId,
                 variantId = plan.variantId,
                 scope = plan.scope,
                 title = plan.chapterGoal.take(CHAPTER_TITLE_LIMIT),
-                order = guard { chapterRepository.nextOrder(plan.novelId, plan.variantId) },
+                order = 0, // createNextChapter 在事务内赋值
                 status = ChapterStatus.PLANNED,
                 createdAt = now,
                 updatedAt = now,
             )
-            guard { chapterRepository.save(created) }
-            created
+            guard { chapterRepository.createNextChapter(created) }
         }
         return if (plan.chapterId == chapter.chapterId) plan else plan.copy(chapterId = chapter.chapterId)
+    }
+
+    /** P12.0.1 P2：plan 与 chapter 的作用域/归属必须一致；不一致即跨实体污染，类型化拒绝。 */
+    private fun ensureOwnership(plan: ChapterPlan, chapter: com.qianyan.model.story.Chapter) {
+        val mismatches = buildList {
+            if (chapter.novelId != plan.novelId) add("novel")
+            if (chapter.variantId != plan.variantId) add("variant")
+            if (chapter.scope != plan.scope) add("scope")
+        }
+        if (mismatches.isNotEmpty()) {
+            throw ApplicationException(
+                ApplicationError.VariantMismatch(
+                    "Chapter(${chapter.chapterId.value}) 不属于 Plan(${plan.chapterPlanId.value}) 的作用域（不一致: ${mismatches.joinToString()}）",
+                ),
+            )
+        }
     }
 
     /** 从 PLANNING Checkpoint 恢复 [ChapterPlan]（只读恢复上下文，不重新执行）。 */

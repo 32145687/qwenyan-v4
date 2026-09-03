@@ -53,6 +53,8 @@ class WritingExecutionUseCase(
                 ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行写作"),
             )
         }
+        // P12.0.1 P3：在进入 WriterAgent 之前确定性校验 Request ↔ Plan 作用域一致（不调用 LLM 后才发现错误）。
+        requirePlanMatchesRequest(request, plan)
 
         taskManager.start(taskId)
         try {
@@ -69,6 +71,23 @@ class WritingExecutionUseCase(
             val mapped = errorMapper.map(t)
             taskManager.fail(taskId, describe(mapped.error))
             throw mapped
+        }
+    }
+
+    /** P12.0.1 P3：Request 与 Plan 的 novel/variant/scope 必须一致；不一致即跨实体污染 → 类型化拒绝（在调 LLM 前）。 */
+    private fun requirePlanMatchesRequest(request: UserWritingRequest, plan: ChapterPlan) {
+        val requestNovelId = request.baseNovelId?.value
+        val mismatches = buildList {
+            if (requestNovelId != null && requestNovelId != plan.novelId.value) add("novel")
+            if (request.variantId != plan.variantId) add("variant")
+            if (request.scope != plan.scope) add("scope")
+        }
+        if (mismatches.isNotEmpty()) {
+            throw ApplicationException(
+                ApplicationError.VariantMismatch(
+                    "UserWritingRequest 与 ChapterPlan(${plan.chapterPlanId.value}) 作用域不一致（不一致: ${mismatches.joinToString()}）",
+                ),
+            )
         }
     }
 

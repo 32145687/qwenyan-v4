@@ -75,7 +75,7 @@ class ChapterDraftLineageTest {
         assertNotNull(p1.chapterId)
         assertNotNull(p2.chapterId)
         assertTrue(p1.chapterId != p2.chapterId)
-        val chapters = app.chapterRepository.listByNovel(novelId)
+        val chapters = app.chapterRepository.listByNovel(novelId, null)
         assertEquals(listOf(1, 2), chapters.map { it.order })
         // Chapter 可经 id 读回
         assertNotNull(app.chapterRepository.findById(p2.chapterId!!))

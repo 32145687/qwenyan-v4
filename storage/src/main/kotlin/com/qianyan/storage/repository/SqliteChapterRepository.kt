@@ -6,7 +6,7 @@ import com.qianyan.model.VariantId
 import com.qianyan.model.story.Chapter
 import com.qianyan.storage.db.QianyanDb
 
-/** [ChapterRepository] 的 SQLDelight + SQLite JDBC 实现（P12.0 / P0-4）。 */
+/** [ChapterRepository] 的 SQLDelight + SQLite JDBC 实现（P12.0 / P0-4 + P12.0.1）。 */
 class SqliteChapterRepository(private val db: QianyanDb) : ChapterRepository {
 
     override fun save(chapter: Chapter) {
@@ -28,11 +28,24 @@ class SqliteChapterRepository(private val db: QianyanDb) : ChapterRepository {
         db.chapterQueries.getChapterById(chapterId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbChapter(it) }
 
-    override fun listByNovel(novelId: NovelId): List<Chapter> =
-        db.chapterQueries.listChaptersByNovel(novelId.value).executeAsList()
+    override fun listByNovel(novelId: NovelId, variantId: VariantId?): List<Chapter> =
+        db.chapterQueries.listChaptersByNovel(novelId.value, variantId?.value).executeAsList()
             .map { StorageMappers.dbChapter(it) }
 
     override fun nextOrder(novelId: NovelId, variantId: VariantId?): Int =
         db.chapterQueries.selectMaxChapterOrder(novelId.value, variantId?.value)
             .executeAsOne().toInt() + 1
+
+    /** 单事务内：MAX(order)+1 → INSERT（order 唯一原子保证，P12.0.1 P1）。 */
+    override fun createNextChapter(chapter: Chapter): Chapter {
+        var next: Chapter? = null
+        db.transaction {
+            val order = db.chapterQueries.selectMaxChapterOrder(chapter.novelId.value, chapter.variantId?.value)
+                .executeAsOne().toInt() + 1
+            val created = chapter.copy(order = order)
+            save(created)
+            next = created
+        }
+        return next ?: error("chapter transaction did not return")
+    }
 }

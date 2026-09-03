@@ -29,8 +29,9 @@ VALUES (:chapter_id, :novel_id, :variant_id, :scope, :order_no, :title, :status,
 getChapterById:
 SELECT * FROM Chapter WHERE chapter_id = :chapter_id;
 
+-- P12.0.1 P0：严格按 Variant 作用域查询（variant_id IS NULL = Original；否则指定 Variant），不混 scope。
 listChaptersByNovel:
-SELECT * FROM Chapter WHERE novel_id = :novel_id ORDER BY order_no ASC, chapter_id ASC;
+SELECT * FROM Chapter WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY order_no ASC, chapter_id ASC;
 
 -- P0-4：Next order = 当前 Novel(+Variant) 最大 order + 1（Application 层保证同作用域不重复）
 selectMaxChapterOrder:
