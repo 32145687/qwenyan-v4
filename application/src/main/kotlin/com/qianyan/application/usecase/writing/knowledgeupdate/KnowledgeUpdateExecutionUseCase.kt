@@ -46,9 +46,11 @@ class KnowledgeUpdateExecutionUseCase(
      */
     fun execute(taskId: TaskId, draft: Draft): KnowledgeUpdateOutcome {
         val task = taskManager.findById(taskId)
-        if (task.type != TaskType.WRITING) {
+        // 官方 P11 完成标准（Preflight §17 验收 #2）：TaskRunner 可执行 KNOWLEDGE_UPDATE 类型 Task。
+        // 允许 WRITING（创作后知识沉淀，P11.5 原有路径，行为不变）与 KNOWLEDGE_UPDATE（独立知识更新 Task）。
+        if (task.type != TaskType.WRITING && task.type != TaskType.KNOWLEDGE_UPDATE) {
             throw ApplicationException(
-                ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行知识更新"),
+                ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING/KNOWLEDGE_UPDATE，无法执行知识更新"),
             )
         }
 
