@@ -117,7 +117,7 @@ class SqliteBackupStore(
 
     private fun insertMemoryRow(r: com.qianyan.storage.db.MemoryEntry) = handle.db.memoryQueries.insertMemory(
         r.memory_id, r.novel_id, r.variant_id, r.scope, r.layer,
-        r.content, r.source, r.created_by, r.created_at, r.updated_at,
+        r.content, r.target, r.effective, r.source, r.created_by, r.created_at, r.updated_at,
     )
 
     private companion object {

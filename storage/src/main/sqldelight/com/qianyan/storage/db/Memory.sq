@@ -1,12 +1,21 @@
 insertMemory:
-INSERT INTO MemoryEntry(memory_id, novel_id, variant_id, scope, layer, content, source, created_by, created_at, updated_at)
-VALUES (:memory_id, :novel_id, :variant_id, :scope, :layer, :content, :source, :created_by, :created_at, :updated_at);
+INSERT INTO MemoryEntry(memory_id, novel_id, variant_id, scope, layer, content, target, effective, source, created_by, created_at, updated_at)
+VALUES (:memory_id, :novel_id, :variant_id, :scope, :layer, :content, :target, :effective, :source, :created_by, :created_at, :updated_at);
 
 selectMemoriesByNovel:
-SELECT * FROM MemoryEntry WHERE novel_id = :novel_id;
+SELECT * FROM MemoryEntry WHERE novel_id = :novel_id AND effective = 1;
 
 selectMemoriesByVariant:
-SELECT * FROM MemoryEntry WHERE novel_id = :novel_id AND variant_id IS :variant_id;
+SELECT * FROM MemoryEntry WHERE novel_id = :novel_id AND variant_id IS :variant_id AND effective = 1;
+
+selectMemoriesByOriginalBase:
+SELECT * FROM MemoryEntry WHERE novel_id = :novel_id AND variant_id IS NULL AND effective = 1;
+
+-- P0-2：按目标失效当前有效记录（历史保留，effective=0）
+deactivateMemoriesByTarget:
+UPDATE MemoryEntry SET effective = 0
+WHERE novel_id = :novel_id AND target = :target AND effective = 1
+  AND (variant_id IS :variant_id OR (variant_id IS NULL AND :variant_id IS NULL));
 
 getAll:
 SELECT * FROM MemoryEntry;

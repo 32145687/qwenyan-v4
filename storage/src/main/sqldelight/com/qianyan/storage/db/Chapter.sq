@@ -1,0 +1,37 @@
+-- P12.0 · P0-4：Chapter 正式持久化（Schema v4）
+-- Chapter 承载章节身份/序号（Chapter.order 语义），为多章节续写提供稳定 chapterId 与序。
+-- 约束：
+--   - scope/variantId 与领域一致（Variant 章节独立于 Original 章节）；
+--   - order 是唯一章节序号语义（同 Novel+Variant 下不重复；SQLite 对 variant_id IS NULL 的 UNIQUE 不强制，
+--     由 Application 层 nextOrder = max+1 保证不重复）；
+--   - chapterId 不再长期为 null：ChapterPlan / ChapterDraft 均引用真实 Chapter。
+
+CREATE TABLE Chapter (
+    chapter_id  TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    variant_id  TEXT,
+    scope       TEXT NOT NULL,             -- VariantScope 枚举名
+    order_no    INTEGER NOT NULL,          -- Chapter.order 语义（唯一序）
+    title       TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL,             -- ChapterStatus 枚举名
+    created_at  INTEGER NOT NULL,          -- epoch 毫秒
+    updated_at  INTEGER NOT NULL,          -- epoch 毫秒
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE UNIQUE INDEX idx_chapter_order ON Chapter(novel_id, variant_id, order_no);
+CREATE INDEX idx_chapter_novel ON Chapter(novel_id);
+
+insertChapter:
+INSERT OR REPLACE INTO Chapter(chapter_id, novel_id, variant_id, scope, order_no, title, status, created_at, updated_at)
+VALUES (:chapter_id, :novel_id, :variant_id, :scope, :order_no, :title, :status, :created_at, :updated_at);
+
+getChapterById:
+SELECT * FROM Chapter WHERE chapter_id = :chapter_id;
+
+listChaptersByNovel:
+SELECT * FROM Chapter WHERE novel_id = :novel_id ORDER BY order_no ASC, chapter_id ASC;
+
+-- P0-4：Next order = 当前 Novel(+Variant) 最大 order + 1（Application 层保证同作用域不重复）
+selectMaxChapterOrder:
+SELECT COALESCE(MAX(order_no), 0) FROM Chapter WHERE novel_id = :novel_id AND variant_id IS :variant_id;

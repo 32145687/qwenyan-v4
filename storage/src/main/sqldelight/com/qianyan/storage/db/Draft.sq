@@ -14,6 +14,7 @@ CREATE TABLE ChapterDraft (
     scope           TEXT NOT NULL,             -- VariantScope 枚举名
     chapter_id      TEXT,                      -- 目标章节（可空：尚未落到具体章节）
     chapter_plan_id TEXT,                      -- 依据的章节规划 ID
+    previous_draft_id TEXT,                    -- P1-1(P12.0)：前一个 Draft（修订版本链）
     content         TEXT NOT NULL,             -- 正文（必填）
     status          TEXT NOT NULL,             -- DraftStatus 枚举名
     source_model    TEXT NOT NULL DEFAULT '',  -- 产出模型标识（ModelProfile.id，领域层字符串承载）
@@ -24,9 +25,9 @@ CREATE TABLE ChapterDraft (
 
 insertDraft:
 INSERT OR REPLACE INTO ChapterDraft(draft_id, novel_id, variant_id, scope, chapter_id, chapter_plan_id,
-                                     content, status, source_model, created_at, updated_at)
+                                     previous_draft_id, content, status, source_model, created_at, updated_at)
 VALUES (:draft_id, :novel_id, :variant_id, :scope, :chapter_id, :chapter_plan_id,
-        :content, :status, :source_model, :created_at, :updated_at);
+        :previous_draft_id, :content, :status, :source_model, :created_at, :updated_at);
 
 getDraftById:
 SELECT * FROM ChapterDraft WHERE draft_id = :draft_id;

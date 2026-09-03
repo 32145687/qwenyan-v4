@@ -100,6 +100,8 @@ CREATE TABLE MemoryEntry (
     scope       TEXT NOT NULL,            -- VariantScope
     layer       TEXT NOT NULL,
     content     TEXT NOT NULL,
+    target      TEXT,                     -- P12.0(P0-2)：知识事实定位键（可空，仅知识沉淀使用）
+    effective   INTEGER AS kotlin.Boolean NOT NULL DEFAULT 1,  -- P12.0(P0-2)：当前有效状态（历史保留）
     source      TEXT NOT NULL DEFAULT '',
     created_by  TEXT,
     created_at  INTEGER NOT NULL,

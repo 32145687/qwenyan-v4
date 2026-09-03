@@ -26,6 +26,10 @@ data class MemoryEntry(
     val scope: VariantScope = VariantScope.ORIGINAL,
     val layer: MemoryLayer = MemoryLayer.LONG_TERM,
     val content: String,
+    /** P12.0(P0-2)：知识事实定位键（可空；仅 Knowledge Update 沉淀使用，普通记忆为空）。 */
+    val target: String = "",
+    /** P12.0(P0-2)：当前有效状态。UPDATE/REMOVE 使旧事实 effective=false（历史保留），Resolution 只使用 effective=true。 */
+    val effective: Boolean = true,
     val source: String = "",
     val createdBy: UserId? = null,
     val createdAt: Instant,

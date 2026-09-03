@@ -49,8 +49,10 @@ import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.model.vocabulary.VocabularyEntryType
 import com.qianyan.model.vocabulary.VocabularyRule as DomainVocabularyRule
 import com.qianyan.model.vocabulary.VocabularyScopeLevel
+import com.qianyan.model.story.Chapter as DomainChapter
 import com.qianyan.model.writing.Draft as DomainDraft
 import com.qianyan.model.writing.DraftStatus
+import com.qianyan.storage.db.Chapter as DbChapter
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
@@ -176,6 +178,8 @@ internal object StorageMappers {
         scope = m.scope.name,
         layer = m.layer.name,
         content = m.content,
+        target = m.target,
+        effective = m.effective,
         source = m.source,
         created_by = m.createdBy?.value,
         created_at = m.createdAt.toEpochMillis(),
@@ -189,6 +193,8 @@ internal object StorageMappers {
         scope = VariantScope.valueOf(row.scope),
         layer = MemoryLayer.valueOf(row.layer),
         content = row.content,
+        target = row.target ?: "",
+        effective = row.effective,
         source = row.source,
         createdBy = row.created_by?.let { UserId(it) },
         createdAt = epochMillisToInstant(row.created_at),
@@ -423,6 +429,7 @@ internal object StorageMappers {
         scope = d.scope.name,
         chapter_id = d.chapterId?.value,
         chapter_plan_id = d.planId?.value,
+        previous_draft_id = d.previousDraftId?.value,
         content = d.content,
         status = d.status.name,
         source_model = d.sourceModel,
@@ -437,9 +444,36 @@ internal object StorageMappers {
         scope = VariantScope.valueOf(row.scope),
         chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
         planId = row.chapter_plan_id?.let { com.qianyan.model.ChapterPlanId(it) },
+        previousDraftId = row.previous_draft_id?.let { DraftId(it) },
         content = row.content,
         status = DraftStatus.valueOf(row.status),
         sourceModel = row.source_model,
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    /* ---------------- Chapter (P12.0 / P0-4) ---------------- */
+
+    fun domainChapter(c: DomainChapter): DbChapter = DbChapter(
+        chapter_id = c.chapterId.value,
+        novel_id = c.novelId.value,
+        variant_id = c.variantId?.value,
+        scope = c.scope.name,
+        order_no = c.order.toLong(),
+        title = c.title,
+        status = c.status.name,
+        created_at = c.createdAt.toEpochMillis(),
+        updated_at = c.updatedAt.toEpochMillis(),
+    )
+
+    fun dbChapter(row: DbChapter): DomainChapter = DomainChapter(
+        chapterId = com.qianyan.model.ChapterId(row.chapter_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        title = row.title,
+        order = row.order_no.toInt(),
+        status = com.qianyan.model.story.ChapterStatus.valueOf(row.status),
         createdAt = epochMillisToInstant(row.created_at),
         updatedAt = epochMillisToInstant(row.updated_at),
     )

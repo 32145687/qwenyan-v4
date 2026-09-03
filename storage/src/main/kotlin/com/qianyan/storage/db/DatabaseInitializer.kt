@@ -33,6 +33,9 @@ object DatabaseInitializer {
     /** v2（P8.1 Task / Checkpoint）→ v3（P11.3 ChapterDraft）迁移起点。 */
     private const val V2 = 2L
 
+    /** v3（P11.3 ChapterDraft）→ v4（P12.0：Chapter 表 + MemoryEntry.target/effective + ChapterDraft.previous_draft_id）。 */
+    private const val V3 = 3L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -89,6 +92,12 @@ object DatabaseInitializer {
             !tableExists(driver, "ChapterDraft") -> withTransaction(driver) {
                 // v2 → v3：仅新增 ChapterDraft；不删除/修改既有业务表，旧数据原样保留（P11.3）。
                 QianyanDb.Schema.migrate(driver, V2, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "Chapter") -> withTransaction(driver) {
+                // v3 → v4：新增 Chapter 表 + MemoryEntry(target/effective) + ChapterDraft(previous_draft_id)（P12.0）。
+                QianyanDb.Schema.migrate(driver, V3, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

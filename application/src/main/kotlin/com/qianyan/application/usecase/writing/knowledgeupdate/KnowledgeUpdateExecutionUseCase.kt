@@ -57,9 +57,17 @@ class KnowledgeUpdateExecutionUseCase(
         val existingMemories = guard { memoryRepository.findEntriesByNovel(draft.novelId) }.map { it.content }
         val candidates = agent.propose(draft, existingMemories)
         val validated = KnowledgeValidator.validate(candidates)
-        // 确定性 Apply：只对通过校验的候选写 Memory（不调 LLM；被拒候选不落地）。
+        // P12.0 P0-2/P0-3：确定性 Apply 在**单事务**内完成——非 ADD 先失效旧事实（effective=0，历史保留），
+        // 再插入新有效事实；任一条失败整体回滚（不产生半完成状态）。rejected 候选绝不进入事务。
         val applied = KnowledgeApplicator.apply(validated.accepted)
-        applied.forEach { guard { memoryRepository.saveEntry(it) } }
+        memoryRepository.inTransaction {
+            validated.accepted.zip(applied).forEach { (c, e) ->
+                if (c.operation != com.qianyan.model.knowledge.KnowledgeOperation.ADD) {
+                    memoryRepository.deactivateByTarget(draft.novelId, draft.variantId, c.target)
+                }
+                memoryRepository.saveEntry(e)
+            }
+        }
 
         val outcome = KnowledgeUpdateOutcome(validated, applied)
         taskManager.saveCheckpoint(taskId, KnowledgeUpdateSnapshot.STAGE, KnowledgeUpdateSnapshot.encode(validated))

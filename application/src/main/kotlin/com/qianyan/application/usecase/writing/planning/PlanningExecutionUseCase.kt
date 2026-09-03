@@ -5,25 +5,32 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.task.TaskManagerUseCases
+import com.qianyan.model.ChapterId
 import com.qianyan.model.TaskId
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.story.Chapter
 import com.qianyan.model.story.ChapterPlan
+import com.qianyan.model.story.ChapterStatus
 import com.qianyan.model.task.Checkpoint
 import com.qianyan.model.task.TaskType
+import com.qianyan.storage.repository.ChapterRepository
+import kotlinx.datetime.Clock
 
 /**
- * Planning 执行 Use Case（P11.2）。
+ * Planning 执行 Use Case（P11.2 + P12.0 P0-4）。
  *
  * 目标链路：
  * ```
  * Task → PLANNING → RUNNING → PlannerAgent(AgentRuntime → LLMGateway) → ChapterPlan
- *     → Checkpoint → COMPLETED / FAILED
+ *     → 绑定/创建 Chapter（chapterId 不再长期为 null）→ Checkpoint → COMPLETED / FAILED
  * ```
  *
  * 职责边界：
  *  - 复用 P8.2 [TaskManagerUseCases] 生命周期（start / saveCheckpoint / complete / fail），不经状态机直改状态；
- *  - Checkpoint 复用现有 [com.qianyan.model.task.Checkpoint]（snapshot 承载 ChapterPlan，**不加表 / 不迁移**）；
- *  - 成功：校验 PLANNING → start → context assembly → planner → saveCheckpoint → complete；
+ *  - Checkpoint 复用现有 [com.qianyan.model.task.Checkpoint]（snapshot 承载 ChapterPlan，不加新表）；
+ *  - P0-4：PlannerAgent 只**提出** ChapterPlan；**真正 Chapter 持久化由本 Application 层完成**（经
+ *    [ChapterRepository]）：plan.chapterId 为空 → 创建真实 Chapter（order = nextOrder，同 Novel+Variant 防重）；
+ *    非空 → 校验存在。返回的 ChapterPlan.chapterId 非空，供 Writing/ChapterDraft 关联。
  *  - 失败：start 后任何失败 → fail（记录类型化原因）→ 继续抛类型化错误；
  *  - 不实现 Agent loop / Workflow / HITL / retry（属 P11.3+）。
  */
@@ -31,11 +38,12 @@ class PlanningExecutionUseCase(
     private val taskManager: TaskManagerUseCases,
     private val assembly: PlanningContextAssembly,
     private val planner: PlannerAgent,
+    private val chapterRepository: ChapterRepository,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
     /**
-     * 执行一个 PLANNING Task 到 COMPLETED / FAILED，并返回产出 [ChapterPlan]。
+     * 执行一个 PLANNING Task 到 COMPLETED / FAILED，并返回产出 [ChapterPlan]（chapterId 非空）。
      * Task 类型非 PLANNING → [ApplicationError.InvalidOperation]；不存在 → TaskNotFound。
      */
     fun execute(taskId: TaskId, request: UserWritingRequest): ChapterPlan {
@@ -50,9 +58,10 @@ class PlanningExecutionUseCase(
         try {
             val context = assembly.assemble(request)
             val plan = planner.plan(context)
-            taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(plan))
+            val planWithChapter = bindChapter(plan)
+            taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(planWithChapter))
             taskManager.complete(taskId)
-            return plan
+            return planWithChapter
         } catch (e: ApplicationException) {
             taskManager.fail(taskId, describe(e.error))
             throw e
@@ -63,11 +72,39 @@ class PlanningExecutionUseCase(
         }
     }
 
+    /** P0-4：把 [ChapterPlan] 绑定到真实 Chapter（不存在则创建；chapterId 不再长期为 null）。 */
+    private fun bindChapter(plan: ChapterPlan): ChapterPlan {
+        val existing = plan.chapterId?.let { guard { chapterRepository.findById(it) } }
+        val chapter = existing ?: run {
+            val newId = ChapterId(nextId())
+            val now = Clock.System.now()
+            val created = Chapter(
+                chapterId = newId,
+                novelId = plan.novelId,
+                variantId = plan.variantId,
+                scope = plan.scope,
+                title = plan.chapterGoal.take(CHAPTER_TITLE_LIMIT),
+                order = guard { chapterRepository.nextOrder(plan.novelId, plan.variantId) },
+                status = ChapterStatus.PLANNED,
+                createdAt = now,
+                updatedAt = now,
+            )
+            guard { chapterRepository.save(created) }
+            created
+        }
+        return if (plan.chapterId == chapter.chapterId) plan else plan.copy(chapterId = chapter.chapterId)
+    }
+
     /** 从 PLANNING Checkpoint 恢复 [ChapterPlan]（只读恢复上下文，不重新执行）。 */
     fun chapterPlanFrom(checkpoint: Checkpoint): ChapterPlan? = PlanningSnapshot.decode(checkpoint.snapshot)
 
     private fun describe(error: ApplicationError): String = when (error) {
         is ApplicationError.UnknownStorage -> "UnknownStorage: ${error.cause.message ?: error.cause::class.simpleName}"
         else -> error.toString()
+    }
+
+    private companion object {
+        /** Chapter 标题由章节目标截取（不引入第二套命名）。 */
+        const val CHAPTER_TITLE_LIMIT: Int = 40
     }
 }

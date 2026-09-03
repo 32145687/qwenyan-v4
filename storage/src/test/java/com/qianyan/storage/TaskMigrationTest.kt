@@ -260,11 +260,12 @@ class TaskMigrationTest {
         val h = QianyanDbFactory.open(url)
         val driver = h.driver as JdbcSqliteDriver
 
-        // 3) 新表已创建，版本已同步（当前最新 schema 版本含 v2 Task/Checkpoint 与 v3 ChapterDraft）
+        // 3) 新表已创建，版本已同步（当前最新 schema 版本含 v2 Task/Checkpoint、v3 ChapterDraft 与 v4 Chapter/新列）
         assertTrue(tableExists(driver, "Task"), "migration 后应存在 Task 表")
         assertTrue(tableExists(driver, "Checkpoint"), "migration 后应存在 Checkpoint 表")
         assertTrue(tableExists(driver, "ChapterDraft"), "migration 后应存在 ChapterDraft 表")
-        assertEquals(3L, userVersion(driver), "migration 后 user_version 应为当前最新版本 3")
+        assertTrue(tableExists(driver, "Chapter"), "migration 后应存在 Chapter 表（P12.0 P0-4）")
+        assertEquals(4L, userVersion(driver), "migration 后 user_version 应为当前最新版本 4（P12.0 Schema v4）")
 
         // 4) 旧数据原样保留（通过既有 Repository 读回）
         val novels = SqliteNovelRepository(h.db)

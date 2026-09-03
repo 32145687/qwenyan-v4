@@ -12,7 +12,7 @@ class SqliteMemoryRepository(private val db: QianyanDb) : MemoryRepository {
         val row = StorageMappers.domainMemory(entry)
         db.memoryQueries.insertMemory(
             row.memory_id, row.novel_id, row.variant_id, row.scope, row.layer,
-            row.content, row.source, row.created_by, row.created_at, row.updated_at,
+            row.content, row.target, row.effective, row.source, row.created_by, row.created_at, row.updated_at,
         )
     }
 
@@ -23,4 +23,16 @@ class SqliteMemoryRepository(private val db: QianyanDb) : MemoryRepository {
     override fun findEntriesByVariant(novelId: NovelId, variantId: VariantId): List<MemoryEntry> =
         db.memoryQueries.selectMemoriesByVariant(novelId.value, variantId.value)
             .executeAsList().map { StorageMappers.dbMemory(it) }
+
+    override fun findOriginalBase(novelId: NovelId): List<MemoryEntry> =
+        db.memoryQueries.selectMemoriesByOriginalBase(novelId.value)
+            .executeAsList().map { StorageMappers.dbMemory(it) }
+
+    override fun deactivateByTarget(novelId: NovelId, variantId: VariantId?, target: String) {
+        db.memoryQueries.deactivateMemoriesByTarget(novelId.value, target, variantId?.value)
+    }
+
+    override fun inTransaction(block: () -> Unit) {
+        db.transaction { block() }
+    }
 }

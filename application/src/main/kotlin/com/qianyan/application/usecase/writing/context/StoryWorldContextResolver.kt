@@ -28,6 +28,10 @@ class StoryWorldContextResolver(
     /**
      * 解析某 Novel（可选 Variant）下的故事世界上下文。
      * worldSummary 由调用方提供（Novel 标题/简介最小投影）。
+     *
+     * 作用域语义（P12.0 P0-1 修复）：
+     *  - 存在 variantId → **Original 基座（variant_id IS NULL，只读 canon）+ 当前 Variant 记忆**；
+     *  - 无 variant（ORIGINAL 上下文）→ 仅 **Original 基座**（不跨 Variant 读取其它 Variant 记忆，也不暴露给非该 Variant）。
      */
     fun resolve(
         novelId: NovelId,
@@ -35,21 +39,22 @@ class StoryWorldContextResolver(
         scope: VariantScope = if (variantId == null) VariantScope.ORIGINAL else VariantScope.VARIANT,
         worldSummary: String = "",
     ): StoryWorldContext {
-        val entries = if (variantId != null) {
+        val base = guard { memoryRepository.findOriginalBase(novelId) }
+        val variant = if (variantId != null) {
             guard { memoryRepository.findEntriesByVariant(novelId, variantId) }
         } else {
-            guard { memoryRepository.findEntriesByNovel(novelId) }
+            emptyList()
         }
-        val ordered = entries.sortedWith(compareBy({ it.createdAt }, { it.id.value }))
+        val entries = (base + variant).sortedWith(compareBy({ it.createdAt }, { it.id.value }))
         return StoryWorldContext(
             novelId = novelId,
             variantId = variantId,
             scope = scope,
             worldSummary = worldSummary,
-            canon = ordered.filter { it.layer == MemoryLayer.ORIGINAL }.map { it.content },
-            worldState = ordered.filter { it.layer == MemoryLayer.CURRENT_STATE }.map { it.content },
-            facts = ordered.filter { it.layer == MemoryLayer.LONG_TERM }.map { it.content },
-            memories = ordered.filter { it.layer == MemoryLayer.WRITING }.map { it.content },
+            canon = entries.filter { it.layer == MemoryLayer.ORIGINAL }.map { it.content },
+            worldState = entries.filter { it.layer == MemoryLayer.CURRENT_STATE }.map { it.content },
+            facts = entries.filter { it.layer == MemoryLayer.LONG_TERM }.map { it.content },
+            memories = entries.filter { it.layer == MemoryLayer.WRITING }.map { it.content },
         )
     }
 }

@@ -31,10 +31,12 @@ import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
 import com.qianyan.storage.repository.BackupStore
+import com.qianyan.storage.repository.ChapterRepository
 import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.SqliteBackupStore
+import com.qianyan.storage.repository.SqliteChapterRepository
 import com.qianyan.storage.repository.SqliteDraftRepository
 import com.qianyan.storage.repository.SqliteMemoryRepository
 import com.qianyan.storage.repository.SqliteNovelRepository
@@ -71,6 +73,7 @@ class ApplicationContainer(
     val txtRepository: TxtRepository,
     val taskRepository: TaskRepository,
     val draftRepository: DraftRepository,
+    val chapterRepository: ChapterRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -98,9 +101,9 @@ class ApplicationContainer(
     val planner: PlannerAgent
         get() = PlannerAgent(analysisGateway, errorMapper, analysisModel)
 
-    /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan。 */
+    /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan（P0-4 绑定/创建真实 Chapter）。 */
     val planning: PlanningExecutionUseCase
-        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, errorMapper)
+        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, chapterRepository, errorMapper)
 
     /** P11.3 Writer Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
     val writer: WriterAgent
@@ -157,6 +160,7 @@ class ApplicationContainer(
                 txtRepository = SqliteTxtRepository(db),
                 taskRepository = SqliteTaskRepository(db),
                 draftRepository = SqliteDraftRepository(db),
+                chapterRepository = SqliteChapterRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

@@ -72,8 +72,11 @@ class WritingExecutionUseCase(
         }
     }
 
-    /** 从 WRITING Checkpoint 恢复 [Draft]（只读恢复上下文，不重新执行）。 */
-    fun draftFrom(checkpoint: Checkpoint): Draft? = WritingSnapshot.decode(checkpoint.snapshot)
+    /** 从 WRITING Checkpoint 恢复 [Draft]（P1-2：经 draftId → DraftRepository，正文单一来源，不复制进 Checkpoint）。 */
+    fun draftFrom(checkpoint: Checkpoint): Draft? {
+        val id = WritingSnapshot.decodeReference(checkpoint.snapshot) ?: return null
+        return guard { draftRepository.getById(id) }
+    }
 
     private fun describe(error: ApplicationError): String = when (error) {
         is ApplicationError.UnknownStorage -> "UnknownStorage: ${error.cause.message ?: error.cause::class.simpleName}"

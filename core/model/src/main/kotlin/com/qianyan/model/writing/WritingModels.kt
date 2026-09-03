@@ -33,6 +33,8 @@ data class Draft(
     val chapterId: ChapterId? = null,
     /** 依据的章节规划（可空：无规划直写）。 */
     val planId: ChapterPlanId? = null,
+    /** P12.0(P1-1)：前一版本 Draft（修订版本链 A.previous=null, B.previous=A, C.previous=B）。 */
+    val previousDraftId: DraftId? = null,
     val content: String = "",
     val status: DraftStatus = DraftStatus.DRAFTING,
     /** 产出模型标识（ModelProfile.id），领域层以字符串承载，不依赖 :provider。 */

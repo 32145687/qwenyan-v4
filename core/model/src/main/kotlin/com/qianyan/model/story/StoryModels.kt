@@ -50,6 +50,7 @@ data class Chapter(
     val order: Int = 0,
     val status: ChapterStatus = ChapterStatus.PLANNED,
     val createdAt: Instant,
+    val updatedAt: Instant = createdAt,
 )
 
 @Serializable

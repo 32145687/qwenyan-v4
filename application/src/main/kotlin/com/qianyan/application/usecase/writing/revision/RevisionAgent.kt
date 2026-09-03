@@ -61,8 +61,9 @@ class RevisionAgent(
             val raw = result.answer
                 ?: throw RevisionException.InvalidOutput("revision returned no answer")
             val parsed = parseRevisionDraft(raw, structure)
-            // DraftParser 固定产出 WRITTEN；修订产物显式标记 REVISED，draftId 已是新 id（原 Draft 保留）。
-            parsed.copy(status = DraftStatus.REVISED)
+            // DraftParser 固定产出 WRITTEN；修订产物显式标记 REVISED，draftId 已是新 id（原 Draft 保留）；
+            // P1-1：previousDraftId = 当前 Draft，建立 A→B→C 版本链（不新增第二套 revision counter）。
+            parsed.copy(status = DraftStatus.REVISED, previousDraftId = currentDraft.draftId)
         } catch (e: ApplicationException) {
             throw e
         } catch (e: RevisionException) {

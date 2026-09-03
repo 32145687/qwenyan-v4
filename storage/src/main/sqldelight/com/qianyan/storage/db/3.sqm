@@ -1,0 +1,27 @@
+-- Qianyan Storage · v3 → v4 migration（P12.0：Schema & State Hardening）
+-- 仅扩展，不删除/修改既有业务表；与 .sq 真源保持一致：
+--   1) 新增 Chapter 表（P0-4 章节正式持久化，含 order 唯一索引）；
+--   2) MemoryEntry 增加 target / effective（P0-2 知识有效状态语义，历史保留）；
+--   3) ChapterDraft 增加 previous_draft_id（P1-1 修订版本链）。
+-- SQLite ALTER TABLE ADD COLUMN 保持既有数据兼容。
+
+CREATE TABLE Chapter (
+    chapter_id  TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    variant_id  TEXT,
+    scope       TEXT NOT NULL,
+    order_no    INTEGER NOT NULL,
+    title       TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE UNIQUE INDEX idx_chapter_order ON Chapter(novel_id, variant_id, order_no);
+CREATE INDEX idx_chapter_novel ON Chapter(novel_id);
+
+ALTER TABLE MemoryEntry ADD COLUMN target TEXT;
+ALTER TABLE MemoryEntry ADD COLUMN effective INTEGER NOT NULL DEFAULT 1;
+
+ALTER TABLE ChapterDraft ADD COLUMN previous_draft_id TEXT;
