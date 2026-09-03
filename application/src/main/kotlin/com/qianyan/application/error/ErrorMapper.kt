@@ -2,6 +2,7 @@ package com.qianyan.application.error
 
 import com.qianyan.application.usecase.writing.WritingException
 import com.qianyan.application.usecase.writing.critique.CritiqueException
+import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateException
 import com.qianyan.application.usecase.writing.planning.PlanningException
 import com.qianyan.application.usecase.writing.revision.RevisionException
 import com.qianyan.engine.txt.TxtException
@@ -52,6 +53,9 @@ object ErrorMapper {
         // P11.4：Revision 输出解析 / 流程失败 → 类型化 Revision 错误（不经 String 判断类型）。
         is RevisionException.InvalidOutput -> ApplicationException(ApplicationError.InvalidRevisionOutput(throwable.message ?: ""))
         is RevisionException.Failed -> ApplicationException(ApplicationError.RevisionFailed(throwable.message ?: ""))
+        // P11.5：Knowledge Update 候选解析 / 流程失败 → 类型化 Knowledge Update 错误（不经 String 判断类型）。
+        is KnowledgeUpdateException.InvalidOutput -> ApplicationException(ApplicationError.InvalidKnowledgeUpdateOutput(throwable.message ?: ""))
+        is KnowledgeUpdateException.Failed -> ApplicationException(ApplicationError.KnowledgeUpdateFailed(throwable.message ?: ""))
         is TxtException.UnsupportedEncoding -> ApplicationException(ApplicationError.UnsupportedEncoding(throwable.message ?: ""))
         is TxtException.EmptyDocument -> ApplicationException(ApplicationError.EmptyDocument(throwable.message ?: ""))
         is TxtException.InvalidText -> ApplicationException(ApplicationError.InvalidText(throwable.message ?: ""))

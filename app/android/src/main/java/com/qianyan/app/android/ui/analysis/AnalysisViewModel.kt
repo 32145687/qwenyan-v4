@@ -134,6 +134,9 @@ class AnalysisViewModel(
         is ApplicationError.RevisionNotAllowed -> "修订次数已达上限"
         is ApplicationError.InvalidRevisionOutput -> "修订输出无效，请重试"
         is ApplicationError.RevisionFailed -> "修订失败，请重试"
+        is ApplicationError.InvalidKnowledgeUpdateOutput -> "知识更新输出无效，请重试"
+        is ApplicationError.KnowledgeUpdateFailed -> "知识更新失败，请重试"
+        is ApplicationError.KnowledgeUpdateRejected -> "知识更新被拒绝，请重试"
         is ApplicationError.UnknownStorage -> "存储错误，请重试"
     }
 

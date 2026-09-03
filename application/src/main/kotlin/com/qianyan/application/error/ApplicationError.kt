@@ -133,4 +133,16 @@ sealed interface ApplicationError {
 
     /** Revision 流程级失败（Agent loop / 工具 / 编排等）。 */
     data class RevisionFailed(val detail: String) : ApplicationError
+
+    // ---- P11.5 新增：Knowledge Update 相关错误（候选解析 / 流程失败，P11.5） ----
+    // 类型化错误，绝不靠 String message 判断类型；KnowledgeUpdateAgent / ErrorMapper 按具体类型归一到此处。
+
+    /** AI Knowledge Update 输出无法解析为合法候选（空 / 非 JSON / 缺字段 / 类型错误 / 非法 operation）。 */
+    data class InvalidKnowledgeUpdateOutput(val detail: String) : ApplicationError
+
+    /** Knowledge Update 流程级失败（Agent loop / 工具 / 编排等）。 */
+    data class KnowledgeUpdateFailed(val detail: String) : ApplicationError
+
+    /** Knowledge Update 被确定性拒绝（如 immutable canon 不允许 UPDATE/REMOVE），足以拒绝整体执行。 */
+    data class KnowledgeUpdateRejected(val detail: String) : ApplicationError
 }

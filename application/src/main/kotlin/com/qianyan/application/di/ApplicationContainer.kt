@@ -15,6 +15,8 @@ import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
 import com.qianyan.application.usecase.writing.critique.CritiqueAgent
 import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
+import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
+import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
@@ -119,7 +121,16 @@ class ApplicationContainer(
     val revision: RevisionExecutionUseCase
         get() = RevisionExecutionUseCase(tasks, rewriter, draftRepository, errorMapper)
 
-    val taskRunner: TaskRunner get() = TaskRunner(tasks, txts, planning, writingExecution, critique, revision, errorMapper)
+    /** P11.5 Knowledge Update Agent：复用 AgentRuntime → LLMGateway，默认 Mock。 */
+    val knowledgeUpdater: KnowledgeUpdateAgent
+        get() = KnowledgeUpdateAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** P11.5 Knowledge Update 执行 Use Case：确定性 validate+apply → Memory 沉淀 + KNOWN_UPDATE Checkpoint。 */
+    val knowledgeUpdate: KnowledgeUpdateExecutionUseCase
+        get() = KnowledgeUpdateExecutionUseCase(tasks, knowledgeUpdater, memoryRepository, errorMapper)
+
+    val taskRunner: TaskRunner get() =
+        TaskRunner(tasks, txts, planning, writingExecution, critique, revision, knowledgeUpdate, errorMapper)
 
     /** P11.1 写作 Use Case 骨架：真实创作属 P11.2+；postProcessDraft seam 本阶段即生效（默认直通）。 */
     val writing: WritingUseCases get() = WritingUseCases(errorMapper)

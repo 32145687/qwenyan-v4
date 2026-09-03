@@ -7,6 +7,8 @@ import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.txt.TxtUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
+import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
+import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateOutcome
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
 import com.qianyan.engine.txt.TxtSource
@@ -46,6 +48,7 @@ class TaskRunner(
     private val writing: WritingExecutionUseCase,
     private val critique: CritiqueExecutionUseCase,
     private val revision: RevisionExecutionUseCase,
+    private val knowledgeUpdate: KnowledgeUpdateExecutionUseCase,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -96,6 +99,13 @@ class TaskRunner(
      */
     fun executeRevision(taskId: TaskId, currentDraft: Draft, critiqueResult: ValidationResult): Draft =
         revision.execute(taskId, currentDraft, critiqueResult)
+
+    /**
+     * 执行 WRITING Task 上的 Knowledge Update（P11.5）：KnowledgeUpdateAgent → Parser → 确定性 Validate/Apply
+     * → Memory 沉淀 → KNOWN_UPDATE Checkpoint。INPUT 为最终 [Draft]；显式单步入口，无自动串联循环。
+     */
+    fun executeKnowledgeUpdate(taskId: TaskId, draft: Draft): KnowledgeUpdateOutcome =
+        knowledgeUpdate.execute(taskId, draft)
 
     // ---- IMPORT：字节源受管执行类型 ----
 
