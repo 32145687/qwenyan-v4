@@ -10,6 +10,7 @@ import com.qianyan.application.usecase.txt.TxtUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.task.TaskRunner
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
+import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
@@ -95,6 +96,9 @@ class ApplicationContainer(
     val txts: TxtUseCases get() = TxtUseCases(txtPipeline, txtRepository, novelRepository, errorMapper)
     val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper, model = analysisModel)
     val tasks: TaskManagerUseCases get() = TaskManagerUseCases(taskRepository, errorMapper)
+
+    /** P12.1.6 Chapter 读取/创建 Use Case：UI 只经此访问真实章节（禁止直触 ChapterRepository）。 */
+    val chapters: ChapterUseCases get() = ChapterUseCases(chapterRepository, novelRepository, errorMapper)
 
     /** P11.2/P11.6/P12.1.2 确定性 Story World Context 解析器（分层 + canon 优先 + 结构化 Story State）。 */
     val storyWorldContextResolver: StoryWorldContextResolver

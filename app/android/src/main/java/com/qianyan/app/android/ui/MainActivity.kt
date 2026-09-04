@@ -7,43 +7,47 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.qianyan.app.android.QianyanApplication
 import com.qianyan.app.android.ui.analysis.AnalysisScreen
 import com.qianyan.app.android.ui.analysis.AnalysisViewModel
+import com.qianyan.app.android.ui.chapter.ChapterDetailScreen
+import com.qianyan.app.android.ui.chapter.ChapterDetailViewModel
+import com.qianyan.app.android.ui.chapter.ChapterListScreen
+import com.qianyan.app.android.ui.chapter.ChapterViewModel
+import com.qianyan.app.android.ui.novel.NovelDetailScreen
 import com.qianyan.app.android.ui.novel.NovelListScreen
 import com.qianyan.app.android.ui.novel.NovelListViewModel
 import com.qianyan.app.android.ui.theme.QianyanTheme
+import com.qianyan.model.ChapterId
+import com.qianyan.model.VariantId
 import com.qianyan.model.core.Novel
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** 当前页面（P7.6 简单 UI 状态切换，不引入 Navigation 架构）。 */
+/**
+ * 页面导航（P12.1.6）。沿用项目既有「无 Navigation Compose」的简单状态切换：用一个可回退的
+ * [mutableStateListOf] 作为 back stack，逐级 push/pop。路由参数一律用稳定 ID
+ * （novelId / variantId / chapterId），不把整 Domain 对象塞进 route。
+ *
+ * NovelList → NovelDetail → (ChapterList | Analysis)；ChapterList → ChapterDetail。
+ */
 private sealed interface Screen {
     data object NovelList : Screen
+    data class NovelDetail(val novel: Novel) : Screen
     data class Analysis(val novel: Novel) : Screen
+    data class ChapterList(val novel: Novel, val variantId: VariantId?) : Screen
+    data class ChapterDetail(val novel: Novel, val variantId: VariantId?, val chapterId: ChapterId) : Screen
 }
 
-/**
- * 主入口 Activity（P7.4 + P7.5）：UI Host + SAF TXT 文件选择。
- *
- * 分层（P7.5）：
- *  - 本 Activity 是 Composition Root 的延伸，只负责平台层：通过 SAF（ActivityResultContracts.OpenDocument）
- *    让用户选文件，并把 Uri 读取为「字节 + 展示名」（平台无关），交给 [NovelListViewModel.importTxt]。
- *  - 不直接触碰 Repository / 业务逻辑；Uri 只在平台层消费，不泄漏到 ViewModel / Use Case。
- *  - SAF 选择不需要任何运行时存储权限，Manifest 无需改动。
- *
- * Composition Root 是 [QianyanApplication]（持有 ApplicationContainer）；本 Activity 从中取出
- * `container.novels` / `container.txts` 装配 [NovelListViewModel] 并交给 Compose。
- */
+/** 主入口 Activity（P7.4 + P7.5 + P12.1.6）：UI Host + SAF TXT 文件选择 + 章节导航。 */
 class MainActivity : ComponentActivity() {
 
     private val viewModel: NovelListViewModel by lazy {
@@ -65,39 +69,12 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             QianyanTheme {
-                var screen by remember { mutableStateOf<Screen>(Screen.NovelList) }
-                BackHandler(enabled = screen is Screen.Analysis) {
-                    screen = Screen.NovelList
-                }
-                when (val current = screen) {
-                    is Screen.NovelList -> NovelListScreen(
-                        viewModel = viewModel,
-                        onImportClick = { openDocumentLauncher.launch(arrayOf("text/*")) },
-                        onNovelClick = { novel -> screen = Screen.Analysis(novel) },
-                    )
-                    is Screen.Analysis -> {
-                        // 按 novelId 作为 key，每个小说独占一个 AnalysisViewModel（避免跨小说复用旧状态）。
-                        val analysisViewModel: AnalysisViewModel = viewModel(
-                            key = "analysis-${current.novel.novelId.value}",
-                            factory = AnalysisViewModel.factory(
-                                analysis = container.analysis,
-                                vocabularies = container.vocabularies,
-                                txts = container.txts,
-                                novel = current.novel,
-                            ),
-                        )
-                        AnalysisScreen(
-                            novelTitle = current.novel.title,
-                            viewModel = analysisViewModel,
-                            onBack = { screen = Screen.NovelList },
-                        )
-                    }
-                }
+                AppHost()
             }
         }
     }
 
-    /** 应用级容器（QianyanApplication 组合根），仅读取 Application UseCase。 */
+    /** 应用级容器（QianyanApplication 组合根），仅读取 Application Use Case。 */
     private val container: com.qianyan.application.di.ApplicationContainer
         get() = (application as QianyanApplication).container
 
@@ -118,5 +95,80 @@ class MainActivity : ComponentActivity() {
         val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: throw IOException("openInputStream 返回 null")
         return name to bytes
+    }
+
+    /** 页面 Host：back stack 驱动，逐级进退。 */
+    @Composable
+    private fun AppHost() {
+        val backstack = remember { mutableStateListOf<Screen>(Screen.NovelList) }
+        val current = backstack.lastOrNull() ?: Screen.NovelList
+        val push: (Screen) -> Unit = { backstack.add(it) }
+        val pop: () -> Unit = { if (backstack.size > 1) backstack.removeAt(backstack.lastIndex) }
+
+        BackHandler(enabled = backstack.size > 1) { pop() }
+
+        when (val screen = current) {
+            is Screen.NovelList -> NovelListScreen(
+                viewModel = viewModel,
+                onImportClick = { openDocumentLauncher.launch(arrayOf("text/*")) },
+                onNovelClick = { push(Screen.NovelDetail(it)) },
+            )
+
+            is Screen.NovelDetail -> NovelDetailScreen(
+                novel = screen.novel,
+                onChapters = { push(Screen.ChapterList(screen.novel, null)) },
+                onAnalysis = { push(Screen.Analysis(screen.novel)) },
+                onBack = pop,
+            )
+
+            is Screen.Analysis -> {
+                val analysisViewModel: AnalysisViewModel = viewModel(
+                    key = "analysis-${screen.novel.novelId.value}",
+                    factory = AnalysisViewModel.factory(
+                        analysis = container.analysis,
+                        vocabularies = container.vocabularies,
+                        txts = container.txts,
+                        novel = screen.novel,
+                    ),
+                )
+                AnalysisScreen(
+                    novelTitle = screen.novel.title,
+                    viewModel = analysisViewModel,
+                    onBack = pop,
+                )
+            }
+
+            is Screen.ChapterList -> {
+                val chapterViewModel: ChapterViewModel = viewModel(
+                    key = "chapters-${screen.novel.novelId.value}-${screen.variantId?.value ?: "orig"}",
+                    factory = ChapterViewModel.factory(container.chapters, screen.novel.novelId, screen.variantId),
+                )
+                ChapterListScreen(
+                    viewModel = chapterViewModel,
+                    novelTitle = screen.novel.title,
+                    onOpen = { c ->
+                        push(Screen.ChapterDetail(screen.novel, screen.variantId, c.chapterId))
+                    },
+                    onBack = pop,
+                )
+            }
+
+            is Screen.ChapterDetail -> {
+                val detailViewModel: ChapterDetailViewModel = viewModel(
+                    key = "chapter-${screen.chapterId.value}",
+                    factory = ChapterDetailViewModel.factory(
+                        container.chapters,
+                        screen.novel.novelId,
+                        screen.variantId,
+                        screen.chapterId,
+                    ),
+                )
+                ChapterDetailScreen(
+                    viewModel = detailViewModel,
+                    novelTitle = screen.novel.title,
+                    onBack = pop,
+                )
+            }
+        }
     }
 }
