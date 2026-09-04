@@ -6,6 +6,9 @@ import com.qianyan.model.VariantId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.context.StoryWorldContext
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.story.Chapter
+import com.qianyan.model.story.ContinuationReference
+import com.qianyan.model.writing.Draft
 import kotlinx.serialization.Serializable
 
 /**
@@ -39,6 +42,13 @@ data class PlanningContext(
     val vocabulary: List<VocabularyLite> = emptyList(),
     /** 确定性组装的故事世界上下文视图（canon/layer 分层，P11.6；供渲染与检索，非新持久化）。 */
     val worldContext: StoryWorldContext? = null,
+    // ---- P12.1.3：Explicit ContinuationReference ----
+    /** 本次 Planning 的显式续篇来源引用（Chapter1 → null；Chapter2+ → 非 null）。只指向，不携带正文。 */
+    val continuationReference: ContinuationReference? = null,
+    /** 已解析的续篇来源 Chapter（经 reference 在 Assembly/Resolver 确定性解析，供渲染；非新持久化）。 */
+    val sourceChapter: Chapter? = null,
+    /** 已解析的续篇来源最终 Draft（reference-only 运行时读取；非新持久化，不落正文）。 */
+    val sourceFinalDraft: Draft? = null,
 ) {
     val isOriginal: Boolean get() = scope == VariantScope.ORIGINAL
 }

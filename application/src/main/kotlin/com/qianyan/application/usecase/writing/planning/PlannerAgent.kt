@@ -99,6 +99,16 @@ class PlannerAgent(
                 appendLine("- ${v.canonical}$repl")
             }
         }
+
+        // P12.1.3：显式续篇来源（reference-only，只渲染来源标识，不复制正文）
+        val src = context.sourceChapter
+        if (context.continuationReference != null && src != null) {
+            appendLine("【续篇来源】")
+            appendLine("sourceChapterId: ${src.chapterId.value}")
+            appendLine("sourceChapterTitle: ${src.title}")
+            appendLine("sourceDraftId: ${context.sourceFinalDraft?.draftId?.value ?: "?"}")
+            appendLine("sourceDraftStatus: ${context.sourceFinalDraft?.status ?: "?"}")
+        }
     }.trimEnd()
 
     private val runtime: AgentRuntime = AgentRuntime(

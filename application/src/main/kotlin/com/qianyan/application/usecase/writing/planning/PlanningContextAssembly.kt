@@ -7,6 +7,7 @@ import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.model.NovelId
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.story.ContinuationReference
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.VocabularyRepository
 
@@ -32,7 +33,15 @@ class PlanningContextAssembly(
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
-    fun assemble(request: UserWritingRequest): PlanningContext {
+    /** 无续篇来源组装（第一章 / Writing 复用入口）：continuation 三个字段均为 null。 */
+    fun assemble(request: UserWritingRequest): PlanningContext = assemble(request, null, null)
+
+    /**
+     * P12.1.3：带显式 [ContinuationReference] 组装。
+     * [resolved] 为 [ContinuationResolver] 已校验并解析的源头（sourceChapter + sourceFinalDraft），
+     * Assembly 只做**投影**，不重新查询数据库；reference-only，不复制正文。
+     */
+    fun assemble(request: UserWritingRequest, continuationReference: ContinuationReference?, resolved: ResolvedContinuation?): PlanningContext {
         // 1) 定位目标 Novel：baseNovelId 必填（P11.2 Planning 必须有明确作用域）
         val baseNovelId = request.baseNovelId
             ?: throw ApplicationException(
@@ -88,6 +97,9 @@ class PlanningContextAssembly(
             memories = worldContext.orderedVisible,
             vocabulary = vocabulary.map { VocabularyLite(canonical = it.canonical, aliases = it.aliases, replacement = it.replacement) },
             worldContext = worldContext,
+            continuationReference = continuationReference,
+            sourceChapter = resolved?.sourceChapter,
+            sourceFinalDraft = resolved?.sourceFinalDraft,
         )
     }
 }

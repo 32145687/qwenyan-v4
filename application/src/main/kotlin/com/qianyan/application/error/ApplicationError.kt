@@ -145,4 +145,11 @@ sealed interface ApplicationError {
 
     /** Knowledge Update 被确定性拒绝（如 immutable canon 不允许 UPDATE/REMOVE），足以拒绝整体执行。 */
     data class KnowledgeUpdateRejected(val detail: String) : ApplicationError
+
+    // ---- P12.1.3 新增：Explicit ContinuationReference 续篇来源非法 ----
+    // 类型化错误，绝不靠 String message 判断类型；ContinuationResolver 对续篇来源校验失败时抛出。
+
+    /** 续篇来源不合法：source Draft 非 FINAL / source Draft 不属于 source Chapter 的 lineage /
+     *  Novel / Variant / scope 作用域不一致，导致该 ContinuationReference 不可作为下一章 Planning 的来源。 */
+    data class InvalidContinuationSource(val detail: String) : ApplicationError
 }

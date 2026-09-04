@@ -16,6 +16,7 @@ import com.qianyan.model.TaskId
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.spec.ValidationResult
 import com.qianyan.model.story.ChapterPlan
+import com.qianyan.model.story.ContinuationReference
 import com.qianyan.model.task.Task
 import com.qianyan.model.task.TaskType
 import com.qianyan.model.writing.Draft
@@ -73,9 +74,14 @@ class TaskRunner(
     /**
      * 执行 PLANNING 受管任务（P11.2）：PENDING → start → PlanningExecutionUseCase
      * （Context Assembly → PlannerAgent → ChapterPlan → Checkpoint）→ COMPLETED / FAILED。
+     * P12.1.3：可选 [continuationReference] 透传给 Planning（第一章传 null，第二章传显式来源）。
      */
-    fun executePlanning(taskId: TaskId, request: UserWritingRequest): ChapterPlan =
-        planning.execute(taskId, request)
+    fun executePlanning(
+        taskId: TaskId,
+        request: UserWritingRequest,
+        continuationReference: ContinuationReference? = null,
+    ): ChapterPlan =
+        planning.execute(taskId, request, continuationReference)
 
     /**
      * 执行 WRITING 受管任务（P11.3）：PENDING → start → WritingExecutionUseCase

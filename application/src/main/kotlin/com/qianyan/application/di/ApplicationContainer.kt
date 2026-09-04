@@ -18,6 +18,7 @@ import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
+import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
@@ -103,13 +104,17 @@ class ApplicationContainer(
     val planningContextAssembly: PlanningContextAssembly
         get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, errorMapper)
 
+    /** P12.1.3 Continuation 来源解析/校验：解析显式 [ContinuationReference] → source Chapter + source Final Draft。 */
+    val continuationResolver: ContinuationResolver
+        get() = ContinuationResolver(chapterRepository, draftRepository, errorMapper)
+
     /** P11.2 Planner Agent：经 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
     val planner: PlannerAgent
         get() = PlannerAgent(analysisGateway, errorMapper, analysisModel)
 
     /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan（P0-4 绑定/创建真实 Chapter）。 */
     val planning: PlanningExecutionUseCase
-        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, chapterRepository, errorMapper)
+        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, chapterRepository, continuationResolver, errorMapper)
 
     /** P11.3 Writer Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
     val writer: WriterAgent

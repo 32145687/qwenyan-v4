@@ -11,6 +11,7 @@ import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.story.ChapterStatus
+import com.qianyan.model.story.ContinuationReference
 import com.qianyan.model.task.Checkpoint
 import com.qianyan.model.task.TaskType
 import com.qianyan.storage.repository.ChapterRepository
@@ -39,14 +40,20 @@ class PlanningExecutionUseCase(
     private val assembly: PlanningContextAssembly,
     private val planner: PlannerAgent,
     private val chapterRepository: ChapterRepository,
+    private val continuationResolver: ContinuationResolver,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
     /**
      * 执行一个 PLANNING Task 到 COMPLETED / FAILED，并返回产出 [ChapterPlan]（chapterId 非空）。
      * Task 类型非 PLANNING → [ApplicationError.InvalidOperation]；不存在 → TaskNotFound。
+     *
+     * P12.1.3：可选 [continuationReference] 表达"从指定 source Chapter 的指定 source Final Draft 继续"。
+     *  - null → 无续篇来源（第一章）；
+     *  - 非 null → 在调用 PlannerAgent 之前经 [ContinuationResolver] 确定性校验/解析（FINAL Draft、
+     *    Chapter/Draft lineage、Novel / Variant / Original-Variant 隔离），校验失败 → 类型化错误，绝不执行 Agent。
      */
-    fun execute(taskId: TaskId, request: UserWritingRequest): ChapterPlan {
+    fun execute(taskId: TaskId, request: UserWritingRequest, continuationReference: ContinuationReference? = null): ChapterPlan {
         val task = taskManager.findById(taskId)
         if (task.type != TaskType.PLANNING) {
             throw ApplicationException(
@@ -56,7 +63,8 @@ class PlanningExecutionUseCase(
 
         taskManager.start(taskId)
         try {
-            val context = assembly.assemble(request)
+            val resolved = continuationReference?.let { continuationResolver.resolve(request, it) }
+            val context = assembly.assemble(request, continuationReference, resolved)
             val plan = planner.plan(context)
             val planWithChapter = bindChapter(plan)
             taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(planWithChapter))

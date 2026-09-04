@@ -137,6 +137,7 @@ class AnalysisViewModel(
         is ApplicationError.InvalidKnowledgeUpdateOutput -> "知识更新输出无效，请重试"
         is ApplicationError.KnowledgeUpdateFailed -> "知识更新失败，请重试"
         is ApplicationError.KnowledgeUpdateRejected -> "知识更新被拒绝，请重试"
+        is ApplicationError.InvalidContinuationSource -> "续篇来源无效：${error.detail}"
         is ApplicationError.UnknownStorage -> "存储错误，请重试"
     }
 
