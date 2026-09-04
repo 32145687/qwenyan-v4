@@ -265,9 +265,14 @@ class TaskMigrationTest {
         assertTrue(tableExists(driver, "Checkpoint"), "migration 后应存在 Checkpoint 表")
         assertTrue(tableExists(driver, "ChapterDraft"), "migration 后应存在 ChapterDraft 表")
         assertTrue(tableExists(driver, "Chapter"), "migration 后应存在 Chapter 表（P12.0 P0-4）")
-        assertEquals(4L, userVersion(driver), "migration 后 user_version 应为当前最新版本 4（P12.0 Schema v4）")
+        assertEquals(5L, userVersion(driver), "migration 后 user_version 应为当前最新版本 5（P12.1.1 Schema v5）")
 
-        // 4) 旧数据原样保留（通过既有 Repository 读回）
+        // 5) v5 新增的 6 张 Story State 表在旧库逐级迁移后均存在（P12.1.1）
+        listOf("Character", "CharacterState", "WorldRule", "Event", "TimelineEntry", "Foreshadow").forEach { tbl ->
+            assertTrue(tableExists(driver, tbl), "migration 后应存在 $tbl 表（P12.1.1 Story State）")
+        }
+
+        // 6) 旧数据原样保留（通过既有 Repository 读回）
         val novels = SqliteNovelRepository(h.db)
         val readNovel = novels.getNovel(NovelId("mig-novel"))
         assertNotNull(readNovel, "旧 Novel 数据应保留")

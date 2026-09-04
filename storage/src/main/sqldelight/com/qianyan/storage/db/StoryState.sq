@@ -1,0 +1,165 @@
+-- Qianyan Storage · Schema v5（P12.1.1 · Story State Persistence）
+-- StoryWorldContextResolver 的持久化底座：6 张故事上下文表 + scope 隔离查询。
+-- 约束（与既有 P12.0 约定一致）：
+--   - 每张表均带 novel_id + variant_id(NULL=Original) + scope 三列；
+--   - 查询一律按 novel+variant 隔离：Original ← variant_id IS NULL；Variant ← variant_id=:variant_id，不混 scope；
+--   - 复杂嵌套列表/对象用 JSON 字符串列（不建关联表），ID 一律 TEXT(UUID)，时间 INTEGER(epoch ms)。
+--     Original 只读约束由更高层校验，此处仅暴露写入方法。
+
+CREATE TABLE Character (
+    character_id  TEXT NOT NULL PRIMARY KEY,
+    novel_id      TEXT NOT NULL,
+    variant_id    TEXT,
+    scope         TEXT NOT NULL,             -- VariantScope 枚举名
+    name          TEXT NOT NULL,
+    personality   TEXT NOT NULL DEFAULT '[]',-- JSON List<String>
+    created_at    INTEGER NOT NULL,          -- epoch 毫秒
+    updated_at    INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE CharacterState (
+    state_id           TEXT NOT NULL PRIMARY KEY,
+    character_id       TEXT NOT NULL,
+    novel_id           TEXT NOT NULL,
+    variant_id         TEXT,
+    scope              TEXT NOT NULL,        -- VariantScope 枚举名
+    chapter_id         TEXT,
+    timeline_position  TEXT,                 -- TimelinePosition JSON 或 NULL
+    snapshot_type      TEXT NOT NULL,        -- SnapshotType 枚举名
+    physical           TEXT NOT NULL DEFAULT '{}', -- PhysicalState(label/details) JSON
+    emotional          TEXT NOT NULL DEFAULT '{}', -- EmotionalState(label/intensity) JSON
+    current_goal       TEXT,
+    created_at         INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE WorldRule (
+    rule_id    TEXT NOT NULL PRIMARY KEY,
+    world_id   TEXT NOT NULL,
+    novel_id   TEXT NOT NULL,
+    variant_id TEXT,
+    scope      TEXT NOT NULL,                -- VariantScope 枚举名
+    content    TEXT NOT NULL,
+    category   TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE Event (
+    event_id    TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    variant_id  TEXT,
+    scope       TEXT NOT NULL,               -- VariantScope 枚举名
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    type        TEXT NOT NULL,               -- EventType 枚举名
+    importance  INTEGER NOT NULL DEFAULT 5,
+    when_json   TEXT,                        -- TimelinePosition JSON 或 NULL
+    who         TEXT NOT NULL DEFAULT '[]',  -- JSON List<CharacterId>
+    chapter_id  TEXT,
+    status      TEXT NOT NULL,               -- EventStatus 枚举名
+    created_at  INTEGER NOT NULL,            -- epoch 毫秒
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE TimelineEntry (
+    timeline_id TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    variant_id  TEXT,
+    scope       TEXT NOT NULL,               -- VariantScope 枚举名
+    position    TEXT NOT NULL,               -- TimelinePosition JSON
+    event_id    TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    chapter_id  TEXT,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE Foreshadow (
+    foreshadow_id TEXT NOT NULL PRIMARY KEY,
+    novel_id      TEXT NOT NULL,
+    variant_id    TEXT,
+    scope         TEXT NOT NULL,             -- VariantScope 枚举名
+    chapter_id    TEXT,
+    content       TEXT NOT NULL,
+    resolved      INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+-- ============================================================
+-- Character
+-- ============================================================
+insertCharacter:
+INSERT OR REPLACE INTO Character(character_id, novel_id, variant_id, scope, name, personality, created_at, updated_at)
+VALUES (:character_id, :novel_id, :variant_id, :scope, :name, :personality, :created_at, :updated_at);
+
+getCharacterById:
+SELECT * FROM Character WHERE character_id = :character_id;
+
+listCharactersByScope:
+SELECT * FROM Character WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY name ASC, character_id ASC;
+
+-- ============================================================
+-- CharacterState
+-- ============================================================
+insertCharacterState:
+INSERT OR REPLACE INTO CharacterState(state_id, character_id, novel_id, variant_id, scope, chapter_id, timeline_position, snapshot_type, physical, emotional, current_goal, created_at)
+VALUES (:state_id, :character_id, :novel_id, :variant_id, :scope, :chapter_id, :timeline_position, :snapshot_type, :physical, :emotional, :current_goal, :created_at);
+
+getCharacterStateById:
+SELECT * FROM CharacterState WHERE state_id = :state_id;
+
+listCharacterStatesByScope:
+SELECT * FROM CharacterState WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY created_at ASC, state_id ASC;
+
+-- ============================================================
+-- WorldRule
+-- ============================================================
+insertWorldRule:
+INSERT OR REPLACE INTO WorldRule(rule_id, world_id, novel_id, variant_id, scope, content, category)
+VALUES (:rule_id, :world_id, :novel_id, :variant_id, :scope, :content, :category);
+
+getWorldRuleById:
+SELECT * FROM WorldRule WHERE rule_id = :rule_id;
+
+listWorldRulesByScope:
+SELECT * FROM WorldRule WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY category ASC, rule_id ASC;
+
+-- ============================================================
+-- Event
+-- ============================================================
+insertEvent:
+INSERT OR REPLACE INTO Event(event_id, novel_id, variant_id, scope, name, description, type, importance, when_json, who, chapter_id, status, created_at)
+VALUES (:event_id, :novel_id, :variant_id, :scope, :name, :description, :type, :importance, :when_json, :who, :chapter_id, :status, :created_at);
+
+getEventById:
+SELECT * FROM Event WHERE event_id = :event_id;
+
+listEventsByScope:
+SELECT * FROM Event WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY name ASC, event_id ASC;
+
+-- ============================================================
+-- TimelineEntry
+-- ============================================================
+insertTimelineEntry:
+INSERT OR REPLACE INTO TimelineEntry(timeline_id, novel_id, variant_id, scope, position, event_id, description, chapter_id)
+VALUES (:timeline_id, :novel_id, :variant_id, :scope, :position, :event_id, :description, :chapter_id);
+
+getTimelineEntryById:
+SELECT * FROM TimelineEntry WHERE timeline_id = :timeline_id;
+
+listTimelineEntriesByScope:
+SELECT * FROM TimelineEntry WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY position ASC, timeline_id ASC;
+
+-- ============================================================
+-- Foreshadow
+-- ============================================================
+insertForeshadow:
+INSERT OR REPLACE INTO Foreshadow(foreshadow_id, novel_id, variant_id, scope, chapter_id, content, resolved, created_at)
+VALUES (:foreshadow_id, :novel_id, :variant_id, :scope, :chapter_id, :content, :resolved, :created_at);
+
+getForeshadowById:
+SELECT * FROM Foreshadow WHERE foreshadow_id = :foreshadow_id;
+
+listForeshadowsByScope:
+SELECT * FROM Foreshadow WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY created_at ASC, foreshadow_id ASC;

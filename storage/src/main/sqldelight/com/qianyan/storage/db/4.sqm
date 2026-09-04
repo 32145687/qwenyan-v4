@@ -1,0 +1,85 @@
+-- Qianyan Storage · v4 → v5 migration（P12.1.1 · Story State Persistence）
+-- 仅扩展，不删除/修改既有业务表；与 StoryState.sq 真源保持一致：
+--   新增 6 张故事上下文表（Character / CharacterState / WorldRule / Event / TimelineEntry / Foreshadow），
+--   全部带 novel_id + variant_id + scope，供 StoryWorldContextResolver 按 scope 隔离读取。
+-- SQLive ALTER 无需，纯新增表；旧 v4 数据原样保留。
+
+CREATE TABLE Character (
+    character_id  TEXT NOT NULL PRIMARY KEY,
+    novel_id      TEXT NOT NULL,
+    variant_id    TEXT,
+    scope         TEXT NOT NULL,
+    name          TEXT NOT NULL,
+    personality   TEXT NOT NULL DEFAULT '[]',
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE CharacterState (
+    state_id           TEXT NOT NULL PRIMARY KEY,
+    character_id       TEXT NOT NULL,
+    novel_id           TEXT NOT NULL,
+    variant_id         TEXT,
+    scope              TEXT NOT NULL,
+    chapter_id         TEXT,
+    timeline_position  TEXT,
+    snapshot_type      TEXT NOT NULL,
+    physical           TEXT NOT NULL DEFAULT '{}',
+    emotional          TEXT NOT NULL DEFAULT '{}',
+    current_goal       TEXT,
+    created_at         INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE WorldRule (
+    rule_id    TEXT NOT NULL PRIMARY KEY,
+    world_id   TEXT NOT NULL,
+    novel_id   TEXT NOT NULL,
+    variant_id TEXT,
+    scope      TEXT NOT NULL,
+    content    TEXT NOT NULL,
+    category   TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE Event (
+    event_id    TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    variant_id  TEXT,
+    scope       TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    type        TEXT NOT NULL,
+    importance  INTEGER NOT NULL DEFAULT 5,
+    when_json   TEXT,
+    who         TEXT NOT NULL DEFAULT '[]',
+    chapter_id  TEXT,
+    status      TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE TimelineEntry (
+    timeline_id TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    variant_id  TEXT,
+    scope       TEXT NOT NULL,
+    position    TEXT NOT NULL,
+    event_id    TEXT,
+    description TEXT NOT NULL DEFAULT '',
+    chapter_id  TEXT,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE TABLE Foreshadow (
+    foreshadow_id TEXT NOT NULL PRIMARY KEY,
+    novel_id      TEXT NOT NULL,
+    variant_id    TEXT,
+    scope         TEXT NOT NULL,
+    chapter_id    TEXT,
+    content       TEXT NOT NULL,
+    resolved      INTEGER NOT NULL DEFAULT 0,
+    created_at    INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);

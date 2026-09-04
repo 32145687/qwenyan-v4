@@ -278,7 +278,10 @@ class DraftMigrationTest {
 
             // 3) 新表已创建，版本已同步
             assertTrue(tableExists(driver, "ChapterDraft"), "migration 后应存在 ChapterDraft 表")
-            assertEquals(4L, userVersion(driver), "migration 后 user_version 应为 4（P12.0 Schema v4）")
+            assertEquals(5L, userVersion(driver), "migration 后 user_version 应为 5（P12.1.1 Schema v5）")
+            listOf("Character", "CharacterState", "WorldRule", "Event", "TimelineEntry", "Foreshadow").forEach { tbl ->
+                assertTrue(tableExists(driver, tbl), "migration 后应存在 $tbl 表（P12.1.1 Story State）")
+            }
 
             // 4) 旧数据原样保留（通过既有 Repository 读回）
             val novels = SqliteNovelRepository(h.db)
@@ -330,8 +333,11 @@ class DraftMigrationTest {
         val h = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY)
         val driver = h.driver as JdbcSqliteDriver
         assertTrue(tableExists(driver, "ChapterDraft"), "全新库初始化后应直接建出 ChapterDraft 表")
-        assertEquals(4L, userVersion(driver), "全新库 user_version 应为 4（P12.0 Schema v4）")
+        assertEquals(5L, userVersion(driver), "全新库 user_version 应为 5（P12.1.1 Schema v5）")
         assertTrue(tableExists(driver, "Chapter"), "全新库初始化后应直接建出 Chapter 表（P12.0 P0-4）")
+        listOf("Character", "CharacterState", "WorldRule", "Event", "TimelineEntry", "Foreshadow").forEach { tbl ->
+            assertTrue(tableExists(driver, tbl), "全新库初始化后应直接建出 $tbl 表（P12.1.1 Story State）")
+        }
         driver.getConnection().close()
     }
 }

@@ -20,6 +20,25 @@ import com.qianyan.model.VocabularyCandidateId
 import com.qianyan.model.VocabularyEntryId
 import com.qianyan.model.VocabularyId
 import com.qianyan.model.VocabularyRuleId
+import com.qianyan.model.CharacterId
+import com.qianyan.model.EventId
+import com.qianyan.model.ForeshadowingId
+import com.qianyan.model.StateId
+import com.qianyan.model.TimelineEntryId
+import com.qianyan.model.WorldId
+import com.qianyan.model.WorldRuleId
+import com.qianyan.model.character.Character as DomainCharacter
+import com.qianyan.model.character.CharacterState as DomainCharacterState
+import com.qianyan.model.character.EmotionalState
+import com.qianyan.model.character.PhysicalState
+import com.qianyan.model.character.SnapshotType
+import com.qianyan.model.story.Foreshadow as DomainForeshadow
+import com.qianyan.model.timeline.Event as DomainEvent
+import com.qianyan.model.timeline.EventStatus
+import com.qianyan.model.timeline.EventType
+import com.qianyan.model.timeline.TimelineEntry as DomainTimelineEntry
+import com.qianyan.model.timeline.TimelinePosition
+import com.qianyan.model.world.WorldRule as DomainWorldRule
 import com.qianyan.model.core.EntityOverride
 import com.qianyan.model.core.Novel as DomainNovel
 import com.qianyan.model.core.NovelVariant as DomainNovelVariant
@@ -55,6 +74,12 @@ import com.qianyan.model.writing.DraftStatus
 import com.qianyan.storage.db.Chapter as DbChapter
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
+import com.qianyan.storage.db.Character as DbCharacter
+import com.qianyan.storage.db.CharacterState as DbCharacterState
+import com.qianyan.storage.db.Event as DbEvent
+import com.qianyan.storage.db.Foreshadow as DbForeshadow
+import com.qianyan.storage.db.TimelineEntry as DbTimelineEntry
+import com.qianyan.storage.db.WorldRule as DbWorldRule
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -476,5 +501,155 @@ internal object StorageMappers {
         status = com.qianyan.model.story.ChapterStatus.valueOf(row.status),
         createdAt = epochMillisToInstant(row.created_at),
         updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    /* ---------------- Story State (P12.1.1) ---------------- */
+
+    fun domainCharacter(c: DomainCharacter): DbCharacter = DbCharacter(
+        character_id = c.characterId.value,
+        novel_id = c.novelId.value,
+        variant_id = c.variantId?.value,
+        scope = c.scope.name,
+        name = c.name,
+        personality = json.encodeToString(ListSerializer(String.serializer()), c.personality),
+        created_at = c.createdAt.toEpochMillis(),
+        updated_at = c.updatedAt.toEpochMillis(),
+    )
+
+    fun dbCharacter(row: DbCharacter): DomainCharacter = DomainCharacter(
+        characterId = CharacterId(row.character_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        name = row.name,
+        personality = json.decodeFromString(ListSerializer(String.serializer()), row.personality),
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainCharacterState(s: DomainCharacterState): DbCharacterState = DbCharacterState(
+        state_id = s.id.value,
+        character_id = s.characterId.value,
+        novel_id = s.novelId.value,
+        variant_id = s.variantId?.value,
+        scope = s.scope.name,
+        chapter_id = s.chapterId?.value,
+        timeline_position = s.timelinePosition?.let { json.encodeToString(TimelinePosition.serializer(), it) },
+        snapshot_type = s.snapshotType.name,
+        physical = json.encodeToString(PhysicalState.serializer(), s.physicalState),
+        emotional = json.encodeToString(EmotionalState.serializer(), s.emotionalState),
+        current_goal = s.currentGoal,
+        created_at = s.createdAt.toEpochMillis(),
+    )
+
+    fun dbCharacterState(row: DbCharacterState): DomainCharacterState = DomainCharacterState(
+        id = StateId(row.state_id),
+        characterId = CharacterId(row.character_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        timelinePosition = row.timeline_position?.let { json.decodeFromString(TimelinePosition.serializer(), it) },
+        snapshotType = SnapshotType.valueOf(row.snapshot_type),
+        physicalState = json.decodeFromString(PhysicalState.serializer(), row.physical),
+        emotionalState = json.decodeFromString(EmotionalState.serializer(), row.emotional),
+        currentGoal = row.current_goal,
+        createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    fun domainWorldRule(w: DomainWorldRule): DbWorldRule = DbWorldRule(
+        rule_id = w.ruleId.value,
+        world_id = w.worldId.value,
+        novel_id = w.novelId.value,
+        variant_id = w.variantId?.value,
+        scope = w.scope.name,
+        content = w.content,
+        category = w.category,
+    )
+
+    fun dbWorldRule(row: DbWorldRule): DomainWorldRule = DomainWorldRule(
+        ruleId = WorldRuleId(row.rule_id),
+        worldId = WorldId(row.world_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        content = row.content,
+        category = row.category,
+    )
+
+    fun domainEvent(e: DomainEvent): DbEvent = DbEvent(
+        event_id = e.id.value,
+        novel_id = e.novelId.value,
+        variant_id = e.variantId?.value,
+        scope = e.scope.name,
+        name = e.name,
+        description = e.description,
+        type = e.type.name,
+        importance = e.importance.toLong(),
+        when_json = e.`when`?.let { json.encodeToString(TimelinePosition.serializer(), it) },
+        who = json.encodeToString(ListSerializer(CharacterId.serializer()), e.who),
+        chapter_id = e.chapterId?.value,
+        status = e.status.name,
+        created_at = e.createdAt.toEpochMillis(),
+    )
+
+    fun dbEvent(row: DbEvent): DomainEvent = DomainEvent(
+        id = EventId(row.event_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        name = row.name,
+        description = row.description,
+        type = EventType.valueOf(row.type),
+        importance = row.importance.toInt(),
+        `when` = row.when_json?.let { json.decodeFromString(TimelinePosition.serializer(), it) },
+        who = json.decodeFromString(ListSerializer(CharacterId.serializer()), row.who),
+        chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        status = EventStatus.valueOf(row.status),
+        createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    fun domainTimelineEntry(t: DomainTimelineEntry): DbTimelineEntry = DbTimelineEntry(
+        timeline_id = t.id.value,
+        novel_id = t.novelId.value,
+        variant_id = t.variantId?.value,
+        scope = t.scope.name,
+        position = json.encodeToString(TimelinePosition.serializer(), t.position),
+        event_id = t.eventId?.value,
+        description = t.description,
+        chapter_id = t.chapterId?.value,
+    )
+
+    fun dbTimelineEntry(row: DbTimelineEntry): DomainTimelineEntry = DomainTimelineEntry(
+        id = TimelineEntryId(row.timeline_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        position = json.decodeFromString(TimelinePosition.serializer(), row.position),
+        eventId = row.event_id?.let { EventId(it) },
+        description = row.description,
+        chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+    )
+
+    fun domainForeshadow(f: DomainForeshadow): DbForeshadow = DbForeshadow(
+        foreshadow_id = f.foreshadowId.value,
+        novel_id = f.novelId.value,
+        variant_id = f.variantId?.value,
+        scope = f.scope.name,
+        chapter_id = f.chapterId?.value,
+        content = f.content,
+        resolved = f.resolved,
+        created_at = f.createdAt.toEpochMillis(),
+    )
+
+    fun dbForeshadow(row: DbForeshadow): DomainForeshadow = DomainForeshadow(
+        foreshadowId = ForeshadowingId(row.foreshadow_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        content = row.content,
+        resolved = row.resolved,
+        createdAt = epochMillisToInstant(row.created_at),
     )
 }
