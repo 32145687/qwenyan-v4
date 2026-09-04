@@ -7,8 +7,13 @@
 >   `P8.1 = Task Storage` ✅ DONE · `P8.2 = Task Manager / State Machine` ✅ DONE · `P8.3 = Task Execution` ✅ DONE ·
 >   `P9 = Real LLM Provider（DeepSeek / MiMo / LLMGateway / HTTP Transport / Provider Error Handling）` ✅ DONE ·
 >   `P10 = Agent Runtime + Tool System` ✅ DONE ·
->   `P11.1 = Writing Scaffold` ✅ DONE · `P11.2 = Context + Planning` ✅ DONE · `P11.3 = Writing 最小链路` ✅ DONE ·
->   `P11.4 / P11.5 = Critique/Revision + MiMo 后处理算法` ⬜ NOT STARTED · `P12+ = 高级能力` 🔮 FUTURE。**Current Phase = P11（P11.3 完成）**。
+>   `P11.1–P11.7 = 单章节创作闭环` ✅ COMPLETE ·
+>   `P12.0 / P12.0.1 = Schema & Scope Hardening` ✅ COMPLETE ·
+>   `P12.1.1 Story State Persistence` ✅ DONE · `P12.1.2 StoryWorldContextResolver` ✅ DONE ·
+>   `P12.1.3 Explicit ContinuationReference` ✅ DONE · `P12.1.4 Knowledge Update Confirmation Gate` ✅ DONE ·
+>   `P12.1.5 Provider Runtime Configuration` ✅ DONE · `P12.1.6 Android Chapter Creation / Basic UI` ✅ DONE ·
+>   `P12.1.7 Android Planning/Writing/Review Chain` ⏳ NEXT · `P12.1.8 Chapter1→2 Full E2E` ⬜ PENDING ·
+>   `P12+ = 高级能力` 🔮 FUTURE。**Current Phase = P12.1.6 COMPLETE（P12.1.7 NEXT）**。
 > - 请勿把本文档的 P 编号当现行阶段；当前进度请以正文中的「Current Development Roadmap」与各 completion report 为准。
 >
 > 本文档内容保留作为 **历史状态档案**，不依据旧编号推导当前状态。
