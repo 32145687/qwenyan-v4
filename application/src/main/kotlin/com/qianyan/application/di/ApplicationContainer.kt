@@ -18,6 +18,7 @@ import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
+import com.qianyan.application.usecase.writing.confirmation.ConfirmationExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
@@ -144,9 +145,14 @@ class ApplicationContainer(
     val knowledgeUpdater: KnowledgeUpdateAgent
         get() = KnowledgeUpdateAgent(analysisGateway, errorMapper, analysisModel)
 
-    /** P11.5 Knowledge Update 执行 Use Case：确定性 validate+apply → Memory 沉淀 + KNOWN_UPDATE Checkpoint。 */
+    /** P11.5 Knowledge Update 执行 Use Case：确定性 validate+apply → Memory 沉淀 + KNOWN_UPDATE Checkpoint。
+     *  P12.1.4：前置 HITL Confirmation Gate（source Draft 必须已 CONFIRMED）。 */
     val knowledgeUpdate: KnowledgeUpdateExecutionUseCase
-        get() = KnowledgeUpdateExecutionUseCase(tasks, knowledgeUpdater, memoryRepository, errorMapper)
+        get() = KnowledgeUpdateExecutionUseCase(tasks, knowledgeUpdater, memoryRepository, draftRepository, errorMapper)
+
+    /** P12.1.4 最小 HITL 确认闸门：confirm a Final Draft（FINAL/PENDING → CONFIRMED，幂等，作用域隔离）。 */
+    val confirmations: ConfirmationExecutionUseCase
+        get() = ConfirmationExecutionUseCase(draftRepository, errorMapper)
 
     val taskRunner: TaskRunner get() =
         TaskRunner(tasks, txts, planning, writingExecution, critique, revision, knowledgeUpdate, errorMapper)

@@ -88,14 +88,19 @@ class KnowledgeEffectiveStateTransactionTest {
 
         val add = ApplicationContainer.open(analysisGateway = gateway("""{"changes":[{"changeId":"k1","operation":"ADD","target":"主角","content":"事实1"}]}"""))
         val addNovel = add.novels.createOriginal(title = "T")
-        add.taskRunner.executeKnowledgeUpdate(add.tasks.create(TaskType.WRITING), draft.copy(novelId = addNovel))
+        // P12.1.4：KU 需已 CONFIRMED Final Draft。
+        val addDraft = draft.copy(novelId = addNovel, status = DraftStatus.CONFIRMED).also { add.draftRepository.save(it) }
+        add.taskRunner.executeKnowledgeUpdate(add.tasks.create(TaskType.WRITING), addDraft)
         assertTrue(add.storyWorldContextResolver.resolve(addNovel).memories.any { it.contains("事实1") })
 
         val upd = ApplicationContainer.open(analysisGateway = gateway("""{"changes":[{"changeId":"k2","operation":"UPDATE","target":"主角","content":"事实2"}]}"""))
         val updNovel = upd.novels.createOriginal(title = "T")
         val idUpd = upd.tasks.create(TaskType.WRITING)
         // UPDATE 走 Variant（ORIGINAL 的 UPDATE 会被 immutable Canon 拒绝）；同 target 旧事实失效，「事实2」成为当前有效
-        val vDraft = draft.copy(novelId = updNovel, variantId = com.qianyan.model.VariantId("va"), scope = VariantScope.VARIANT)
+        val vDraft = draft.copy(
+            novelId = updNovel, variantId = com.qianyan.model.VariantId("va"), scope = VariantScope.VARIANT,
+            status = DraftStatus.CONFIRMED,
+        ).also { upd.draftRepository.save(it) }
         upd.taskRunner.executeKnowledgeUpdate(idUpd, vDraft)
         val after = upd.storyWorldContextResolver.resolve(updNovel, variantId = com.qianyan.model.VariantId("va")).memories
         assertTrue(after.any { it.contains("事实2") })

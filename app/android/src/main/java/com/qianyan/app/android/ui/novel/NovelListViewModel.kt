@@ -132,6 +132,7 @@ class NovelListViewModel(
         is ApplicationError.KnowledgeUpdateFailed -> "知识更新失败，请重试"
         is ApplicationError.KnowledgeUpdateRejected -> "知识更新被拒绝，请重试"
         is ApplicationError.InvalidContinuationSource -> "续篇来源无效：${error.detail}"
+        is ApplicationError.DraftConfirmationRequired -> "知识更新需先确认最终稿：${error.detail}"
     }
 
     companion object {

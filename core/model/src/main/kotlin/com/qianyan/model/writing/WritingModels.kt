@@ -43,8 +43,10 @@ data class Draft(
     val updatedAt: Instant,
 )
 
-/** 草稿生命周期（最小；与 ChapterStatus 解耦，写作产物独立表达）。 */
+/** 草稿生命周期（最小；与 ChapterStatus 解耦，写作产物独立表达）。
+ * P12.1.4：引入 [PENDING_CONFIRMATION] / [CONFIRMED]，表达最小 HITL 确认闸门——
+ * Knowledge Update 只允许对 [CONFIRMED] Final Draft 执行；[FINAL] 及以上方可提交确认。 */
 @Serializable
 enum class DraftStatus {
-    DRAFTING, WRITTEN, REVISED, FINAL,
+    DRAFTING, WRITTEN, REVISED, FINAL, PENDING_CONFIRMATION, CONFIRMED,
 }

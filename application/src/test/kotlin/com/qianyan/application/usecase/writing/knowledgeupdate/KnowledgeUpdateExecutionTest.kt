@@ -103,13 +103,22 @@ class KnowledgeUpdateExecutionTest {
         updatedAt = Instant.parse("2026-01-01T00:00:00Z"),
     )
 
+    /** P12.1.4：构造一个已 CONFIRMED 并持久化的 Final Draft，供 KU 过门禁。 */
+    private fun confirmedDraft(app: ApplicationContainer): Draft {
+        val d = draft().copy(status = DraftStatus.CONFIRMED)
+        app.draftRepository.save(d)
+        return d
+    }
+
     /* 合法候选：确定性落地 → Memory(layer=WRITING) + KNOWN_UPDATE Checkpoint */
     @Test
     fun `valid knowledge update persists and checkpoints`() {
         val app = ApplicationContainer.open(analysisGateway = gateway())
         val id = app.tasks.create(TaskType.WRITING)
+        // P12.1.4：KU 需要已 CONFIRMED 的 Final Draft（先持久化、再确认）。
+        val d = confirmedDraft(app)
 
-        val outcome = app.taskRunner.executeKnowledgeUpdate(id, draft())
+        val outcome = app.taskRunner.executeKnowledgeUpdate(id, d)
 
         assertEquals(1, outcome.validated.accepted.size)
         assertEquals(KnowledgeOperation.ADD, outcome.validated.accepted[0].operation)
@@ -136,7 +145,9 @@ class KnowledgeUpdateExecutionTest {
         val app = ApplicationContainer.open(analysisGateway = gateway(ku))
         val id = app.tasks.create(TaskType.WRITING)
 
-        val originalDraft = draft().copy(variantId = null, scope = VariantScope.ORIGINAL)
+        // P12.1.4：KU 需要已 CONFIRMED 的 Final Draft。
+        val originalDraft = draft().copy(variantId = null, scope = VariantScope.ORIGINAL, status = DraftStatus.CONFIRMED)
+        app.draftRepository.save(originalDraft)
         val outcome = app.taskRunner.executeKnowledgeUpdate(id, originalDraft)
 
         assertEquals(0, outcome.validated.accepted.size)
@@ -154,16 +165,17 @@ class KnowledgeUpdateExecutionTest {
     fun `invalid knowledge output fails typed`() {
         val app = ApplicationContainer.open(analysisGateway = gateway("这不是 JSON"))
         val id = app.tasks.create(TaskType.WRITING)
-        val ex = assertFailsWith<ApplicationException> { app.taskRunner.executeKnowledgeUpdate(id, draft()) }
+        val ex = assertFailsWith<ApplicationException> { app.taskRunner.executeKnowledgeUpdate(id, confirmedDraft(app)) }
         assertIs<ApplicationError.InvalidKnowledgeUpdateOutput>(ex.error)
     }
 
     /* Provider 故障 → ProviderUnavailable */
     @Test
     fun `provider failure fails typed`() {
+        llmCalls = 0
         val app = ApplicationContainer.open(analysisGateway = gateway(throwing = true))
         val id = app.tasks.create(TaskType.WRITING)
-        val ex = assertFailsWith<ApplicationException> { app.taskRunner.executeKnowledgeUpdate(id, draft()) }
+        val ex = assertFailsWith<ApplicationException> { app.taskRunner.executeKnowledgeUpdate(id, confirmedDraft(app)) }
         assertIs<ApplicationError.ProviderUnavailable>(ex.error)
     }
 
@@ -196,8 +208,13 @@ class KnowledgeUpdateExecutionTest {
             val critique = app.taskRunner.executeCritique(id, v1)
             assertNotNull(critique)
 
+            // P12.1.4：KU 前需最终稿 + 确认（confirm 不调用 LLM，llmCalls 保持 3）。
+            app.draftRepository.save(v1.copy(status = DraftStatus.FINAL))
+            val confirmed = app.confirmations.confirmFinalDraft(v1.draftId, v1.novelId, v1.variantId)
+            assertEquals(DraftStatus.CONFIRMED, confirmed.status)
+
             // Knowledge Update: 候选落地 + KNOWN_UPDATE checkpoint
-            val outcome = app.taskRunner.executeKnowledgeUpdate(id, v1)
+            val outcome = app.taskRunner.executeKnowledgeUpdate(id, confirmed)
             assertEquals(1, outcome.applied.size)
             val stages = app.tasks.findCheckpoints(id).map { it.stage }
             assertEquals(listOf("WRITING", "CRITIQUE", "KNOWLEDGE_UPDATE"), stages)

@@ -152,4 +152,10 @@ sealed interface ApplicationError {
     /** 续篇来源不合法：source Draft 非 FINAL / source Draft 不属于 source Chapter 的 lineage /
      *  Novel / Variant / scope 作用域不一致，导致该 ContinuationReference 不可作为下一章 Planning 的来源。 */
     data class InvalidContinuationSource(val detail: String) : ApplicationError
+
+    // ---- P12.1.4 新增：最小 HITL 确认闸门 ----
+    // 类型化错误；KnowledgeUpdateExecutionUseCase 对未确认 Draft 执行知识更新时抛出。
+
+    /** Knowledge Update 前置门禁：source Draft 尚未 [CONFIRMED]-Final，禁止执行知识更新。 */
+    data class DraftConfirmationRequired(val detail: String) : ApplicationError
 }

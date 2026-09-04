@@ -102,9 +102,14 @@ class P11_7WritingSliceE2ETest {
             assertEquals(DraftStatus.REVISED, v2.status)
             assertTrue(v2.draftId != v1.draftId)
 
+            // P12.1.4：KU 前需最终稿 + 确认（confirm 不调用 LLM，llmCalls 保持 5）。
+            app.draftRepository.save(v2.copy(status = DraftStatus.FINAL))
+            val confirmedV2 = app.confirmations.confirmFinalDraft(v2.draftId, v2.novelId, v2.variantId)
+            assertEquals(DraftStatus.CONFIRMED, confirmedV2.status)
+
             // 5) KNOWLEDGE_UPDATE Task（官方验收 #2：独立 KNOWLEDGE_UPDATE 类型可执行）
             val kuTaskId = app.tasks.create(TaskType.KNOWLEDGE_UPDATE)
-            val outcome = app.taskRunner.executeKnowledgeUpdate(kuTaskId, v2)
+            val outcome = app.taskRunner.executeKnowledgeUpdate(kuTaskId, confirmedV2)
             assertEquals(1, outcome.applied.size)
             assertTrue(app.tasks.findById(kuTaskId).revisionCount >= 1)
 
@@ -119,7 +124,8 @@ class P11_7WritingSliceE2ETest {
             app = openContainer("jdbc:sqlite:$tmp", handles)
             assertEquals(v1.content, app.draftRepository.getById(v1.draftId)!!.content)
             assertEquals(v2.content, app.draftRepository.getById(v2.draftId)!!.content)
-            assertEquals(DraftStatus.REVISED, app.draftRepository.getById(v2.draftId)!!.status)
+            // v2 经最终稿 + 确认 → 持久化状态为 CONFIRMED
+            assertEquals(DraftStatus.CONFIRMED, app.draftRepository.getById(v2.draftId)!!.status)
             // WRITING Task checkpoint 序列
             assertEquals(listOf("WRITING", "CRITIQUE", "REVISION"), app.tasks.findCheckpoints(writeTaskId).map { it.stage })
             // KNOWLEDGE_UPDATE Task checkpoint
@@ -143,10 +149,11 @@ class P11_7WritingSliceE2ETest {
             draftId = com.qianyan.model.DraftId("d-ku-e2e"),
             novelId = novelId,
             content = "古碑显现。",
-            status = DraftStatus.WRITTEN,
+            status = DraftStatus.CONFIRMED,
             createdAt = kotlinx.datetime.Instant.fromEpochMilliseconds(0),
             updatedAt = kotlinx.datetime.Instant.fromEpochMilliseconds(0),
         )
+        app.draftRepository.save(draft)
         val outcome = app.taskRunner.executeKnowledgeUpdate(kuId, draft)
         assertEquals(1, outcome.applied.size)
     }
