@@ -32,4 +32,9 @@ sealed class ProviderException(message: String, cause: Throwable? = null) : Exce
     /** 超出 token 上限。 */
     class TokenLimit(val detail: String) :
         ProviderException("Provider token limit: $detail")
+
+    /** 需要 credential 的 Provider 缺少 API Key（P12.1.5：配置/调用期边界快速失败，不进入 HTTP）。
+     *  detail 不包含任何 API Key 内容。 */
+    class CredentialMissing(val detail: String) :
+        ProviderException("Provider credential missing: $detail")
 }

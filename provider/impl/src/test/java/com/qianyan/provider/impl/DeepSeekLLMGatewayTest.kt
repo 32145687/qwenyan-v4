@@ -82,11 +82,11 @@ class DeepSeekLLMGatewayTest {
         assertEquals(FinishReason.LENGTH, out.finishReason)
     }
 
-    /* API Key 缺失 */
+    /* API Key 缺失 → CredentialMissing（P12.1.5：缺凭证类型化拒绝，不进入 HTTP） */
     @Test
-    fun `missing api key throws provider unavailable`() {
+    fun `missing api key throws credential missing`() {
         val gateway = DeepSeekLLMGateway(apiKey = "   ", client = FakeLlmHttpClient())
-        val ex = assertFailsWith<ProviderException.ProviderUnavailable> { gateway.chat(request()) }
+        val ex = assertFailsWith<ProviderException.CredentialMissing> { gateway.chat(request()) }
         assertTrue(ex.detail.contains("DeepSeek"))
     }
 

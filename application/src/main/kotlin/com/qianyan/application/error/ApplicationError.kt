@@ -158,4 +158,10 @@ sealed interface ApplicationError {
 
     /** Knowledge Update 前置门禁：source Draft 尚未 [CONFIRMED]-Final，禁止执行知识更新。 */
     data class DraftConfirmationRequired(val detail: String) : ApplicationError
+
+    // ---- P12.1.5 新增：Provider runtime configuration ----
+    // 类型化错误；ProviderAssembler / gateway 在缺少凭证时抛出，detail 不含任何 API Key 内容。
+
+    /** 需要 credential 的 Provider（DeepSeek / MiMo）缺少 API Key，无法组装/调用。 */
+    data class ProviderCredentialMissing(val detail: String) : ApplicationError
 }

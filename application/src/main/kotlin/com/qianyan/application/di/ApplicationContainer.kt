@@ -29,6 +29,8 @@ import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.provider.LLMGateway
 import com.qianyan.provider.ModelProfile
+import com.qianyan.provider.ProviderAssembler
+import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
@@ -190,5 +192,37 @@ class ApplicationContainer(
             analysisGateway: LLMGateway,
             analysisModel: ModelProfile = ModelProfile.MOCK,
         ): ApplicationContainer = fromDriver(QianyanDbFactory.open(url).driver, analysisGateway, analysisModel)
+
+        // ---- P12.1.5：Provider Configuration 驱动的 DI ----
+        // 配置 → ProviderAssembler → LLMGateway → Application。Application 只依赖 provider:api 抽象，
+        // 不直接触碰 DeepSeek/MiMo client 细节；缺 credential 由 assembler 在配置期抛 ProviderCredentialMissing。
+
+        /** 经 [ProviderAssembler] 从 [ProviderConfiguration] 组装 LLMGateway 后装配容器（同 in-memory 数据库）。 */
+        fun open(
+            url: String = JdbcSqliteDriver.IN_MEMORY,
+            providerAssembler: ProviderAssembler,
+            configuration: ProviderConfiguration,
+        ): ApplicationContainer {
+            val gateway = providerAssembler.assemble(configuration)
+            return fromDriver(
+                QianyanDbFactory.open(url).driver,
+                analysisGateway = gateway,
+                analysisModel = configuration.model ?: ModelProfile.MOCK,
+            )
+        }
+
+        /** 经 [ProviderAssembler] 从 [ProviderConfiguration] 组装 LLMGateway 后装配容器（JDBC URL 驱动）。 */
+        fun fromDriver(
+            driver: SqlDriver,
+            providerAssembler: ProviderAssembler,
+            configuration: ProviderConfiguration,
+        ): ApplicationContainer {
+            val gateway = providerAssembler.assemble(configuration)
+            return fromDriver(
+                driver,
+                analysisGateway = gateway,
+                analysisModel = configuration.model ?: ModelProfile.MOCK,
+            )
+        }
     }
 }

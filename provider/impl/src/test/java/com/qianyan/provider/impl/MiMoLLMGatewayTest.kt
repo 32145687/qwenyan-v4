@@ -84,11 +84,11 @@ class MiMoLLMGatewayTest {
         assertTrue(!fake.lastBody.contains("max_completion_tokens"))
     }
 
-    /* API Key 缺失 */
+    /* API Key 缺失 → CredentialMissing（P12.1.5） */
     @Test
-    fun `missing api key throws provider unavailable`() {
+    fun `missing api key throws credential missing`() {
         val gateway = MiMoLLMGateway(apiKey = "", client = FakeLlmHttpClient())
-        val ex = assertFailsWith<ProviderException.ProviderUnavailable> { gateway.chat(request()) }
+        val ex = assertFailsWith<ProviderException.CredentialMissing> { gateway.chat(request()) }
         assertTrue(ex.detail.contains("MiMo"))
     }
 

@@ -37,6 +37,7 @@ object ErrorMapper {
         is ProviderException.RateLimit -> ApplicationException(ApplicationError.ProviderUnavailable(throwable.message ?: ""))
         is ProviderException.ProviderUnavailable -> ApplicationException(ApplicationError.ProviderUnavailable(throwable.message ?: ""))
         is ProviderException.TokenLimit -> ApplicationException(ApplicationError.ProviderUnavailable(throwable.message ?: ""))
+        is ProviderException.CredentialMissing -> ApplicationException(ApplicationError.ProviderCredentialMissing(throwable.message ?: ""))
         is ProviderException.InvalidResponse -> ApplicationException(ApplicationError.InvalidAnalysisOutput(throwable.message ?: ""))
         is ProviderException.MalformedOutput -> ApplicationException(ApplicationError.InvalidAnalysisOutput(throwable.message ?: ""))
         is AnalysisException.InvalidOutput -> ApplicationException(ApplicationError.InvalidAnalysisOutput(throwable.message ?: ""))

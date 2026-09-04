@@ -38,10 +38,10 @@ class DeepSeekLLMGateway(
         )
     }
 
-    /** API Key 缺失是装配错误：调用时类型化拒绝（不打印 key 内容）。 */
+    /** API Key 缺失是装配错误：调用时类型化拒绝（不打印 key 内容，不进入 HTTP）。 */
     private fun requireConfigured() {
         if (apiKey.isBlank()) {
-            throw ProviderException.ProviderUnavailable("DeepSeek API key 未配置")
+            throw ProviderException.CredentialMissing("DeepSeek API key 未配置")
         }
     }
 }
