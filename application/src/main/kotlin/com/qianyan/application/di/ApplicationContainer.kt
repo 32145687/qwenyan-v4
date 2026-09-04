@@ -42,7 +42,9 @@ import com.qianyan.storage.repository.SqliteMemoryRepository
 import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteTaskRepository
 import com.qianyan.storage.repository.SqliteTxtRepository
+import com.qianyan.storage.repository.SqliteStoryStateRepository
 import com.qianyan.storage.repository.SqliteVocabularyRepository
+import com.qianyan.storage.repository.StoryStateRepository
 import com.qianyan.storage.repository.TaskRepository
 import com.qianyan.storage.repository.TxtRepository
 import com.qianyan.storage.repository.VocabularyRepository
@@ -74,6 +76,7 @@ class ApplicationContainer(
     val taskRepository: TaskRepository,
     val draftRepository: DraftRepository,
     val chapterRepository: ChapterRepository,
+    private val storyStateRepository: StoryStateRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -89,9 +92,12 @@ class ApplicationContainer(
     val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper, model = analysisModel)
     val tasks: TaskManagerUseCases get() = TaskManagerUseCases(taskRepository, errorMapper)
 
-    /** P11.2/P11.6 确定性 Story World Context 解析器（分层 + canon 优先）。 */
+    /** P11.2/P11.6/P12.1.2 确定性 Story World Context 解析器（分层 + canon 优先 + 结构化 Story State）。 */
     val storyWorldContextResolver: StoryWorldContextResolver
-        get() = StoryWorldContextResolver(memoryRepository, errorMapper)
+        get() = StoryWorldContextResolver(memoryRepository, errorMapper, storyStateRepository)
+
+    /** P12.1.1/P12.1.2 结构化 Story State 仓储（Character/WorldRule/Event/Timeline/Foreshadow），供测试与上层读取。 */
+    val storyState: StoryStateRepository get() = storyStateRepository
 
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文）。 */
     val planningContextAssembly: PlanningContextAssembly
@@ -161,6 +167,7 @@ class ApplicationContainer(
                 taskRepository = SqliteTaskRepository(db),
                 draftRepository = SqliteDraftRepository(db),
                 chapterRepository = SqliteChapterRepository(db),
+                storyStateRepository = SqliteStoryStateRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

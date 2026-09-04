@@ -3,7 +3,13 @@ package com.qianyan.model.context
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
 import com.qianyan.model.VariantScope
+import com.qianyan.model.character.Character
+import com.qianyan.model.character.CharacterState
 import com.qianyan.model.memory.MemoryLayer
+import com.qianyan.model.story.Foreshadow
+import com.qianyan.model.timeline.Event
+import com.qianyan.model.timeline.TimelineEntry
+import com.qianyan.model.world.WorldRule
 import kotlinx.serialization.Serializable
 
 /**
@@ -37,6 +43,18 @@ data class StoryWorldContext(
     val facts: List<String> = emptyList(),
     /** 当前创作记忆（MemoryLayer.WRITING，最低优先）。 */
     val memories: List<String> = emptyList(),
+    /** 结构化人物（P12.1.2）：由 [StoryWorldContextResolver] 从 StoryStateRepository 读取；Variant 场景为 本人物自身(优先)+Original 基座。 */
+    val characters: List<Character> = emptyList(),
+    /** 结构化人物状态快照（P12.1.2）。 */
+    val characterStates: List<CharacterState> = emptyList(),
+    /** 结构化世界观规则（P12.1.2）。 */
+    val worldRules: List<WorldRule> = emptyList(),
+    /** 结构化事件（P12.1.2）：保留真实 createdAt 与 when/who。 */
+    val events: List<Event> = emptyList(),
+    /** 结构化时间线条目（P12.1.2）：保持原持久化顺序/时间语义。 */
+    val timelineEntries: List<TimelineEntry> = emptyList(),
+    /** 结构化伏笔（P12.1.2）：保留 resolved 状态。 */
+    val foreshadows: List<Foreshadow> = emptyList(),
 ) {
     /** canon 优先的确定性顺序（canon → worldState → facts → memories），供 Context 投影。 */
     val orderedVisible: List<String> get() = canon + worldState + facts + memories
