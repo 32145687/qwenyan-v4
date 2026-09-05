@@ -23,7 +23,7 @@ import com.qianyan.storage.repository.DraftRepository
  * [ApplicationError.InvalidContinuationSource]），绝不抛普通 RuntimeException。
  *
  * 校验顺序（除 EntityNotFound 外全部为 [ApplicationError.InvalidContinuationSource]）：
- *  1. Final Draft 校验：source Draft 必须是系统定义的最终状态（DraftStatus.FINAL）；
+ *  1. Final Draft 校验：source Draft 必须是系统定义的最终版本（DraftStatus.FINAL，或已确认的 CONFIRMED）；
  *  2. Chapter/Draft identity + lineage：source Draft 必须属于 source Chapter（draft.chapterId == chapter.chapterId）；
  *  3. Novel isolation：chapter.novelId == draft.novelId == request.baseNovelId；
  *  4. Variant isolation：chapter.variantId == draft.variantId == request.variantId；
@@ -51,11 +51,12 @@ class ContinuationResolver(
                 ApplicationError.EntityNotFound("continuation source Draft 不存在: ${reference.sourceDraftId.value}"),
             )
 
-        // 1) Final Draft 校验：只有系统定义的最终状态才可作为续篇来源
-        if (draft.status != DraftStatus.FINAL) {
+        // 1) Final Draft 校验：只有系统定义的最终版本（FINAL，或已被确认的 CONFIRMED）才可作为续篇来源。
+        //    P12.1.8：CONFIRMED 是比 FINAL 更终态的版本（用户已确认），同样满足"可继续"语义。
+        if (draft.status != DraftStatus.FINAL && draft.status != DraftStatus.CONFIRMED) {
             throw ApplicationException(
                 ApplicationError.InvalidContinuationSource(
-                    "continuation source Draft(${draft.draftId.value}) 非 FINAL（当前 status=${draft.status}），不可作为续篇来源",
+                    "continuation source Draft(${draft.draftId.value}) 非 FINAL/CONFIRMED（当前 status=${draft.status}），不可作为续篇来源",
                 ),
             )
         }
