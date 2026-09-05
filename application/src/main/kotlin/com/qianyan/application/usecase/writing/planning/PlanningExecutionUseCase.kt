@@ -52,8 +52,17 @@ class PlanningExecutionUseCase(
      *  - null → 无续篇来源（第一章）；
      *  - 非 null → 在调用 PlannerAgent 之前经 [ContinuationResolver] 确定性校验/解析（FINAL Draft、
      *    Chapter/Draft lineage、Novel / Variant / Original-Variant 隔离），校验失败 → 类型化错误，绝不执行 Agent。
+     *
+     * P12.1.7：可选 [targetChapterId] 让规划绑定到**已存在**的 Chapter（Android 章节写作链对既有章节规划）。
+     *  - null → 维持既有行为（plan.chapterId 为空时经 bindChapter 新建下一章）；
+     *  - 非 null → bindChapter 复用该既有 Chapter（校验归属/scope，不新建），确保 plan 与既有章节 identity 一致。
      */
-    fun execute(taskId: TaskId, request: UserWritingRequest, continuationReference: ContinuationReference? = null): ChapterPlan {
+    fun execute(
+        taskId: TaskId,
+        request: UserWritingRequest,
+        continuationReference: ContinuationReference? = null,
+        targetChapterId: ChapterId? = null,
+    ): ChapterPlan {
         val task = taskManager.findById(taskId)
         if (task.type != TaskType.PLANNING) {
             throw ApplicationException(
@@ -66,7 +75,7 @@ class PlanningExecutionUseCase(
             val resolved = continuationReference?.let { continuationResolver.resolve(request, it) }
             val context = assembly.assemble(request, continuationReference, resolved)
             val plan = planner.plan(context)
-            val planWithChapter = bindChapter(plan)
+            val planWithChapter = bindChapter(plan, targetChapterId)
             taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(planWithChapter))
             taskManager.complete(taskId)
             return planWithChapter
@@ -81,13 +90,15 @@ class PlanningExecutionUseCase(
     }
 
     /**
-     * P0-4/P12.0.1：把 [ChapterPlan] 绑定到真实 Chapter。
+     * P0-4/P12.0.1/P12.1.7：把 [ChapterPlan] 绑定到真实 Chapter。
+     *  - [targetChapterId] 非 null → 校验并复用该既有 Chapter（不新建）；
      *  - plan.chapterId 存在 → 校验该 Chapter 归属（novel/variant/scope 必须与 plan 一致，否则跨实体污染 → 类型化拒绝）；
-     *  - plan.chapterId 为空 → 经 [ChapterRepository.createNextChapter] **原子创建**（事务内计算 order，避免并发重复 order）。
+     *  - 否则 → 经 [ChapterRepository.createNextChapter] **原子创建**（事务内计算 order，避免并发重复 order）。
      * 返回的 ChapterPlan.chapterId 非空。
      */
-    private fun bindChapter(plan: ChapterPlan): ChapterPlan {
-        val existing = plan.chapterId?.let { guard { chapterRepository.findById(it) } }
+    private fun bindChapter(plan: ChapterPlan, targetChapterId: ChapterId? = null): ChapterPlan {
+        val requestedId = targetChapterId ?: plan.chapterId
+        val existing = requestedId?.let { guard { chapterRepository.findById(it) } }
         val chapter = existing?.also { ensureOwnership(plan, it) } ?: run {
             val now = Clock.System.now()
             val created = Chapter(

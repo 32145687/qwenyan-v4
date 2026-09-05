@@ -28,6 +28,7 @@ import com.qianyan.model.story.Chapter
 fun ChapterDetailScreen(
     viewModel: ChapterDetailViewModel,
     novelTitle: String,
+    onStartWriting: () -> Unit,
     onBack: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -61,6 +62,7 @@ fun ChapterDetailScreen(
 
                 is ChapterDetailUiState.Content -> DetailContent(
                     chapter = s.chapter,
+                    onStartWriting = onStartWriting,
                     onBack = onBack,
                 )
             }
@@ -69,7 +71,7 @@ fun ChapterDetailScreen(
 }
 
 @Composable
-private fun DetailContent(chapter: Chapter, onBack: () -> Unit) {
+private fun DetailContent(chapter: Chapter, onStartWriting: () -> Unit, onBack: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "${chapter.order} · ${chapter.title}",
@@ -96,13 +98,13 @@ private fun DetailContent(chapter: Chapter, onBack: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(28.dp))
-        // 「下一步：Planning」navigation seam —— P12.1.7 接入真实 Planning Use Case 前保持禁用（TODO）。
+        // P12.1.7：真实创作链入口（Planning → Writing → Review → Confirmation → Knowledge Update）。
         Button(
-            onClick = { /* TODO(P12.1.7): planning entry */ },
-            enabled = false,
-            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            onClick = onStartWriting,
+            enabled = true,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
         ) {
-            Text("下一步：Planning（待开放）")
+            Text("开始创作（Planning → Writing → Review）")
         }
         Spacer(Modifier.height(16.dp))
         Text(

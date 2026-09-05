@@ -13,6 +13,7 @@ import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
 import com.qianyan.engine.txt.TxtSource
 import com.qianyan.model.TaskId
+import com.qianyan.model.ChapterId
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.spec.ValidationResult
 import com.qianyan.model.story.ChapterPlan
@@ -75,13 +76,15 @@ class TaskRunner(
      * 执行 PLANNING 受管任务（P11.2）：PENDING → start → PlanningExecutionUseCase
      * （Context Assembly → PlannerAgent → ChapterPlan → Checkpoint）→ COMPLETED / FAILED。
      * P12.1.3：可选 [continuationReference] 透传给 Planning（第一章传 null，第二章传显式来源）。
+     * P12.1.7：可选 [targetChapterId] 让规划绑定到既有章节（Android 章节写作链）；null = 新建下一章。
      */
     fun executePlanning(
         taskId: TaskId,
         request: UserWritingRequest,
         continuationReference: ContinuationReference? = null,
+        targetChapterId: ChapterId? = null,
     ): ChapterPlan =
-        planning.execute(taskId, request, continuationReference)
+        planning.execute(taskId, request, continuationReference, targetChapterId)
 
     /**
      * 执行 WRITING 受管任务（P11.3）：PENDING → start → WritingExecutionUseCase

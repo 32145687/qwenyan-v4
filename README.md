@@ -54,7 +54,7 @@
 | P12.1.5 | Provider Runtime Configuration（ProviderType / ProviderConfiguration / ProviderCredentialStore / ProviderAssembler + DefaultProviderAssembler（DeepSeek / MiMo / Mock）；API Key 不进入 SQLite / Domain / Task / Checkpoint / Memory / Story State / Prompt / Log；Android Keystore 仅为 seam，真实安全持久化未实现）                                              | ✅  |
 | P12.1.6 | Android Chapter Creation / Basic UI（NovelList → NovelDetail → ChapterList → Create Chapter → ChapterDetail；真实数据库；Chapter order 由 Application / Repository 原子创建（order\_no ASC）；Chapter UseCase seam（Android 不自行计算 max+1）；Novel / Variant isolation；返回重查可见新章节）                                                                                 | ✅  |
 
-**当前阶段**：P7 = DONE；P8.0–P8.3 = DONE；P9 = DONE；**P10 = DONE**；**P11 = COMPLETE（P11.1–P11.7 = 全部 ✅ DONE，单章节创作闭环）**；**P12.0 Schema & State Hardening = ✅ COMPLETE**；**P12.0.1 Scope & Entity Consistency Hardening = ✅ COMPLETE**；**P12.1.1 Story State Persistence = ✅ DONE**；**P12.1.2 StoryWorldContextResolver = ✅ DONE**；**P12.1.3 Explicit ContinuationReference = ✅ DONE**；**P12.1.4 Knowledge Update Confirmation Gate = ✅ DONE**；**P12.1.5 Provider Runtime Configuration = ✅ DONE**；**P12.1.6 Android Chapter Creation / Basic UI = ✅ DONE**；**P12.1.7 Android Planning/Writing/Review Chain = ⏳ NEXT**；**P12.1.8 Chapter1→2 Full E2E = ⬜ PENDING**；**P12+ 后续高级能力 = 🔮 FUTURE**。
+**当前阶段**：P7 = DONE；P8.0–P8.3 = DONE；P9 = DONE；**P10 = DONE**；**P11 = COMPLETE（P11.1–P11.7 = 全部 ✅ DONE，单章节创作闭环）**；**P12.0 Schema & State Hardening = ✅ COMPLETE**；**P12.0.1 Scope & Entity Consistency Hardening = ✅ COMPLETE**；**P12.1.1 Story State Persistence = ✅ DONE**；**P12.1.2 StoryWorldContextResolver = ✅ DONE**；**P12.1.3 Explicit ContinuationReference = ✅ DONE**；**P12.1.4 Knowledge Update Confirmation Gate = ✅ DONE**；**P12.1.5 Provider Runtime Configuration = ✅ DONE**；**P12.1.6 Android Chapter Creation / Basic UI = ✅ DONE**；**P12.1.7 Android Planning/Writing/Review Chain = ✅ COMPLETE**；**P12.1.8 Chapter1→2 Full E2E = ⬜ PENDING**；**P12+ 后续高级能力 = 🔮 FUTURE**。
 **P8 说明**：P8（Task System / Task Manager）已完成 P8.0 / P8.1（Task / Checkpoint 持久化基础设施）、P8.2（TaskManager 状态机 / Checkpoint 管理）与 P8.3（TaskRunner 受管执行 IMPORT 纵向切片）；**Task 生命周期 / 状态管理 / IMPORT 受管执行 = DONE，Agent / Tool / Workflow 编排 = NOT STARTED（后续阶段）**。
 **P9 说明**：真实 **DeepSeek-V4-Flash Provider = DONE**、**MiMo-V2.5 Provider = DONE**、**真实 LLM 接入 = DONE**（JDK HttpClient transport + ProviderException 结构化映射 + API Key 注入 + fake transport 测试）；**Agent / Tool / Workflow / 完整小说创作 Pipeline = NOT STARTED（后续阶段）**。
 **P10 说明**：最小 **Agent Runtime = DONE**、**Tool System = DONE**（`core:model` Tool 领域模型 + `:agent:tool` Tool 契约/Registry/Executor + `:agent:runtime` 同步执行循环），Agent 只依赖 `:provider:api` 的 `LLMGateway` 契约，可完成 **LLM → Tool call → ToolResult → LLM → Final** 的真实执行链，带 `maxSteps` 防护与类型化错误（ToolNotFound / InvalidToolRequest / ToolExecutionFailed / MaxStepsExceeded）；**Writing/Planning/Critique/Revision Agent、Novel Workflow、HITL、KnowledgeUpdate、完整小说创作 Pipeline = NOT STARTED（DEFER 到 P11+）**。
@@ -91,11 +91,11 @@
 | P12.1.4 | Knowledge Update Confirmation Gate（DraftStatus PENDING\_CONFIRMATION / CONFIRMED；KU 仅对 CONFIRMED Final Draft 执行；Revision 新 Draft 不自动继承确认；confirm 幂等且不触发 Agent / LLM）                                                                                                                                                                         | ✅ DONE     |
 | P12.1.5 | Provider Runtime Configuration（ProviderType / ProviderConfiguration / ProviderCredentialStore / ProviderAssembler + DefaultProviderAssembler（DeepSeek / MiMo / Mock）；API Key 不进入 SQLite / Domain / Task / Checkpoint / Memory / Story State / Prompt / Log；Android Keystore 仅为 seam，真实安全持久化未实现）                                              | ✅ DONE     |
 | P12.1.6 | Android Chapter Creation / Basic UI（NovelList → NovelDetail → ChapterList → Create Chapter → ChapterDetail；真实数据库；Chapter order 由 Application / Repository 原子创建（order\_no ASC）；Chapter UseCase seam；Novel / Variant isolation；返回重查可见新章节）                                                                                                      | ✅ DONE     |
-| P12.1.7 | Android Planning / Writing / Review 完整链路 UI（Android 端完整创作界面；ChapterDetail 的「下一步：Planning」按钮当前为禁用 seam/TODO）                                                                                                                                                                                                                                  | ⏳ NEXT     |
-| P12.1.8 | Chapter1 → Chapter2 Full E2E（Android 端连续章节自动创作验证）                                                                                                                                                                                                                                                                                            | ⬜ PENDING  |
+| P12.1.7 | Android Planning/Writing/Review Chain（真实链：ChapterDetail → Planning → Writing → Critique → Revision → Final Draft → Confirmation → Knowledge Update；ChapterWritingSession / ChapterWritingViewModel；复用既有 UseCases + Task；Draft/Plan/Checkpoint/Memory 持久化；Revision lineage；Confirmation Gate；ContinuationReference；Variant/Novel isolation；Loading/Error/防重复点击；15 集成测试） | ✅ COMPLETE |
+| P12.1.8 | Chapter1 → Chapter2 Full E2E（Android 端连续章节自动创作验证 + 全量回归 + 最终收口）                                                                                                                                                                                                                                                                                            | ⬜ PENDING  |
 | P12+    | 后续高级能力（HITL 完整流程 / Workflow Orchestrator / 完整小说 Pipeline / Character·Event·Timeline·World 正式持久化 / PC / 自动后台任务 / Candidate 确认流程 / MiMo 写作后处理算法 / Android Provider Settings / Orchestrator / Background execution / Retry / Chapter Reader / RAG / Vector Memory / Multi-Agent Swarm / MCP / Cloud Backend 等）                                  | 🔮 FUTURE  |
 
-**Current Phase = P12.1.6 = COMPLETE, P12.1.7 = NEXT**（Continuous Chapter Creation 已推进到 P12.1.6：Story State Persistence、StoryWorldContextResolver、Explicit ContinuationReference、Knowledge Update Confirmation Gate、Provider Runtime Configuration、Android Chapter Creation / Basic UI 全部 DONE；`./gradlew test` / `assembleDebug` / `git diff --check` 全 PASS，HEAD == origin/main，Working Tree CLEAN。下一阶段 **P12.1.7 Android Planning / Writing / Review Chain = NEXT**，**P12.1.8 Chapter1→2 Full E2E = PENDING**；完整 Android 创作 UI 与 Android 连续章节自动创作仍属后续阶段）。
+**Current Phase = P12.1.7 = COMPLETE, P12.1.8 = NEXT**（Android 端已跑通真实创作链：ChapterDetail → Planning → Writing → Critique → Revision → Final Draft → Confirmation → Knowledge Update；`ChapterWritingSession` / `ChapterWritingViewModel` 复用既有真实 UseCases + Task；Draft / Plan / Checkpoint / Memory 持久化；Revision lineage；Confirmation Gate；ContinuationReference；Variant / Novel isolation；Loading / Error / 防重复点击全部完成；15 项集成测试 + `./gradlew test` / `assembleDebug` / `git diff --check` 全 PASS。下一阶段 **P12.1.8 Chapter1→2 Full E2E + 全量回归 + 最终收口 = NEXT**）。
 
 **P11 Final Status**：P11.1–P11.7 全部 COMPLETE，已形成单章节创作闭环（目标→Planning→Writing→Critique→Revision→Knowledge Update→StoryWorldContext→Persistence/Reopen）。单章节 Writing Slice E2E 已通过；`./gradlew test` / `assembleDebug` / `--no-daemon test` / `git diff --check` 全部 PASS；Git 已 commit + push，HEAD == origin/main，Working Tree CLEAN。
 
@@ -202,11 +202,11 @@ Writing → LLM → Draft → 写作完成
 
 > **MiMo writing post-processing = P11（具体算法实现 DEFER P11.5）**；P11.1 只登记/建立 seam 接口位置与默认直通实现。
 
-## P12.1 Continuous Chapter Creation（P12.1.1–P12.1.6 DONE，P12.1.7 NEXT）
+## P12.1 Continuous Chapter Creation（P12.1.1–P12.1.7 DONE，P12.1.8 NEXT）
 
-P12.1 为「连续章节创作」建立基础能力。**已同步完成 P12.1.1–P12.1.6**，**P12.1.7 / P12.1.8 尚未开始**：
+P12.1 为「连续章节创作」建立基础能力。**已同步完成 P12.1.1–P12.1.7**，**P12.1.8 尚未开始**：
 
-### 已完成（P12.1.1–P12.1.6 = DONE）
+### 已完成（P12.1.1–P12.1.7 = DONE）
 
 - **P12.1.1 Story State Persistence**：结构化故事状态（Character / CharacterState / WorldRule / Event / TimelineEntry / Foreshadow）持久化；Schema v5 + migration v4→v5；`StoryStateRepository`；Variant / Original scope isolation。
 
@@ -218,17 +218,17 @@ P12.1 为「连续章节创作」建立基础能力。**已同步完成 P12.1.1�
 
 - **P12.1.5 Provider Runtime Configuration**：`ProviderType / ProviderConfiguration / ProviderCredentialStore / ProviderAssembler` + `DefaultProviderAssembler`（DeepSeek / MiMo / Mock）；API Key 不进入 SQLite / Domain / Task / Checkpoint / Memory / Story State / Prompt / 普通日志 / Exception；**Android Keystore 仅为 seam（接口 + DI 占位），真实安全持久化 = NOT IMPLEMENTED**。
 
-- **P12.1.6 Android Chapter Creation / Basic UI**：`NovelList → NovelDetail → ChapterList → Create Chapter → ChapterDetail`；章节读/写走 `ChapterUseCases`（Application seam）→ `ChapterRepository` → SQLite；**Chapter order 用 Application / Repository 原子创建（`createNextChapter`** **单事务** **`MAX(order_no)+1`），Android 不自行计算 max+1**；使用真实 `chapterId`；Novel / Variant isolation；返回 ChapterList 重新查询可见新章节；ChapterDetail 的「下一步：Planning」按钮为**禁用 seam / TODO**。
+- **P12.1.6 Android Chapter Creation / Basic UI**：`NovelList → NovelDetail → ChapterList → Create Chapter → ChapterDetail`；章节读/写走 `ChapterUseCases`（Application seam）→ `ChapterRepository` → SQLite；**Chapter order 用 Application / Repository 原子创建（`createNextChapter` 单事务 `MAX(order_no)+1`），Android 不自行计算 max+1**；使用真实 `chapterId`；Novel / Variant isolation；返回 ChapterList 重新查询可见新章节。
+
+- **P12.1.7 Android Planning / Writing / Review Chain**：ChapterDetail 的「开始创作」真实入口，跑通 `ChapterDetail → Planning → Writing → Critique → Revision → Final Draft → Confirmation → Knowledge Update` 真实链；新增 `ChapterWritingUseCases.ChapterWritingSession`（编排）与 `ChapterWritingViewModel` / `ChapterWritingScreen`（Android Compose）；全部复用既有真实 UseCases + Task/Checkpoint（Planning 经 ContinuationResolver / 真实 PlannerAgent‑Provider；Writing / Critique / Revision / Confirmation / KnowledgeUpdate 均真实落库）；Draft / Plan / Checkpoint / Memory 持久化；Revision lineage(不覆盖旧稿)；Confirmation Gate（FINAL 区分 CONFIRMED、幂等）；ContinuationReference（既有章节续篇 source）；Variant / Novel isolation；Loading / Error / 防重复点击；15 项集成测试（T1–T15）全绿。
 
 ### 尚未实现（不可标记为 DONE）
 
 以下能力当前均为 **NOT DONE**（属后续阶段 / P12+ FUTURE）：
 
-- **P12.1.7** Android Planning / Writing / Review 完整链路 UI
+- **P12.1.8** Chapter1 → Chapter2 Full E2E（Android 端）+ 全量回归 + 最终收口
 
-- **P12.1.8** Chapter1 → Chapter2 Full E2E（Android 端）
-
-- 完整 Android 写作流程、Android Provider Settings / API Key UI、Android Keystore 实际安全持久化
+- 完整 Android 富文本写作流程、Android Provider Settings / API Key UI、Android Keystore 实际安全持久化
 
 - Orchestrator / Background execution / Retry / Chapter Reader
 

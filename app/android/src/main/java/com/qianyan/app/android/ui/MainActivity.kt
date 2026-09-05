@@ -20,6 +20,8 @@ import com.qianyan.app.android.ui.chapter.ChapterDetailScreen
 import com.qianyan.app.android.ui.chapter.ChapterDetailViewModel
 import com.qianyan.app.android.ui.chapter.ChapterListScreen
 import com.qianyan.app.android.ui.chapter.ChapterViewModel
+import com.qianyan.app.android.ui.chapter.ChapterWritingScreen
+import com.qianyan.app.android.ui.chapter.ChapterWritingViewModel
 import com.qianyan.app.android.ui.novel.NovelDetailScreen
 import com.qianyan.app.android.ui.novel.NovelListScreen
 import com.qianyan.app.android.ui.novel.NovelListViewModel
@@ -45,6 +47,7 @@ private sealed interface Screen {
     data class Analysis(val novel: Novel) : Screen
     data class ChapterList(val novel: Novel, val variantId: VariantId?) : Screen
     data class ChapterDetail(val novel: Novel, val variantId: VariantId?, val chapterId: ChapterId) : Screen
+    data class ChapterWriting(val novel: Novel, val variantId: VariantId?, val chapterId: ChapterId) : Screen
 }
 
 /** 主入口 Activity（P7.4 + P7.5 + P12.1.6）：UI Host + SAF TXT 文件选择 + 章节导航。 */
@@ -166,6 +169,23 @@ class MainActivity : ComponentActivity() {
                 ChapterDetailScreen(
                     viewModel = detailViewModel,
                     novelTitle = screen.novel.title,
+                    onStartWriting = { push(Screen.ChapterWriting(screen.novel, screen.variantId, screen.chapterId)) },
+                    onBack = pop,
+                )
+            }
+
+            is Screen.ChapterWriting -> {
+                val writingViewModel: ChapterWritingViewModel = viewModel(
+                    key = "chapter-writing-${screen.chapterId.value}",
+                    factory = ChapterWritingViewModel.factory(
+                        novelId = screen.novel.novelId,
+                        variantId = screen.variantId,
+                        chapterId = screen.chapterId,
+                        chapterWriting = container.chapterWriting,
+                    ),
+                )
+                ChapterWritingScreen(
+                    viewModel = writingViewModel,
                     onBack = pop,
                 )
             }
