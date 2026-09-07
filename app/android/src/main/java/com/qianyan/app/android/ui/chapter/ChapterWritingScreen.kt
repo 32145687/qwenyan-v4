@@ -13,24 +13,38 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.qianyan.application.usecase.chapter.ChapterChainResult
+import com.qianyan.application.usecase.workflow.ChapterPhase
+import com.qianyan.application.usecase.workflow.ChapterWorkflowProgress
+import com.qianyan.model.ChapterId
 
 /**
- * 章节创作链 Screen（P12.1.7，最小 UI）：按真实链跑通
- * Planning → Writing → Critique → (Revision) → Finalize → Confirm → Knowledge Update。
- * 只消费 [ChapterWritingViewModel] 状态；真实业务由 Application [ChapterWritingUseCases] 执行。
+ * 章节工作流 Screen（P12.2 M3 · Facade Migration）。
+ * 只消费 [ChapterWritingViewModel] 的用户层状态（[ChapterWorkflowProgress]/[ChapterPhase]），
+ * 真实业务流程由 Facade → Workflow 执行。UI 依据 [ChapterPhase] 决定按钮可用性，
+ * 但**不决定 Workflow 的下一步**（下一步由 Orchestrator 推进）。
  */
 @Composable
 fun ChapterWritingScreen(
     viewModel: ChapterWritingViewModel,
     onBack: () -> Unit,
+    onContinueToNext: (ChapterId) -> Unit,
 ) {
-    val chain by viewModel.chain.collectAsStateWithLifecycle()
+    val progress by viewModel.progress.collectAsStateWithLifecycle()
     val op by viewModel.op.collectAsStateWithLifecycle()
+    val next by viewModel.nextChapter.collectAsStateWithLifecycle()
+
+    // 续篇成功 → 通知宿主导航到下一章，并消费单次事件。
+    LaunchedEffect(next) {
+        next?.let {
+            onContinueToNext(it.chapterId)
+            viewModel.onNextConsumed()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -39,22 +53,28 @@ fun ChapterWritingScreen(
             .verticalScroll(rememberScrollState()),
     ) {
         Spacer(Modifier.height(24.dp))
-        Text("章节创作链", style = MaterialTheme.typography.headlineMedium)
+        Text("章节工作流", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(4.dp))
-        ResultSummary(chain)
+        ProgressSummary(progress)
 
         Spacer(Modifier.height(24.dp))
         val running = op is ChapterWritingOp.Running
         OpError(op)
 
         DefaultGap()
-        StepButton("1 · Planning", enabled = !running && chain?.plan == null, loading = running && (op as? ChapterWritingOp.Running)?.stage == "Planning", onClick = viewModel::plan)
-        StepButton("2 · Writing", enabled = !running && chain?.plan != null && chain?.draft == null, loading = running && (op as? ChapterWritingOp.Running)?.stage == "Writing", onClick = viewModel::write)
-        StepButton("3 · Critique", enabled = !running && chain?.draft != null && chain?.critique == null, loading = running && (op as? ChapterWritingOp.Running)?.stage == "Critique", onClick = viewModel::critique)
-        StepButton("4 · Revision", enabled = !running && chain?.draft != null && chain?.critique != null && chain?.finalDraft == null, loading = running && (op as? ChapterWritingOp.Running)?.stage == "Revision", onClick = viewModel::revise)
-        StepButton("5 · 定稿 Finalize", enabled = !running && chain?.draft != null && chain?.finalDraft == null, loading = running && (op as? ChapterWritingOp.Running)?.stage == "Finalize", onClick = viewModel::finalize)
-        StepButton("6 · 确认 Confirmation", enabled = !running && chain?.finalDraft != null && chain?.confirmedDraft == null, loading = running && (op as? ChapterWritingOp.Running)?.stage == "Confirmation", onClick = viewModel::confirm)
-        StepButton("7 · Knowledge Update", enabled = !running && chain?.confirmedDraft != null && chain?.knowledgeUpdate == null, loading = running && (op as? ChapterWritingOp.Running)?.stage == "Knowledge Update", onClick = viewModel::knowledgeUpdate)
+        val phase = progress?.phase
+        when {
+            phase == null -> Unit // 状态恢复中，ProgressSummary 已显示 loading
+            phase == ChapterPhase.NOT_STARTED -> ActionButton("开始创作", enabled = !running, loading = running, onClick = viewModel::start)
+            phase == ChapterPhase.COMPLETED -> ActionButton("下一章", enabled = !running, loading = running, onClick = viewModel::continueToNext)
+            phase == ChapterPhase.FAILED -> ActionButton("重试推进", enabled = !running, loading = running, onClick = viewModel::advance)
+            else -> {
+                ActionButton("推进写作", enabled = !running, loading = running, onClick = viewModel::advance)
+                if (phase == ChapterPhase.WAITING_CONFIRMATION && progress?.waitingForUser == true) {
+                    ActionButton("确认内容", enabled = !running, onClick = viewModel::approve)
+                }
+            }
+        }
 
         Spacer(Modifier.height(20.dp))
         Text("返回章节详情", color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(0.dp))
@@ -63,30 +83,33 @@ fun ChapterWritingScreen(
 }
 
 @Composable
-private fun ResultSummary(chain: ChapterChainResult?) {
-    if (chain == null) {
+private fun ProgressSummary(progress: ChapterWorkflowProgress?) {
+    if (progress == null) {
         Text("状态恢复中…", color = MaterialTheme.colorScheme.onSurfaceVariant)
         return
     }
-    val planId = chain.plan?.chapterPlanId?.value ?: "—"
-    val draftStatus = chain.draft?.status ?: "—"
-    val critiquePassed = chain.critique?.passed
-    val revisionCount = chain.revisions.size
-    val finalStatus = chain.finalDraft?.status ?: "—"
-    val confirmedStatus = chain.confirmedDraft?.status ?: "—"
-    val kuApplied = chain.knowledgeUpdate?.applied?.size
     val lines = buildList {
-        add("章节：${chain.chapterId.value}")
-        add("Plan ID：$planId")
-        add("Draft 状态：$draftStatus")
-        add("Critique：${if (critiquePassed != null) "已完成(passed=$critiquePassed)" else "—"}")
-        add("Revision 次数：$revisionCount")
-        add("Final Draft：$finalStatus")
-        add("Confirmed：$confirmedStatus")
-        add("Knowledge Update：${if (kuApplied != null) "已完成(applied=$kuApplied)" else "—"}")
+        add("章节：${progress.chapterId.value}")
+        add("阶段：${progress.phaseLabel}")
+        if (progress.revisionCount > 0) add("修订次数：${progress.revisionCount}")
+        progress.draftId?.let { add("Draft：${it.value.take(8)}") }
+        if (progress.waitingForUser) add("等待作者确认")
     }
     lines.forEach { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
+
+private val ChapterWorkflowProgress.phaseLabel: String
+    get() = when (phase) {
+        ChapterPhase.NOT_STARTED -> "未开始"
+        ChapterPhase.PLANNING -> "规划中"
+        ChapterPhase.WRITING -> "写作中"
+        ChapterPhase.REVIEWING -> "评审中"
+        ChapterPhase.REVISING -> "修订中"
+        ChapterPhase.WAITING_CONFIRMATION -> "待确认"
+        ChapterPhase.UPDATING_STORY -> "更新故事状态"
+        ChapterPhase.COMPLETED -> "已完成"
+        ChapterPhase.FAILED -> "失败"
+    }
 
 @Composable
 private fun OpError(op: ChapterWritingOp) {
@@ -96,7 +119,7 @@ private fun OpError(op: ChapterWritingOp) {
 }
 
 @Composable
-private fun StepButton(text: String, enabled: Boolean, loading: Boolean, onClick: () -> Unit) {
+private fun ActionButton(text: String, enabled: Boolean, loading: Boolean = false, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         enabled = enabled,

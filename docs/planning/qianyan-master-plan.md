@@ -1898,6 +1898,45 @@ MigrationEngine 流程:
 
 > Future 项均不推翻既有决策；在 MVP 稳定后按需启动。
 
+### 31.1 Idea Intelligence / Story Foundation（🔮 规划能力 · PLANNED / NOT IMPLEMENTED）
+
+> **状态**：仅规划。**不纳入当前 P12.1 / P12.2 实施路线**，不替代下文任何既有层，不进入当前开发阶段。
+> 对应既有意图：§1.1「支持从 TXT 导入分析，也支持从想法开始创作」；§26.1 `ProjectSource.FROM_IDEA`（从想法直接开始创作）。
+
+**产品定位**：创作入口 / 故事初始化智能层——把「一个模糊的自然语言故事想法」发展为「一个可长期创作的长篇故事基础」。它不是题材推荐器，而是「用户想法 → Story Foundation」的桥梁；不是 Workflow Engine / WriterAgent 的一部分。
+
+```
+用户想法（自然语言）
+   ↓
+Idea Intelligence
+   ↓
+Story Foundation
+   ↓
+Long-form Planning
+   ↓
+Workflow（Planning / Writing / Critique / Revision / Knowledge Update）
+   ↓
+长期小说（百万字规模连续性）
+```
+
+**4.1 预定体系（Genre Taxonomy）**：Qianyan 维护**稳定、结构化、可版本化**的题材分类体系，AI 不自由创造分类。至少表达：Genre / SubGenre / 混合题材 / Narrative Mode / Tone / Audience / Story Structure tendencies / Genre constraints / Genre risks / Long-form suitability。
+
+**4.2 AI 分析（Idea → 方向）**：AI 职责是把用户自然语言想法**映射、组合、比较到预定题材体系**，而非创造不可控分类。可：理解核心概念 / 提取核心冲突 / 判断驱动力 / 识别主角目标与世界观方向 / 匹配主副题材 / 推荐混合题材 / 产出多个 StoryDirection / 比较优劣与风险 / 判断长篇潜力与中后期结构性问题。
+
+**StoryDirection**（高于 Genre 的故事方向，非 Genre 的别名）：即「这个故事应被发展成什么样的一部长篇小说」。可包含：primaryGenre / secondaryGenres / tone / audience / narrativeMode / coreAppeal / storyEngine / longFormPotential / potentialRisks / recommendedStructure。具体字段由未来架构阶段定，**本次不建立 Kotlin 数据模型**。
+
+**Long-form Potential（长篇潜力分析，重点）**：辅助决策（High / Medium / Low + Reasons + Risks + Recommendations），**非绝对预测**。分析：核心冲突强度与可持续升级 / 多阶段目标 / 世界扩展空间 / 人物关系持续变化 / 多个故事弧 / 长期悬念 / 伏笔-回收形成 / 中前期失速与后期重复风险 / 是否过度依赖单一事件 / 百万字适配性。
+
+**用户交互原则**：用户不应被要求填写大量专业参数——只需一句话想法，Qianyan 推荐 3–5 个方向，用户选择/修改/自定义/要求重推（偏爽文 / 偏悬疑 / 偏感情 / 偏文学 / 更适合长篇）。具体 UI 属未来产品阶段。
+
+**两层关系**：
+- 与 **Long-form Quality Foundation / Long-form Planning**：Idea Intelligence 产生的 StoryFoundation 是后两者的**上游输入**（先定方向与长篇潜力，再做长期规划与写作）；不在本层替代它们。
+- **架构隔离**：不替代 Planning / StoryWorldContext / Memory / Workflow / AgentRuntime / Critique / Revision / Knowledge Update；不新增状态机、不新增持久化、不改当前工作流架构。
+
+**示例**：「一个普通程序员发现，自己写的代码可以改变现实」→ 方向 A 都市异能+悬疑 / 方向 B 科幻+悬疑 / 方向 C 都市脑洞 / 方向 D 赛博朋克，各附适合度、核心卖点、长篇潜力、优势、风险、中后期问题；若目标百万字长篇，可推荐 **A + B 融合方向**。
+
+> **实施建议（仅规划，不执行）**：未来阶段作为独立能力层推进——先固化 Genre Taxonomy（版本化），再实现 AI 想法分析 Agent（映射到预定体系）→ StoryDirection → Long-form Potential → 用户确认 → Story Foundation 固化；再以其输出进入 Long-form Planning。
+
 ---
 
 # 附录

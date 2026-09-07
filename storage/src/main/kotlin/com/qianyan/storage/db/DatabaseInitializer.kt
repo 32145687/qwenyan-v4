@@ -39,6 +39,9 @@ object DatabaseInitializer {
     /** v4（P12.0 Chapter）→ v5（P12.1.1：6 张 Story State 表）迁移起点。 */
     private const val V4 = 4L
 
+    /** v5（P12.1 Story State）→ v6（P12.2：Durable Workflow 5 表 + ChapterDraft chapter_id 索引）迁移起点。 */
+    private const val V5 = 5L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -107,6 +110,12 @@ object DatabaseInitializer {
             !tableExists(driver, "Foreshadow") -> withTransaction(driver) {
                 // v4 → v5：新增 6 张 Story State 表（Character/CharacterState/WorldRule/Event/TimelineEntry/Foreshadow）（P12.1.1）。
                 QianyanDb.Schema.migrate(driver, V4, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "Workflow") -> withTransaction(driver) {
+                // v5 → v6：新增 Durable Workflow 5 表 + ChapterDraft(chapter_id) 索引（P12.2）。
+                QianyanDb.Schema.migrate(driver, V5, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

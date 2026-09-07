@@ -1,5 +1,6 @@
 package com.qianyan.storage.repository
 
+import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.writing.Draft
@@ -25,4 +26,12 @@ interface DraftRepository {
 
     /** 列出某 Novel 下全部 Draft（按创建时间升序）。 */
     fun listByNovel(novelId: NovelId): List<Draft>
+
+    // ---- P12.2·TD2：章节作用域查询（走 chapter_id 索引） ----
+
+    /** 列出某 Chapter 下的全部 Draft（升序）。 */
+    fun listByChapter(chapterId: ChapterId): List<Draft>
+
+    /** 某 Chapter 最近创建的 Draft；无返回 null。 */
+    fun latestByChapter(chapterId: ChapterId): Draft?
 }

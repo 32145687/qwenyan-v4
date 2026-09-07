@@ -181,12 +181,15 @@ class MainActivity : ComponentActivity() {
                         novelId = screen.novel.novelId,
                         variantId = screen.variantId,
                         chapterId = screen.chapterId,
-                        chapterWriting = container.chapterWriting,
+                        gateway = container.workflowFacade,
                     ),
                 )
                 ChapterWritingScreen(
                     viewModel = writingViewModel,
                     onBack = pop,
+                    onContinueToNext = { nextChapterId ->
+                        push(Screen.ChapterWriting(screen.novel, screen.variantId, nextChapterId))
+                    },
                 )
             }
         }

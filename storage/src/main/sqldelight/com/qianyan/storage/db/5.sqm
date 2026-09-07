@@ -1,0 +1,77 @@
+-- P12.2 · Schema v6（5.sqm：v5 → v6）
+-- 新增 Durable Workflow 5 表 + ChapterDraft(chapter_id) 索引（TD2）。
+-- 不删除/修改既有业务表；旧数据原样保留；幂等由 DatabaseInitializer 的 tableExists 判断包裹。
+
+CREATE TABLE Workflow (
+    workflow_id         TEXT NOT NULL PRIMARY KEY,
+    novel_id            TEXT NOT NULL,
+    variant_id          TEXT,
+    kind                TEXT NOT NULL,
+    definition_version  TEXT NOT NULL DEFAULT 'P12.2-v1',
+    status              TEXT NOT NULL,
+    active_chapter_id   TEXT,
+    current_step_id     TEXT,
+    pending_gate_id     TEXT,
+    created_at          INTEGER NOT NULL,
+    updated_at          INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_workflow_novel ON Workflow(novel_id, variant_id);
+
+CREATE TABLE WorkflowStep (
+    step_id             TEXT NOT NULL PRIMARY KEY,
+    workflow_id         TEXT NOT NULL,
+    chapter_id          TEXT NOT NULL,
+    phase               TEXT NOT NULL,
+    logical_step_key    TEXT NOT NULL,
+    status              TEXT NOT NULL,
+    current_attempt_no  INTEGER,
+    current_task_id     TEXT,
+    result_reference    TEXT,
+    created_at          INTEGER NOT NULL,
+    completed_at        INTEGER,
+    UNIQUE (workflow_id, logical_step_key),
+    FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id)
+);
+CREATE INDEX IF NOT EXISTS idx_step_workflow ON WorkflowStep(workflow_id, chapter_id);
+
+CREATE TABLE WorkflowStepAttempt (
+    attempt_id          TEXT NOT NULL PRIMARY KEY,
+    step_id             TEXT NOT NULL,
+    attempt_no          INTEGER NOT NULL,
+    task_id             TEXT,
+    status              TEXT NOT NULL,
+    error_category      TEXT,
+    error_message       TEXT,
+    started_at          INTEGER NOT NULL,
+    completed_at        INTEGER,
+    UNIQUE (step_id, attempt_no),
+    FOREIGN KEY (step_id) REFERENCES WorkflowStep(step_id)
+);
+
+CREATE TABLE WorkflowHumanGate (
+    gate_id             TEXT NOT NULL PRIMARY KEY,
+    workflow_id         TEXT NOT NULL,
+    step_id             TEXT,
+    draft_id            TEXT,
+    gate_key            TEXT NOT NULL UNIQUE,
+    status              TEXT NOT NULL,
+    decision            TEXT NOT NULL,
+    created_at          INTEGER NOT NULL,
+    resolved_at         INTEGER,
+    resolved_by         TEXT,
+    FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id)
+);
+
+CREATE TABLE WorkflowContinuation (
+    continuation_id     TEXT NOT NULL PRIMARY KEY,
+    workflow_id         TEXT NOT NULL,
+    source_draft_id     TEXT NOT NULL,
+    source_chapter_id   TEXT,
+    target_chapter_id   TEXT NOT NULL,
+    created_at          INTEGER NOT NULL,
+    UNIQUE (source_draft_id, target_chapter_id),
+    FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id)
+);
+
+-- TD2：ChapterDraft(chapter_id) 索引，避免恢复路径 listByNovel 全表扫描。
+CREATE INDEX IF NOT EXISTS idx_chapterdraft_chapter ON ChapterDraft(chapter_id);

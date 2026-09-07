@@ -12,6 +12,9 @@ import com.qianyan.application.usecase.task.TaskRunner
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.chapter.ChapterWritingUseCases
+import com.qianyan.application.usecase.workflow.ChapterWorkflowFacade
+import com.qianyan.application.usecase.workflow.WorkflowOrchestrator
+import com.qianyan.application.usecase.workflow.WorkflowService
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
@@ -50,11 +53,12 @@ import com.qianyan.storage.repository.SqliteTaskRepository
 import com.qianyan.storage.repository.SqliteTxtRepository
 import com.qianyan.storage.repository.SqliteStoryStateRepository
 import com.qianyan.storage.repository.SqliteVocabularyRepository
+import com.qianyan.storage.repository.SqliteWorkflowRepository
 import com.qianyan.storage.repository.StoryStateRepository
 import com.qianyan.storage.repository.TaskRepository
 import com.qianyan.storage.repository.TxtRepository
 import com.qianyan.storage.repository.VocabularyRepository
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.qianyan.storage.repository.WorkflowRepository
 
 /**
  * Application 层组合根（手动 DI，P3.1）。
@@ -83,6 +87,7 @@ class ApplicationContainer(
     val draftRepository: DraftRepository,
     val chapterRepository: ChapterRepository,
     private val storyStateRepository: StoryStateRepository,
+    val workflowRepository: WorkflowRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -112,6 +117,45 @@ class ApplicationContainer(
             confirmation = confirmations,
             knowledgeUpdate = knowledgeUpdate,
             draftRepository = draftRepository,
+            errorMapper = errorMapper,
+        )
+
+    /** P12.2 Durable Workflow 仓储（Workflow/Step/Attempt/Gate/Continuation）——流程持久化基础。 */
+    val workflows: WorkflowRepository get() = workflowRepository
+
+    /** P12.2 Workflow 最小服务：ResultReference 恢复 + HumanGate 幂等批准（Recovery/HITL 地基）。 */
+    val workflowService: WorkflowService
+        get() = WorkflowService(
+            workflowRepository = workflowRepository,
+            draftRepository = draftRepository,
+            taskManager = tasks,
+            confirmation = confirmations,
+            knowledgeUpdate = knowledgeUpdate,
+            errorMapper = errorMapper,
+        )
+
+    /** P12.2 M1-M2 · 章节创作用户层 Facade：Android/未来 Desktop 只经此访问 Durable Workflow（薄转换/进度投影）。 */
+    val workflowFacade: com.qianyan.application.usecase.workflow.ChapterWorkflowGateway
+        get() = ChapterWorkflowFacade(
+            workflowRepository = workflowRepository,
+            draftRepository = draftRepository,
+            orchestrator = workflowOrchestrator,
+            errorMapper = errorMapper,
+        )
+
+    /** P12.2 薄 Orchestrator：runForward 驱动 LogicalStep（WRITING + Attempt/retry），复用既有 UseCases。 */
+    val workflowOrchestrator: WorkflowOrchestrator
+        get() = WorkflowOrchestrator(
+            workflowRepository = workflowRepository,
+            taskManager = tasks,
+            writing = writingExecution,
+            planning = planning,
+            critique = critique,
+            revision = revision,
+            confirmation = confirmations,
+            knowledgeUpdate = knowledgeUpdate,
+            draftRepository = draftRepository,
+            chapterRepository = chapterRepository,
             errorMapper = errorMapper,
         )
 
@@ -200,14 +244,15 @@ class ApplicationContainer(
                 draftRepository = SqliteDraftRepository(db),
                 chapterRepository = SqliteChapterRepository(db),
                 storyStateRepository = SqliteStoryStateRepository(db),
+                workflowRepository = SqliteWorkflowRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )
         }
 
-        /** 直接从 JDBC URL 打开数据库并装配（默认内存库；持久化测试传 `jdbc:sqlite:<path>`）。 */
+        /** 直接从 JDBC URL 打开数据库并装配（默认**每个调用独立的内存库**，保证测试/多容器互不串据；持久化测试传 `jdbc:sqlite:<path>`）。 */
         fun open(
-            url: String = JdbcSqliteDriver.IN_MEMORY,
+            url: String = freshMemoryUrl(),
             analysisGateway: LLMGateway,
             analysisModel: ModelProfile = ModelProfile.MOCK,
         ): ApplicationContainer = fromDriver(QianyanDbFactory.open(url).driver, analysisGateway, analysisModel)
@@ -218,7 +263,7 @@ class ApplicationContainer(
 
         /** 经 [ProviderAssembler] 从 [ProviderConfiguration] 组装 LLMGateway 后装配容器（同 in-memory 数据库）。 */
         fun open(
-            url: String = JdbcSqliteDriver.IN_MEMORY,
+            url: String = freshMemoryUrl(),
             providerAssembler: ProviderAssembler,
             configuration: ProviderConfiguration,
         ): ApplicationContainer {
@@ -243,5 +288,9 @@ class ApplicationContainer(
                 analysisModel = configuration.model ?: ModelProfile.MOCK,
             )
         }
+
+        /** 唯一私有内存库 JDBC URL（每次调用独立，避免同 JVM 内多容器共享 `:memory:` 而串数据）。 */
+        private fun freshMemoryUrl(): String =
+            "jdbc:sqlite:file:qianyan-${java.util.UUID.randomUUID()}?mode=memory&cache=private"
     }
 }

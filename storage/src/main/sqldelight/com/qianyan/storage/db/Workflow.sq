@@ -1,0 +1,168 @@
+-- P12.2 · Durable Workflow（Schema v6）
+-- 持久化长篇创作工作流：Workflow(流程唯一权威) → WorkflowStep(业务步骤) → WorkflowStepAttempt(执行尝试)
+--   + WorkflowHumanGate(HITL 独立持久化) + WorkflowContinuation(业务关系，独立表)。
+-- 只存引用/标量，不复制正文。状态一律 TEXT 存枚举名，与领域枚举一一对应。
+
+-- Workflow：一次可持续执行的创作流程实例。novelId+variantId 仅为 Scope，不是身份；同 Novel/Variant 可多 Workflow。
+CREATE TABLE Workflow (
+    workflow_id         TEXT NOT NULL PRIMARY KEY,
+    novel_id            TEXT NOT NULL,
+    variant_id          TEXT,
+    kind                TEXT NOT NULL,               -- WorkflowKind 枚举名
+    definition_version  TEXT NOT NULL DEFAULT 'P12.2-v1',
+    status              TEXT NOT NULL,               -- WorkflowStatus 枚举名
+    active_chapter_id   TEXT,
+    current_step_id     TEXT,
+    pending_gate_id     TEXT,
+    created_at          INTEGER NOT NULL,            -- epoch 毫秒
+    updated_at          INTEGER NOT NULL
+);
+CREATE INDEX idx_workflow_novel ON Workflow(novel_id, variant_id);
+
+-- WorkflowStep：一个逻辑业务步骤。logicalStepKey 稳定 = workflowId:chapterId:phase（不含 attempt）。
+CREATE TABLE WorkflowStep (
+    step_id             TEXT NOT NULL PRIMARY KEY,
+    workflow_id         TEXT NOT NULL,
+    chapter_id          TEXT NOT NULL,
+    phase               TEXT NOT NULL,               -- WorkflowStepPhase 枚举名
+    logical_step_key    TEXT NOT NULL,
+    status              TEXT NOT NULL,               -- WorkflowStepStatus 枚举名
+    current_attempt_no  INTEGER,
+    current_task_id     TEXT,
+    result_reference    TEXT,                        -- 引用 ID（draftId / continuationId / tasks），非正文
+    created_at          INTEGER NOT NULL,
+    completed_at        INTEGER,
+    UNIQUE (workflow_id, logical_step_key),
+    FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id)
+);
+CREATE INDEX idx_step_workflow ON WorkflowStep(workflow_id, chapter_id);
+
+-- WorkflowStepAttempt：同一逻辑步骤的执行尝试。attemptNo 表示 retry 次数（≠ revision）。
+CREATE TABLE WorkflowStepAttempt (
+    attempt_id          TEXT NOT NULL PRIMARY KEY,
+    step_id             TEXT NOT NULL,
+    attempt_no          INTEGER NOT NULL,
+    task_id             TEXT,
+    status              TEXT NOT NULL,               -- WorkflowAttemptStatus 枚举名
+    error_category      TEXT,                        -- AttemptErrorCategory 枚举名；null=无错误
+    error_message       TEXT,
+    started_at          INTEGER NOT NULL,
+    completed_at        INTEGER,
+    UNIQUE (step_id, attempt_no),
+    FOREIGN KEY (step_id) REFERENCES WorkflowStep(step_id)
+);
+
+-- WorkflowHumanGate：HITL 决策独立持久化。gateKey 唯一；decision 绑定具体 draftId。
+CREATE TABLE WorkflowHumanGate (
+    gate_id             TEXT NOT NULL PRIMARY KEY,
+    workflow_id         TEXT NOT NULL,
+    step_id             TEXT,
+    draft_id            TEXT,
+    gate_key            TEXT NOT NULL UNIQUE,
+    status              TEXT NOT NULL,               -- PENDING / RESOLVED
+    decision            TEXT NOT NULL,               -- HumanDecision 枚举名
+    created_at          INTEGER NOT NULL,
+    resolved_at         INTEGER,
+    resolved_by         TEXT,
+    FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id)
+);
+
+-- WorkflowContinuation：Anticipated Ch→Ch 关系。唯一 (sourceDraftId, targetChapterId)。
+CREATE TABLE WorkflowContinuation (
+    continuation_id     TEXT NOT NULL PRIMARY KEY,
+    workflow_id         TEXT NOT NULL,
+    source_draft_id     TEXT NOT NULL,
+    source_chapter_id   TEXT,
+    target_chapter_id   TEXT NOT NULL,
+    created_at          INTEGER NOT NULL,
+    UNIQUE (source_draft_id, target_chapter_id),
+    FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id)
+);
+
+-- ---- 查询/命令 ----
+insertWorkflow:
+INSERT OR REPLACE INTO Workflow(workflow_id, novel_id, variant_id, kind, definition_version, status, active_chapter_id, current_step_id, pending_gate_id, created_at, updated_at)
+VALUES (:workflow_id, :novel_id, :variant_id, :kind, :definition_version, :status, :active_chapter_id, :current_step_id, :pending_gate_id, :created_at, :updated_at);
+
+getWorkflowById:
+SELECT * FROM Workflow WHERE workflow_id = :workflow_id;
+
+-- P12.2 · M1-M2：按 activeChapter 查其归属 Workflow（用户层 chapterId → workflow 句柄，供 Facade）。
+singleWorkflowByActiveChapter:
+SELECT * FROM Workflow WHERE active_chapter_id = :active_chapter_id LIMIT 1;
+
+updateWorkflow:
+UPDATE Workflow SET status = :status, active_chapter_id = :active_chapter_id, current_step_id = :current_step_id,
+  pending_gate_id = :pending_gate_id, updated_at = :updated_at WHERE workflow_id = :workflow_id;
+
+insertStep:
+INSERT OR REPLACE INTO WorkflowStep(step_id, workflow_id, chapter_id, phase, logical_step_key, status, current_attempt_no, current_task_id, result_reference, created_at, completed_at)
+VALUES (:step_id, :workflow_id, :chapter_id, :phase, :logical_step_key, :status, :current_attempt_no, :current_task_id, :result_reference, :created_at, :completed_at);
+
+getStepById:
+SELECT * FROM WorkflowStep WHERE step_id = :step_id;
+
+getStepByKey:
+SELECT * FROM WorkflowStep WHERE workflow_id = :workflow_id AND logical_step_key = :logical_step_key;
+
+listStepsByWorkflow:
+SELECT * FROM WorkflowStep WHERE workflow_id = :workflow_id ORDER BY created_at;
+
+getCurrentStep:
+SELECT * FROM WorkflowStep WHERE step_id = :step_id;
+
+updateStep:
+UPDATE WorkflowStep SET status = :status, current_attempt_no = :current_attempt_no,
+  current_task_id = :current_task_id, result_reference = :result_reference, completed_at = :completed_at
+WHERE step_id = :step_id;
+
+insertAttempt:
+INSERT OR REPLACE INTO WorkflowStepAttempt(attempt_id, step_id, attempt_no, task_id, status, error_category, error_message, started_at, completed_at)
+VALUES (:attempt_id, :step_id, :attempt_no, :task_id, :status, :error_category, :error_message, :started_at, :completed_at);
+
+getAttemptById:
+SELECT * FROM WorkflowStepAttempt WHERE attempt_id = :attempt_id;
+
+getAttempt:
+SELECT * FROM WorkflowStepAttempt WHERE step_id = :step_id AND attempt_no = :attempt_no;
+
+listAttemptsByStep:
+SELECT * FROM WorkflowStepAttempt WHERE step_id = :step_id ORDER BY attempt_no;
+
+nextAttemptNo:
+SELECT COALESCE(MAX(attempt_no), 0) + 1 FROM WorkflowStepAttempt WHERE step_id = :step_id;
+
+updateAttempt:
+UPDATE WorkflowStepAttempt SET task_id = :task_id, status = :status, error_category = :error_category,
+  error_message = :error_message, completed_at = :completed_at WHERE attempt_id = :attempt_id;
+
+insertGate:
+INSERT OR REPLACE INTO WorkflowHumanGate(gate_id, workflow_id, step_id, draft_id, gate_key, status, decision, created_at, resolved_at, resolved_by)
+VALUES (:gate_id, :workflow_id, :step_id, :draft_id, :gate_key, :status, :decision, :created_at, :resolved_at, :resolved_by);
+
+getGateByKey:
+SELECT * FROM WorkflowHumanGate WHERE gate_key = :gate_key;
+
+getGateById:
+SELECT * FROM WorkflowHumanGate WHERE gate_id = :gate_id;
+
+updateGate:
+UPDATE WorkflowHumanGate SET status = :status, decision = :decision, resolved_at = :resolved_at, resolved_by = :resolved_by
+WHERE gate_id = :gate_id;
+
+insertContinuation:
+INSERT OR REPLACE INTO WorkflowContinuation(continuation_id, workflow_id, source_draft_id, source_chapter_id, target_chapter_id, created_at)
+VALUES (:continuation_id, :workflow_id, :source_draft_id, :source_chapter_id, :target_chapter_id, :created_at);
+
+getContinuationById:
+SELECT * FROM WorkflowContinuation WHERE continuation_id = :continuation_id;
+
+getContinuation:
+SELECT * FROM WorkflowContinuation WHERE source_draft_id = :source_draft_id AND target_chapter_id = :target_chapter_id;
+
+-- P12.2 · Test E：按 source Draft 查唯一 continuation（幂等目标解析）；按 target Chapter 查（Ch2 Planning 输入来源）。
+singleContinuationBySourceDraft:
+SELECT * FROM WorkflowContinuation WHERE source_draft_id = :source_draft_id LIMIT 1;
+
+singleContinuationByTargetChapter:
+SELECT * FROM WorkflowContinuation WHERE target_chapter_id = :target_chapter_id LIMIT 1;

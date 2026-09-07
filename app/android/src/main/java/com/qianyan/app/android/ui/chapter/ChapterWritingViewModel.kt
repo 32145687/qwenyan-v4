@@ -5,8 +5,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
-import com.qianyan.application.usecase.chapter.ChapterChainResult
-import com.qianyan.application.usecase.chapter.ChapterWritingUseCases
+import com.qianyan.application.usecase.workflow.ChapterWorkflowGateway
+import com.qianyan.application.usecase.workflow.ChapterWorkflowProgress
 import com.qianyan.app.android.ui.chapter.ChapterWritingOp.Idle
 import com.qianyan.model.ChapterId
 import com.qianyan.model.NovelId
@@ -20,48 +20,90 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 章节创作链 ViewModel（P12.1.7）。
+ * 章节工作流 ViewModel（P12.2 M3 · Facade Migration）。
  *
- * **只协调，不重写业务逻辑**：所有步骤委托给 [ChapterWritingUseCases] 打开的 [ChapterWritingSession]
- * （其内部复用既有 Planning / Writing / Critique / Revision / Confirmation / KnowledgeUpdate UseCases 与 Task）。
- * 本类只负责：发起操作、展示 Loading/Error、持有链结果、防重复点击（操作期间忽略新请求）。
- * 状态以 Application 落库结果为准（T9/T12：即使 UI 被绕过，Application 层也强制门禁）。
+ * **只协调，不实现任何 Workflow 逻辑**：所有章节推进/审批/恢复/续篇统一委托给用户层
+ * [ChapterWorkflowGateway]（其唯一实现 [ChapterWorkflowFacade] → WorkflowOrchestrator）。
+ *
+ * ViewModel 只理解用户层概念：
+ *  - [ChapterWorkflowProgress] / 其 [com.qianyan.application.usecase.workflow.ChapterPhase]
+ *  - waitingForUser / revisionCount / draftId
+ *  - [ApplicationException]/[ApplicationError] 的用户层错误映射
+ *
+ * ViewModel **不理解也不接触**：Workflow / WorkflowStep / WorkflowHumanGate / Attempt / ContinuationReference
+ * / resultReference / logicalStepKey / attemptNo / WorkflowRepository / WorkflowService / WorkflowOrchestrator / Task。
+ * 也不复刻第二步/重试/恢复/审批/续篇逻辑——这些一律由 Facade/Workflow 保证。
  */
 class ChapterWritingViewModel(
-    novelId: NovelId,
-    variantId: VariantId?,
-    chapterId: ChapterId,
-    private val chapterWriting: ChapterWritingUseCases,
+    private val novelId: NovelId,
+    private val variantId: VariantId?,
+    private val chapterId: ChapterId,
+    private val gateway: ChapterWorkflowGateway,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
-    private val session = chapterWriting.open(chapterId, novelId, variantId)
+    private val _progress = MutableStateFlow<ChapterWorkflowProgress?>(null)
+    val progress: StateFlow<ChapterWorkflowProgress?> = _progress.asStateFlow()
 
-    private val _chain = MutableStateFlow<ChapterChainResult?>(null)
-    val chain: StateFlow<ChapterChainResult?> = _chain.asStateFlow()
+    /** 续篇结果（下一章进度；供 UI 导航消费，单次）。 */
+    private val _nextChapter = MutableStateFlow<ChapterWorkflowProgress?>(null)
+    val nextChapter: StateFlow<ChapterWorkflowProgress?> = _nextChapter.asStateFlow()
 
     private val _op = MutableStateFlow<ChapterWritingOp>(Idle)
     val op: StateFlow<ChapterWritingOp> = _op.asStateFlow()
 
     init {
-        refresh()
+        open()
     }
 
-    /** 从数据库恢复链状态（Activity 重建 / 重进，真实持久化）。 */
-    private fun refresh() {
+    /** 打开章节：从 durable workflow 恢复进度（不依赖任何内存 Session）。 */
+    private fun open() {
         viewModelScope.launch {
-            _chain.value = withContext(ioDispatcher) { session.refreshFromDatabase() }
+            _progress.value = withContext(ioDispatcher) { gateway.getChapterProgress(chapterId) }
         }
     }
 
-    /** 执行一个链步骤（幂等由 session 保证；操作期间忽略重复点击）。 */
-    private fun run(stage: String, block: () -> Unit) {
+    /** 显式启动章节工作流（进度为 NOT_STARTED 时由 UI 提供入口）。 */
+    fun start() = run("Start") { gateway.startChapter(novelId, variantId, chapterId) }
+
+    /** 推进章节工作流（Workflow 自行决定下一步；ViewModel 不读取 Phase 决定下一步）。 */
+    fun advance() = run("Advance") { gateway.advance(chapterId) }
+
+    /** 恢复章节工作流（durable recovery）。 */
+    fun resume() = run("Resume") { gateway.resume(chapterId) }
+
+    /** HITL：批准（幂等由 Facade/Workflow 保证，ViewModel 不保存 approved 状态）。 */
+    fun approve() = run("Approve") { gateway.approve(chapterId) }
+
+    /** 续到下一章：返回下一章进度（Facade 保证只创建一个下一章）。 */
+    fun continueToNext() {
+        if (_op.value is ChapterWritingOp.Running) return
+        _op.value = ChapterWritingOp.Running("Next")
+        viewModelScope.launch {
+            try {
+                val next = withContext(ioDispatcher) { gateway.continueToNextChapter(chapterId) }
+                _nextChapter.value = next
+                _op.value = Idle
+            } catch (e: ApplicationException) {
+                _op.value = ChapterWritingOp.Error("Next", messageFor(e.error))
+            } catch (_: Exception) {
+                _op.value = ChapterWritingOp.Error("Next", "操作失败，请重试")
+            }
+        }
+    }
+
+    /** MainActivity 导航到下一章后消费 [nextChapter] 单次事件。 */
+    fun onNextConsumed() {
+        _nextChapter.value = null
+    }
+
+    /** 执行一个当前章节操作（幂等防重复点击；结果投影为 [ChapterWorkflowProgress]）。 */
+    private fun run(stage: String, block: () -> ChapterWorkflowProgress) {
         if (_op.value is ChapterWritingOp.Running) return
         _op.value = ChapterWritingOp.Running(stage)
         viewModelScope.launch {
             try {
-                withContext(ioDispatcher) { block() }
-                _chain.value = session.current()
+                _progress.value = withContext(ioDispatcher) { block() }
                 _op.value = Idle
             } catch (e: ApplicationException) {
                 _op.value = ChapterWritingOp.Error(stage, messageFor(e.error))
@@ -70,14 +112,6 @@ class ChapterWritingViewModel(
             }
         }
     }
-
-    fun plan() = run("Planning") { session.plan() }
-    fun write() = run("Writing") { session.write() }
-    fun critique() = run("Critique") { session.critique() }
-    fun revise() = run("Revision") { session.revise() }
-    fun finalize() = run("Finalize") { session.finalize() }
-    fun confirm() = run("Confirmation") { session.confirm() }
-    fun knowledgeUpdate() = run("Knowledge Update") { session.knowledgeUpdate() }
 
     /** ApplicationError → 用户可读文案（不泄露底层细节；无关类型兜底）。 */
     private fun messageFor(error: ApplicationError): String = when (error) {
@@ -100,11 +134,11 @@ class ChapterWritingViewModel(
             novelId: NovelId,
             variantId: VariantId?,
             chapterId: ChapterId,
-            chapterWriting: ChapterWritingUseCases,
+            gateway: ChapterWorkflowGateway,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
             override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                ChapterWritingViewModel(novelId, variantId, chapterId, chapterWriting) as T
+                ChapterWritingViewModel(novelId, variantId, chapterId, gateway) as T
         }
     }
 }

@@ -34,3 +34,10 @@ SELECT * FROM ChapterDraft WHERE draft_id = :draft_id;
 
 listDraftsByNovel:
 SELECT * FROM ChapterDraft WHERE novel_id = :novel_id ORDER BY created_at ASC, draft_id ASC;
+
+-- P12.2·TD2：章节作用域查询（走 chapter_id 索引，避免恢复路径全表扫描）
+listDraftsByChapter:
+SELECT * FROM ChapterDraft WHERE chapter_id = :chapter_id ORDER BY created_at ASC, draft_id ASC;
+
+getLatestDraftByChapter:
+SELECT * FROM ChapterDraft WHERE chapter_id = :chapter_id ORDER BY created_at DESC, draft_id DESC LIMIT 1;

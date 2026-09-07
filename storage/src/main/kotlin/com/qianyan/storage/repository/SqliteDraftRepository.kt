@@ -1,5 +1,6 @@
 package com.qianyan.storage.repository
 
+import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.writing.Draft
@@ -35,4 +36,12 @@ class SqliteDraftRepository(
     override fun listByNovel(novelId: NovelId): List<Draft> =
         db.draftQueries.listDraftsByNovel(novelId.value).executeAsList()
             .map { StorageMappers.dbDraft(it) }
+
+    override fun listByChapter(chapterId: ChapterId): List<Draft> =
+        db.draftQueries.listDraftsByChapter(chapterId.value).executeAsList()
+            .map { StorageMappers.dbDraft(it) }
+
+    override fun latestByChapter(chapterId: ChapterId): Draft? =
+        db.draftQueries.getLatestDraftByChapter(chapterId.value).executeAsOneOrNull()
+            ?.let { StorageMappers.dbDraft(it) }
 }
