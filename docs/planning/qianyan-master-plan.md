@@ -1898,6 +1898,17 @@ MigrationEngine 流程:
 
 > Future 项均不推翻既有决策；在 MVP 稳定后按需启动。
 
+### 31.0 P12.2 — DONE / COMPLETE（已完成能力）
+
+> **状态**：P12.2 Durable Workflow 已实现并通过 Final Acceptance 技术审计（架构保持与本文档一致，无新状态机/新引擎）。
+> - **Durable Workflow**：Workflow / WorkflowStep / WorkflowStepAttempt / WorkflowHumanGate / WorkflowContinuation（Schema v6）+ WorkflowRepository / SqliteWorkflowRepository + WorkflowService / WorkflowOrchestrator；
+> - **Recovery**：resultReference-first（优先级 resultReference → Attempt → Task）；已成功结果复用，不重复调 LLM；
+> - **Retry ≠ Revision**：Retry=attemptNo++；Revision=revisionCount(≤3)+previousDraftId lineage；
+> - **Human Gate**：持久化、WAITING_HUMAN 可恢复、approve 幂等（重复 approve 单次 Knowledge Update）；
+> - **Continuation**：WorkflowContinuation 以 (sourceDraftId,targetChapterId) 幂等；Ch1→Ch2；只存引用不复制正文；
+> - **Concurrent Isolation**：同一 Novel 多 Workflow 共存（CF1–CF10）；
+> - **Android Facade Migration**：ChapterWorkflowFacade / ChapterPhase / ChapterWorkflowProgress 用户层 + Compose→ChapterWritingViewModel→Gateway→Facade→Orchestrator（M3-VM-1..7）。
+
 ### 31.1 Idea Intelligence / Story Foundation（🔮 规划能力 · PLANNED / NOT IMPLEMENTED）
 
 > **状态**：仅规划。**不纳入当前 P12.1 / P12.2 实施路线**，不替代下文任何既有层，不进入当前开发阶段。
