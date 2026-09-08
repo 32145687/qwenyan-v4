@@ -22,6 +22,7 @@ import com.qianyan.application.usecase.writing.critique.CritiqueAgent
 import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
+import com.qianyan.application.usecase.story.StoryStateVariantUseCases
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.application.usecase.writing.confirmation.ConfirmationExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
@@ -159,12 +160,16 @@ class ApplicationContainer(
             errorMapper = errorMapper,
         )
 
-    /** P11.2/P11.6/P12.1.2 确定性 Story World Context 解析器（分层 + canon 优先 + 结构化 Story State）。 */
+    /** P11.2/P11.6/P12.1.2/P12.3 确定性 Story World Context 解析器（分层 + canon 优先 + 结构化 Story State + EntityOverride 实体级 merge）。 */
     val storyWorldContextResolver: StoryWorldContextResolver
-        get() = StoryWorldContextResolver(memoryRepository, errorMapper, storyStateRepository)
+        get() = StoryWorldContextResolver(memoryRepository, errorMapper, storyStateRepository, novelRepository)
 
     /** P12.1.1/P12.1.2 结构化 Story State 仓储（Character/WorldRule/Event/Timeline/Foreshadow），供测试与上层读取。 */
     val storyState: StoryStateRepository get() = storyStateRepository
+
+    /** P12.3 Story State Variant 修改入口（ADD / OVERRIDE / REMOVE / INHERIT；Original 拒绝；Variant 隔离）。 */
+    val storyStateVariant: StoryStateVariantUseCases
+        get() = StoryStateVariantUseCases(storyStateRepository, novelRepository, errorMapper)
 
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文）。 */
     val planningContextAssembly: PlanningContextAssembly

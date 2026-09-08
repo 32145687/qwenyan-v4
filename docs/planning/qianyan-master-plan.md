@@ -1909,6 +1909,20 @@ MigrationEngine 流程:
 > - **Concurrent Isolation**：同一 Novel 多 Workflow 共存（CF1–CF10）；
 > - **Android Facade Migration**：ChapterWorkflowFacade / ChapterPhase / ChapterWorkflowProgress 用户层 + Compose→ChapterWritingViewModel→Gateway→Facade→Orchestrator（M3-VM-1..7）。
 
+### 31.0 P12.3 — DONE / COMPLETE（TD1 已实现）
+
+> **状态**：P12.3 TD1（Variant Structured State Merge / Override）已实现并通过测试。与本文档架构一致：无新状态机/新引擎/多层 Variant。
+> - **六类 Story State**（Character / CharacterState / WorldRule / Event / TimelineEntry / Foreshadow）以**实体 identity（全局 id）** 为 merge key，经 `EntityOverride` 读穿透合并为 Effective State：
+>   - INHERIT：无 override / 显式 INHERIT → 继承 Original 实体；
+>   - OVERRIDE：EntityOverride(OVERRIDE, replacedValue=整实体 JSON) 替换同 id 的 Original 实体；**不写入六表、不写同 id Original 行**；
+>   - REMOVE：EntityOverride(REMOVE) 从 Effective State 剔除该实体；「Variant 表无记录」≠ REMOVE；
+>   - ADD：写入 Variant own 表（新 id），追加到 Effective State。
+> - **Memory 不改为 EntityOverride**：延续 Original base + Variant own + `effective` 生命周期（P12.1/P12.2 已验证语义不变）。
+> - **层级**：单层 Original→Variant（Variant→Variant 仍 TBD-6 禁止）。
+> - **边界**：Original 上下文拒绝修改；Variant 修改不污染 Original / 其它 Variant（`StoryStateVariantUseCases` 强制 scope+novel 校验）。
+> - **恢复**：单个 Variant 同一 targetId 至多一条 override；REMOVE 后对同一 identity 写 OVERRIDE 即可恢复（replace 语义）。
+> - 测试：`StoryStateVariantMergeTest`（OVERRIDE / REMOVE / INHERIT / ADD / ISOLATION / IDENTITY / RECOVER / KU-Scope / 关联语义）全绿；全量回归 PASS。
+
 ### 31.1 Idea Intelligence / Story Foundation（🔮 规划能力 · PLANNED / NOT IMPLEMENTED）
 
 > **状态**：仅规划。**不纳入当前 P12.1 / P12.2 实施路线**，不替代下文任何既有层，不进入当前开发阶段。

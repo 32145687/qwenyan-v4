@@ -1,3 +1,4 @@
+-- 逻辑唯一键 (target_id, variant_id) 由 UNIQUE 约束强制执行；同一 target 的新 override 需先 delete 再由上层 replace。
 insertOverride:
 INSERT INTO EntityOverride(override_id, variant_id, target_kind, target_id, operation, replaced_value, note)
 VALUES (:override_id, :variant_id, :target_kind, :target_id, :operation, :replaced_value, :note);
