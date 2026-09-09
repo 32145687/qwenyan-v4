@@ -79,6 +79,7 @@ class NovelListViewModelTest {
         override fun getVariantsOfNovel(novelId: NovelId): List<NovelVariant> = TODO()
         override fun saveVariantData(variant: NovelVariant) = TODO()
         override fun saveOverride(override: EntityOverride) = TODO()
+        override fun replaceOverride(override: EntityOverride) = TODO()
         override fun getOverride(variantId: VariantId, targetId: String): EntityOverride? = TODO()
         override fun getOverrides(variantId: VariantId): List<EntityOverride> = TODO()
         override fun deleteOverride(variantId: VariantId, targetId: String) = TODO()

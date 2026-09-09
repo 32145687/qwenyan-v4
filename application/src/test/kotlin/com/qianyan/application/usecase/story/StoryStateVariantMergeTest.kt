@@ -1,6 +1,8 @@
 package com.qianyan.application.usecase.story
 
 import com.qianyan.application.di.ApplicationContainer
+import com.qianyan.application.error.ApplicationError
+import com.qianyan.application.error.ApplicationException
 import com.qianyan.model.BaseNovelId
 import com.qianyan.model.CharacterId
 import com.qianyan.model.EventId
@@ -30,6 +32,8 @@ import com.qianyan.provider.impl.MockLLMGateway
 import kotlinx.datetime.Clock
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /**
@@ -268,6 +272,65 @@ class StoryStateVariantMergeTest {
         assertTrue(eff.timelineEntries.any { it.id.value == "t1" }) // 悬空引用容忍，不崩溃
     }
 
+    // ---- T-ADD-ID-COLLISION：六类 Variant ADD 撞 Original ID 一律拒绝，Original 不变 ----
+    @Test
+    fun `六类 Variant ADD 撞 Original ID 被拒绝，Original 与 Variant 视图均不被污染`() {
+        val s = seed()
+        s.app.storyState.saveCharacter(char("c1", s.novel, "林夜"))
+        s.app.storyState.saveCharacterState(state("s1", "c1", s.novel))
+        s.app.storyState.saveWorldRule(rule("r1", s.novel, "修炼元力"))
+        s.app.storyState.saveEvent(event("e1", s.novel, "突破"))
+        s.app.storyState.saveTimelineEntry(tl("t1", s.novel, "e1"))
+        s.app.storyState.saveForeshadow(foreshadow("f1", s.novel, "玉佩", false))
+
+        fun reject(body: () -> Any?) {
+            val ex = assertFailsWith<ApplicationException> { body() }
+            assertIs<ApplicationError.DuplicateTarget>(ex.error)
+        }
+        reject { s.app.storyStateVariant.addCharacter(s.ctxA, char("c1", s.novel, "林火", s.va, VariantScope.VARIANT)) }
+        reject { s.app.storyStateVariant.addCharacterState(s.ctxA, state("s1", "c1", s.novel, s.va, VariantScope.VARIANT)) }
+        reject { s.app.storyStateVariant.addWorldRule(s.ctxA, rule("r1", s.novel, "替换", s.va, VariantScope.VARIANT)) }
+        reject { s.app.storyStateVariant.addEvent(s.ctxA, event("e1", s.novel, "替换", s.va, VariantScope.VARIANT)) }
+        reject { s.app.storyStateVariant.addTimelineEntry(s.ctxA, tl("t1", s.novel, "e1", s.va, VariantScope.VARIANT)) }
+        reject { s.app.storyStateVariant.addForeshadow(s.ctxA, foreshadow("f1", s.novel, "替换", true, s.va, VariantScope.VARIANT)) }
+
+        // Original 全部保留且未被改写
+        assertEquals("林夜", s.app.storyState.listCharacters(s.novel, null).first { it.characterId.value == "c1" }.name)
+        assertTrue(s.app.storyState.listWorldRules(s.novel, null).any { it.ruleId.value == "r1" })
+        assertTrue(s.app.storyState.listEvents(s.novel, null).any { it.id.value == "e1" })
+        // Variant 视图仍继承 Original base（无错误替换）
+        val eff = s.resolve(s.novel, s.va)
+        assertEquals("林夜", charOf(eff, "c1").name)
+        assertEquals("修炼元力", eff.worldRules.first { it.ruleId.value == "r1" }.content)
+        assertEquals("突破", eff.events.first { it.id.value == "e1" }.name)
+    }
+
+    @Test
+    fun `六类 Variant ADD 新 ID 成功，Original 不受影响`() {
+        val s = seed()
+        s.app.storyState.saveCharacter(char("c1", s.novel, "林夜"))
+        s.app.storyStateVariant.addCharacter(s.ctxA, char("cn", s.novel, "新角", s.va, VariantScope.VARIANT))
+        s.app.storyStateVariant.addCharacterState(s.ctxA, state("sn", "cn", s.novel, s.va, VariantScope.VARIANT))
+        s.app.storyStateVariant.addWorldRule(s.ctxA, rule("rn", s.novel, "新规", s.va, VariantScope.VARIANT))
+        s.app.storyStateVariant.addEvent(s.ctxA, event("en", s.novel, "新事", s.va, VariantScope.VARIANT))
+        s.app.storyStateVariant.addTimelineEntry(s.ctxA, tl("tn", s.novel, "en", s.va, VariantScope.VARIANT))
+        s.app.storyStateVariant.addForeshadow(s.ctxA, foreshadow("fn", s.novel, "新伏笔", false, s.va, VariantScope.VARIANT))
+
+        val eff = s.resolve(s.novel, s.va)
+        assertTrue(eff.characters.any { it.characterId.value == "cn" })
+        assertTrue(eff.characterStates.any { it.id.value == "sn" })
+        assertTrue(eff.worldRules.any { it.ruleId.value == "rn" })
+        assertTrue(eff.events.any { it.id.value == "en" })
+        assertTrue(eff.timelineEntries.any { it.id.value == "tn" })
+        assertTrue(eff.foreshadows.any { it.foreshadowId.value == "fn" })
+        assertTrue(eff.characters.any { it.characterId.value == "c1" }) // base 保留
+        // Original 看不到 Variant 新增
+        val orig = s.resolve(s.novel)
+        assertTrue(orig.characters.none { it.characterId.value == "cn" })
+        assertTrue(orig.events.none { it.id.value == "en" })
+        assertTrue(orig.foreshadows.none { it.foreshadowId.value == "fn" })
+    }
+
     // ---- 关联：Foreshadow override 生效 ----
     @Test
     fun `Foreshadow OVERRIDE 与 REMOVE 生效`() {
@@ -278,5 +341,16 @@ class StoryStateVariantMergeTest {
         assertTrue(!s.resolve(s.novel).foreshadows.first { it.foreshadowId.value == "f1" }.resolved)
         s.app.storyStateVariant.remove(s.ctxA, OverridableKind.FORESHADOW, "f1")
         assertTrue(s.resolve(s.novel, s.va).foreshadows.none { it.foreshadowId.value == "f1" })
+    }
+
+    // ---- OVERRIDE 原子替换：同一 target 仅保留一条 override ----
+    @Test
+    fun `OVERRIDE 原子替换同一 target，仅一条 override 生效`() {
+        val s = seed()
+        s.app.storyState.saveCharacter(char("c1", s.novel, "林夜"))
+        s.app.storyStateVariant.overrideCharacter(s.ctxA, char("c1", s.novel, "林火·v1", s.va, VariantScope.VARIANT))
+        s.app.storyStateVariant.overrideCharacter(s.ctxA, char("c1", s.novel, "林火·v2", s.va, VariantScope.VARIANT))
+        assertEquals("林火·v2", charOf(s.resolve(s.novel, s.va), "c1").name)
+        assertEquals(1, s.app.novelRepository.getOverrides(s.va).count { it.targetId == "c1" })
     }
 }

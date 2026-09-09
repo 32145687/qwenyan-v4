@@ -51,6 +51,12 @@ interface NovelRepository {
     fun deleteOverride(variantId: VariantId, targetId: String)
 
     /**
+     * P12.3 原子替换：同一 (targetId, variantId) 已有 override 时，在同一数据库事务内一次完成替换
+     * （DELETE 旧值 + INSERT 新值 等价为单条 upsert），不存在「删了旧 override 但新写入失败」的中间状态。
+     */
+    fun replaceOverride(override: EntityOverride)
+
+    /**
      * P2.6 Variant 读穿透核心：
      * 给定 Original 基值与某 Variant 的 targetId，命中 Override 则返回 Override 值，
      * 否则（无 Override / INHERIT）返回基值，REMOVE 返回 null。

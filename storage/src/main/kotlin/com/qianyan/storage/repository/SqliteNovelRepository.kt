@@ -99,6 +99,16 @@ class SqliteNovelRepository(
         }
     }
 
+    override fun replaceOverride(override: EntityOverride) {
+        val row = StorageMappers.domainOverride(override)
+        db.transaction {
+            db.entityOverrideQueries.replaceOverride(
+                row.override_id, row.variant_id, row.target_kind, row.target_id,
+                row.operation, row.replaced_value, row.note,
+            )
+        }
+    }
+
     override fun resolveOverride(variantId: VariantId, targetId: String, originalValue: JsonElement?): JsonElement? {
         val override = getOverride(variantId, targetId)
         return when {

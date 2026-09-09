@@ -12,5 +12,11 @@ SELECT * FROM EntityOverride WHERE variant_id = :variant_id AND target_id = :tar
 deleteOverrideByVariantAndTarget:
 DELETE FROM EntityOverride WHERE variant_id = :variant_id AND target_id = :target_id;
 
+-- 原子替换：同一 (target_id, variant_id) 已有 override 时，用单条原子语句完成「删旧插新」，
+-- 避免 delete+insert 两事务造成的中间状态（P12.3 repair）。saveOverride 仍为严格 INSERT（重复抛 UNIQUE）。
+replaceOverride:
+INSERT OR REPLACE INTO EntityOverride(override_id, variant_id, target_kind, target_id, operation, replaced_value, note)
+VALUES (:override_id, :variant_id, :target_kind, :target_id, :operation, :replaced_value, :note);
+
 getAll:
 SELECT * FROM EntityOverride;

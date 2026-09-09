@@ -49,10 +49,21 @@ class StoryStateVariantUseCases(
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private fun novelOf(ctx: VariantContext): NovelId = NovelId(ctx.baseNovelId.value)
 
+    /** ADD 守卫：Variant ADD 的实体 ID 不得已存在于任何作用域（含 Original base / 其它 Variant own）。
+     *  全局实体 ID 即主键，若已存在则 INSERT OR REPLACE 会覆盖/污染既有行——必须拒绝。O(1) 单条查询。 */
+    private fun requireNewEntityId(existing: Any?, kind: OverridableKind, id: String) {
+        if (existing != null) {
+            throw ApplicationException(
+                ApplicationError.DuplicateTarget("Variant ADD 的 ${kind.name.lowercase()} ID 已存在，不能覆盖已有实体: $id"),
+            )
+        }
+    }
+
     // ---- ADD ----------
     fun addCharacter(ctx: VariantContext, entity: Character): Character {
         val vid = requireVariant(ctx)
         requireNovel(ctx, entity.novelId)
+        requireNewEntityId(storyStateRepository.getCharacterById(entity.characterId), OverridableKind.CHARACTER, entity.characterId.value)
         val e = entity.copy(novelId = novelOf(ctx), variantId = vid, scope = VariantScope.VARIANT)
         guard { storyStateRepository.saveCharacter(e) }
         return e
@@ -61,6 +72,7 @@ class StoryStateVariantUseCases(
     fun addCharacterState(ctx: VariantContext, entity: CharacterState): CharacterState {
         val vid = requireVariant(ctx)
         requireNovel(ctx, entity.novelId)
+        requireNewEntityId(storyStateRepository.getCharacterStateById(entity.id), OverridableKind.CHARACTER_STATE, entity.id.value)
         val e = entity.copy(novelId = novelOf(ctx), variantId = vid, scope = VariantScope.VARIANT)
         guard { storyStateRepository.saveCharacterState(e) }
         return e
@@ -69,6 +81,7 @@ class StoryStateVariantUseCases(
     fun addWorldRule(ctx: VariantContext, entity: WorldRule): WorldRule {
         val vid = requireVariant(ctx)
         requireNovel(ctx, entity.novelId)
+        requireNewEntityId(storyStateRepository.getWorldRuleById(entity.ruleId), OverridableKind.WORLD_RULE, entity.ruleId.value)
         val e = entity.copy(novelId = novelOf(ctx), variantId = vid, scope = VariantScope.VARIANT)
         guard { storyStateRepository.saveWorldRule(e) }
         return e
@@ -77,6 +90,7 @@ class StoryStateVariantUseCases(
     fun addEvent(ctx: VariantContext, entity: Event): Event {
         val vid = requireVariant(ctx)
         requireNovel(ctx, entity.novelId)
+        requireNewEntityId(storyStateRepository.getEventById(entity.id), OverridableKind.EVENT, entity.id.value)
         val e = entity.copy(novelId = novelOf(ctx), variantId = vid, scope = VariantScope.VARIANT)
         guard { storyStateRepository.saveEvent(e) }
         return e
@@ -85,6 +99,7 @@ class StoryStateVariantUseCases(
     fun addTimelineEntry(ctx: VariantContext, entity: TimelineEntry): TimelineEntry {
         val vid = requireVariant(ctx)
         requireNovel(ctx, entity.novelId)
+        requireNewEntityId(storyStateRepository.getTimelineEntryById(entity.id), OverridableKind.TIMELINE_ENTRY, entity.id.value)
         val e = entity.copy(novelId = novelOf(ctx), variantId = vid, scope = VariantScope.VARIANT)
         guard { storyStateRepository.saveTimelineEntry(e) }
         return e
@@ -93,6 +108,7 @@ class StoryStateVariantUseCases(
     fun addForeshadow(ctx: VariantContext, entity: Foreshadow): Foreshadow {
         val vid = requireVariant(ctx)
         requireNovel(ctx, entity.novelId)
+        requireNewEntityId(storyStateRepository.getForeshadowById(entity.foreshadowId), OverridableKind.FORESHADOW, entity.foreshadowId.value)
         val e = entity.copy(novelId = novelOf(ctx), variantId = vid, scope = VariantScope.VARIANT)
         guard { storyStateRepository.saveForeshadow(e) }
         return e
@@ -174,10 +190,9 @@ class StoryStateVariantUseCases(
     ): OverrideId {
         val overrideId = OverrideId(nextId())
         // 同一 (variantId, targetId) 至多一条 override（UNIQUE 约束）。Variant 修改需 replace 语义
-        //（例如 REMOVE 之后 OVERRIDE 恢复同一 identity）：先删除旧 override 再写入新 override。
+        //（例如 REMOVE 之后 OVERRIDE 恢复同一 identity）：用单事务 upsert 原子替换，避免「删旧成功、写新失败」中间态。
         guard {
-            novelRepository.deleteOverride(variantId, targetId)
-            novelRepository.saveOverride(
+            novelRepository.replaceOverride(
                 EntityOverride(
                     overrideId = overrideId,
                     variantId = variantId,
