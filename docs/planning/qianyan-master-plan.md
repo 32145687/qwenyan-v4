@@ -2006,4 +2006,142 @@ Workflow（Planning / Writing / Critique / Revision / Knowledge Update）
 
 ---
 
+# 32. P12.3 之后：下一阶段架构方向（Long-form Continuity Layer · 🔮 规划 / NOT_STARTED）
+
+> **状态**：仅规划。`IMPLEMENTATION_STATUS = NOT_STARTED`。不进入当前开发阶段。
+> **性质**：本文档为 **P12.3 之后的实际架构盘点 + 下一阶段唯一高优先级工程方向**，不是已实现能力。下列任何「未来设计点」均不构成既有架构，仅作方向记录。
+
+## 32.1 P12.3 最终状态
+
+```text
+P12.3 (TD1 — Variant Structured State Merge / Override)
+Status         = COMPLETE / DELIVERED
+Commit         = b76986dfd60d2edaa31c49aa826ac56ddfca7e33
+Final Acceptance = ACCEPTED
+```
+
+## 32.2 当前系统能力（已实现）
+
+Qianyan 当前已具备的**真实**能力链：
+
+```text
+Novel
+ ↓
+Chapter（order 原子创建、Novel/Variant 隔离）
+ ↓
+Planning（Planner Agent → ChapterPlan）
+ ↓
+Writing（Writer Agent → Draft）
+ ↓
+Critique（CritiqueAgent → ValidationResult）
+ ↓
+Revision（RevisionGate ≤3、previousDraftId lineage、retry≠revision）
+ ↓
+Finalize
+ ↓
+Confirmation（Human Gate，幂等 approve；未确认不可 Knowledge Update）
+ ↓
+Knowledge Update（写 Memory，novel+variant 作用域）
+ ↓
+Story State（Character/CharacterState/WorldRule/Event/TimelineEntry/Foreshadow + Memory）
+ ↓
+Variant / EntityOverride（INHERIT/OVERRIDE/REMOVE/ADD，实体级 merge，六类）
+ ↓
+StoryWorldContextResolver（确定性 base+own+override → Effective State，无 N+1）
+ ↓
+Continuation（WorkflowContinuation，sourceDraftId 幂等，Ch1→Ch2）
+ ↓
+Durable Workflow（Workflow/Step/Attempt/HumanGate/Continuation，resultReference-first Recovery，并发隔离 CF1–CF10）
+ ↓
+Android Facade（ChapterWorkflowGateway/Facade/Phase/Progress，M3 迁移）
+```
+
+- 实现层：`core:model` / `core:engine` / `agent:tool` / `agent:runtime` / `agent:agents` / `agent:orchestration` / `provider` / `storage` / `runtime` / `application` / `app:android` / `test:e2e`。
+- Provider：DeepSeek-V4-Flash / MiMo / Mock，经 LLMGateway；API Key 不入 SQLite/Domain/Workflow/Task/Checkpoint/Memory/StoryState/Prompt/Logs。
+
+## 32.3 当前核心缺口（Single Chapter → Long-form Continuity）
+
+Qianyan 的工程瓶颈不是「还能加多少功能」，而是：
+
+> **能否从第 1 章稳定运行到第 100 章甚至更长。**
+
+现状分析：
+
+1. **Narrative State 缺失**：持久化了 Story State（事实层），但**没有**当前主线目标 / 当前卷·Arc 目标 / 当前阶段目标 / 当前冲突 / 人物成长阶段 / 当前未解决问题 / 伏笔压力 / 节奏 / 本章应产生的变化。写作输入主要来自 Story State + Memory 拼接，未表达「当前到哪里、还差什么、这一章该推进什么」。
+2. **Context Compilation 缺失**：`StoryWorldContextResolver` 当前是**确定性全量汇总**（novel 作用域下 Character/Event/Timeline/Memory 全部读取）。第 100 章时会让模型携带/扫描大量事实与历史；需要「编译出本章真正需要的上下文」，而非把整段历史塞进 LLM。
+3. **Foreshadow 生命周期不完整**：Foreshadow 只有 `content + resolved(bool)`；没有 PLANTED/ACTIVE/BUILDING/PAID/DROPPED 等迁移，也无法回答「下一章为什么选某伏笔进 Context」「如何避免已回收伏笔重复出现」。
+4. **Timeline 三维未分离**：Story Time / Narrative Order / Reveal Order 未明确分离。
+5. **Knowledge Boundary 缺失**：无法表达「作者/角色A/角色B/读者各知道什么」「秘密/误解/隐藏身份/揭示/伏笔-回收」——对悬疑与信息经营是硬缺口。
+6. **下一章生成机制**：目前 Ch2 由 `ContinuationReference` + Planning 上下文驱动；尚未形成「当前故事状态 → 当前目标 → 未解决问题 → 人物变化 → 伏笔压力 → 节奏 → 下一章候选 → 用户选择 → ChapterPlan」的 **Narrative Progression**。
+7. **Rolling Horizon**：只验证了 Ch1→Ch2 的 Reference 续篇，尚未建立「书→卷→当前 Arc→未来 2~5 章→当前 Chapter」的滚动规划。
+
+## 32.4 外部研究（参考，非照搬）
+
+- **ConWriter（HKUST-GZ, 2026）**：双记忆——静态故事承诺（全局设定/世界规则/角色属性/风格）与动态演进状态分离；把每个场景建模为可校验的**符号状态迁移**；不确定性感知校验 + 局部修复。→ 印证 Qianyan 的「Story State（确定性事实）应保持，另立 Narrative State（演进状态）」方向。
+- **AI Novel Studio（Eino）**：Architect/Character/World/Plot/Director/Librarian/Writer/Reviewer 多智能体；Librarian 做结构化角色检索 + 向量检索；Writer/Reviewer 构成反馈闭环。→ 验证「确定性结构化检索为主、语义检索为辅」与「人设/世界观由结构化沉淀」。
+- **Remember Me / Knowledge Graph（USC）**：用知识图谱作为长期上下文存储，显著改善角色与关系的一致性；planner-writer-grapher。→ 印证「事实不能靠自由联想；用可更新、可校验的结构化事实」。
+- **AI Story Writer / StoryMemory Studio**：progressive wiki 记忆 + 每故事语义检索（向量）+ savepoint/resume；SQLite 结构化故事记忆 + 伏笔管理 + 风格画像。→ 验证「本地优先 + 结构化记忆 + 伏笔管理 + 断点续写」为长篇落地方案。
+
+**统一启示**：长篇一致性靠「确定性结构化事实 + 演进叙事状态 + 按章上下文编译 + 受控检索 + 人类闸门」，而不是「无限上下文」或「纯向量相似度决定事实」。
+
+## 32.5 下一阶段唯一最高优先级
+
+```text
+NEXT_PHASE_RECOMMENDATION = P13 Long-form Continuity Layer (LCL)
+```
+
+LCL 的职责：把「已沉淀的 Story State + 演进中的 Narrative State + 相关历史 + Knowledge Boundary」**按当前章节编译为最小的 Chapter Context Pack**，并驱动滚动规划，使系统从「单章正确」走向「100+ 章稳定连续」。
+
+候选组成（分层，且明确哪些必须先做）：
+
+- **Narrative State**（NarrativeLayer）：Arc/Act 目标、Active Conflicts、Unresolved Questions、Character Arc 阶段、Foreshadow Pressure、Rhythm、Pacing、本章应产生的变化。（**核心**）
+- **Context Compilation → Chapter Context Pack**：Global Canon + 当前 Story/Narrative State + 相关人物/事件/时间线 + Active Foreshadows + Knowledge Boundary + 近景叙述上下文 + 写作策略 → 按章编译为「本章真正需要的上下文」。（**核心**）
+- **Retrieval 分层（不决策用 Vector 就用 Vector）**：
+  - deterministic（SQL/index/显式关系）：故事事实、人物、世界观、伏笔、续篇 —— **必须 deterministic，事实不由向量相似度决定**；
+  - lexical（FTS/BM25/CJK 检索）：历史文本定位（可选，后期）；
+  - semantic（Embedding/Vector)：仅辅助召回（后期，可选），永不作为事实权威。
+- **Foreshadow Lifecycle**：PLANTED→ACTIVE→BUILDING→PAID→DROPPED 迁移 + 「下章为何选该伏笔」「已回收不再重复」。
+- **Knowledge Boundary Layer**（后期）：作者/角色/读者各自知道什么，秘密/误解/揭示/伏笔-回收。
+- **Rolling Horizon**：书→卷→当前 Arc→未来 2~5 章→当前 Chapter；**长期目标 + 滚动规划**（推荐，优于全书一次性规划）。AI 提案，用户决策。
+- **Character Continuity 层**：严格区分 **Canon State / Derived State / Temporary Context / Narrative State**，避免把所有信息都塞进 Character 表。
+
+## 32.6 P13 MUST / SHOULD / LATER / DO NOT
+
+**MUST（进入 P13 的第一步）**
+- 增加演进式 **Narrative State**（当前目标 / 活跃冲突 / 未决问题 / 人物阶段 / 伏笔压力 / 节奏），并持久化、可恢复。
+- 建立 **Context Compilation → Chapter Context Pack**（按章编译最小上下文，杜绝把整段历史塞进 LLM）。
+- **Foreshadow Lifecycle**（至少 PAID 后不再进入 Context）。
+- 建立「**当前状态 → 下一章候选 → 用户选择 → ChapterPlan**」的 Narrative Progression（AI 提案，用户决策）。
+- 保持 **Workflow 复用**：LCL 只提供「更聪明的上下文与下一章」，不重做 Workflow/Retry/Revision/Gate/Continuation/Recovery。
+
+**SHOULD**
+- Rolling Horizon（书→卷→Arc→未来 2~5 章→当前章）。
+- Timeline 三维（Story/Narrative/Reveal）设计。
+- Character Continuity 分层（Canon/Derived/Temporary/Narrative）。
+
+**LATER**
+- Knowledge Boundary Layer（秘密/误解/揭示 的信息经营）。
+- Lexical（FTS/BM25）与 Semantic（Vector）检索 —— 仅辅助召回，不作为事实权威，不引入 VectorDB 作为事实来源。
+
+**DO NOT（P13 不涉及）**
+- 避免每章全量扫描全部历史 / O(n²)。
+- 不把现有 Story State 改造成向量；不新建第二套 Workflow 状态机；不把事实/伏笔选择交由向量相似度决定。
+- 本轮**不实现**：Idea Intelligence / Genre Taxonomy / StoryDirection / Story Foundation / UI 重构 / Reader / Provider Settings UI / Cloud / Background Worker / Multi-Agent Swarm / MCP。
+
+## 32.7 性能提示（100/500/1000 章）
+
+- Story State / Memory / Timeline / Foreshadow / Draft / Workflow 均需避免「每章扫全部历史」。候选（未来项，非承诺）：作用域索引、Effective State 快照、滚动上下文/压缩摘要、按 Arc 归档历史、Narrative State 物化。
+- `StoryWorldContextResolver` 当前是确定性的 novel 作用域全量读取 —— 在未引入章节化 Context Pack 之前，100+ 章会自然增长；P13 的 Context Compilation 即针对此。
+
+## 32.8 明确
+
+```text
+NEXT_PHASE_RECOMMENDATION = P13 Long-form Continuity Layer (LCL)
+IMPLEMENTATION_STATUS     = NOT_STARTED
+```
+
+以上全部为方向性规划；未实现任何 P13 能力。
+
+---
+
 *本文档由 V3 基础架构、V3.1 Agent Architecture、V4.1 Writing Intelligence 融合而成；V3.1 Agent Architecture 冻结，V4.1 仅新增写作智能层，未推翻任何既有决策。*
