@@ -1,0 +1,70 @@
+-- Qianyan Storage · Schema v7（P13 LCL-A · Narrative State Persistence）
+-- 叙事状态账本：NarrativeState 为"折叠快照缓存"，NarrativeDelta 为"按章追加日志"。
+-- 约束（与既有约定一致）：
+--   - 每表均带 novel_id + variant_id(NULL=Original) + scope 三列；
+--   - 查询一律按 novel+variant 隔离：Original ← variant_id IS NULL；Variant ← variant_id=:variant_id；
+--   - 复杂嵌套列表/对象用 JSON 字符串列；ID 一律 TEXT(UUID)，时间 INTEGER(epoch ms)；
+--   - NarrativeDelta 追加只 Insert（append 日志，不覆盖）；NarrativeState 折叠后 INSERT OR REPLACE（幂等 upsert，PK 为确定性账本 ID）。
+--   - Original（variant_id IS NULL）账本只读写保护由 Application 层校验（本层仅暴露方法）。
+
+CREATE TABLE NarrativeState (
+    narrative_state_id   TEXT NOT NULL PRIMARY KEY,
+    novel_id             TEXT NOT NULL,
+    variant_id           TEXT,
+    scope                TEXT NOT NULL,                 -- VariantScope 枚举名
+    version              INTEGER NOT NULL DEFAULT 0,     -- = 已折叠 Delta 数（乐观锁）
+    main_goal            TEXT NOT NULL DEFAULT '',
+    current_conflict     TEXT,                           -- StoryConflictId 引用或 NULL
+    open_threads         TEXT NOT NULL DEFAULT '[]',     -- JSON List<OpenThread>
+    character_stages     TEXT NOT NULL DEFAULT '{}',     -- JSON Map<CharacterId, CharacterStage>
+    relationship_deltas  TEXT NOT NULL DEFAULT '[]',     -- JSON List<RelationshipDelta>
+    foreshadow_pressures TEXT NOT NULL DEFAULT '[]',     -- JSON List<ForeshadowPressure>
+    current_pacing       TEXT,                           -- PacingProfile JSON 或 NULL
+    last_chapter_delta   TEXT NOT NULL DEFAULT '',
+    updated_at           INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_narrative_state_scope ON NarrativeState(novel_id, variant_id);
+
+CREATE TABLE NarrativeDelta (
+    delta_id             TEXT NOT NULL PRIMARY KEY,
+    narrative_state_id   TEXT NOT NULL,
+    novel_id             TEXT NOT NULL,
+    variant_id           TEXT,
+    scope                TEXT NOT NULL,                 -- VariantScope 枚举名
+    chapter_id           TEXT,
+    main_goal            TEXT,                          -- nullable：仅本 Delta 更新时携带
+    current_conflict     TEXT,
+    open_threads         TEXT NOT NULL DEFAULT '[]',
+    character_stages     TEXT NOT NULL DEFAULT '{}',
+    relationship_deltas  TEXT NOT NULL DEFAULT '[]',
+    foreshadow_pressures TEXT NOT NULL DEFAULT '[]',
+    current_pacing       TEXT,
+    summary              TEXT NOT NULL DEFAULT '',
+    created_at           INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_narrative_delta_scope ON NarrativeDelta(novel_id, variant_id, created_at, delta_id);
+
+-- ============================================================
+-- NarrativeState（折叠快照）
+-- ============================================================
+upsertState:
+INSERT OR REPLACE INTO NarrativeState(narrative_state_id, novel_id, variant_id, scope, version, main_goal, current_conflict, open_threads, character_stages, relationship_deltas, foreshadow_pressures, current_pacing, last_chapter_delta, updated_at)
+VALUES (:narrative_state_id, :novel_id, :variant_id, :scope, :version, :main_goal, :current_conflict, :open_threads, :character_stages, :relationship_deltas, :foreshadow_pressures, :current_pacing, :last_chapter_delta, :updated_at);
+
+getStateByScope:
+SELECT * FROM NarrativeState WHERE novel_id = :novel_id AND variant_id IS :variant_id LIMIT 1;
+
+-- ============================================================
+-- NarrativeDelta（按章追加日志）
+-- ============================================================
+insertDelta:
+INSERT INTO NarrativeDelta(delta_id, narrative_state_id, novel_id, variant_id, scope, chapter_id, main_goal, current_conflict, open_threads, character_stages, relationship_deltas, foreshadow_pressures, current_pacing, summary, created_at)
+VALUES (:delta_id, :narrative_state_id, :novel_id, :variant_id, :scope, :chapter_id, :main_goal, :current_conflict, :open_threads, :character_stages, :relationship_deltas, :foreshadow_pressures, :current_pacing, :summary, :created_at);
+
+countDeltasByScope:
+SELECT COUNT(*) FROM NarrativeDelta WHERE novel_id = :novel_id AND variant_id IS :variant_id;
+
+listDeltasByScope:
+SELECT * FROM NarrativeDelta WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY created_at ASC, delta_id ASC;

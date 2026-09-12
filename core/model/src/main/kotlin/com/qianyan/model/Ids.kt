@@ -122,6 +122,18 @@ value class ForeshadowingId(val value: String)
 @Serializable
 value class PayoffId(val value: String)
 
+/* ---- P13 LCL（Long-form Continuity Layer） ---- */
+
+/** 叙事状态账本 ID（LCL-A Narrative State，novel+variant 一条账本）。 */
+@JvmInline
+@Serializable
+value class NarrativeStateId(val value: String)
+
+/** 叙事增量（章节推进的一次 Narrative Delta）ID。 */
+@JvmInline
+@Serializable
+value class NarrativeDeltaId(val value: String)
+
 @JvmInline
 @Serializable
 value class VocabularyId(val value: String)

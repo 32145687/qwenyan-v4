@@ -23,6 +23,10 @@ import com.qianyan.model.VocabularyRuleId
 import com.qianyan.model.CharacterId
 import com.qianyan.model.EventId
 import com.qianyan.model.ForeshadowingId
+import com.qianyan.model.NarrativeDeltaId
+import com.qianyan.model.NarrativeStateId
+import com.qianyan.model.PacingProfile
+import com.qianyan.model.StoryConflictId
 import com.qianyan.model.StateId
 import com.qianyan.model.TimelineEntryId
 import com.qianyan.model.WorldId
@@ -39,6 +43,13 @@ import com.qianyan.model.timeline.EventType
 import com.qianyan.model.timeline.TimelineEntry as DomainTimelineEntry
 import com.qianyan.model.timeline.TimelinePosition
 import com.qianyan.model.world.WorldRule as DomainWorldRule
+import com.qianyan.model.lcl.CharacterStage
+import com.qianyan.model.lcl.ForeshadowPressure
+import com.qianyan.model.lcl.NarrativeDelta as DomainNarrativeDelta
+import com.qianyan.model.lcl.NarrativeState as DomainNarrativeState
+import com.qianyan.model.lcl.NarrativeStateFold
+import com.qianyan.model.lcl.OpenThread
+import com.qianyan.model.lcl.RelationshipDelta
 import com.qianyan.model.core.EntityOverride
 import com.qianyan.model.core.Novel as DomainNovel
 import com.qianyan.model.core.NovelVariant as DomainNovelVariant
@@ -80,6 +91,8 @@ import com.qianyan.storage.db.Event as DbEvent
 import com.qianyan.storage.db.Foreshadow as DbForeshadow
 import com.qianyan.storage.db.TimelineEntry as DbTimelineEntry
 import com.qianyan.storage.db.WorldRule as DbWorldRule
+import com.qianyan.storage.db.NarrativeDelta as DbNarrativeDelta
+import com.qianyan.storage.db.NarrativeState as DbNarrativeState
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -95,6 +108,7 @@ import com.qianyan.storage.db.VocabularyRule as DbVocabularyRule
 import com.qianyan.storage.QianyanJson
 import kotlinx.datetime.Instant
 import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -650,6 +664,83 @@ internal object StorageMappers {
         chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
         content = row.content,
         resolved = row.resolved,
+        createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    /* ---------------- LCL-A Narrative State (P13) ---------------- */
+
+    private fun characterStageMapJson(s: Map<CharacterId, CharacterStage>): String =
+        json.encodeToString(MapSerializer(CharacterId.serializer(), CharacterStage.serializer()), s)
+
+    private fun characterStageMap(value: String): Map<CharacterId, CharacterStage> =
+        json.decodeFromString(MapSerializer(CharacterId.serializer(), CharacterStage.serializer()), value)
+
+    fun dbNarrativeState(s: DomainNarrativeState): DbNarrativeState = DbNarrativeState(
+        narrative_state_id = s.id.value,
+        novel_id = s.novelId.value,
+        variant_id = s.variantId?.value,
+        scope = s.scope.name,
+        version = s.version,
+        main_goal = s.mainGoal,
+        current_conflict = s.currentConflict?.value,
+        open_threads = json.encodeToString(ListSerializer(OpenThread.serializer()), s.openThreads),
+        character_stages = characterStageMapJson(s.characterStages),
+        relationship_deltas = json.encodeToString(ListSerializer(RelationshipDelta.serializer()), s.relationshipDeltas),
+        foreshadow_pressures = json.encodeToString(ListSerializer(ForeshadowPressure.serializer()), s.foreshadowPressures),
+        current_pacing = s.currentPacing?.let { json.encodeToString(PacingProfile.serializer(), it) },
+        last_chapter_delta = s.lastChapterDelta,
+        updated_at = s.updatedAt.toEpochMillis(),
+    )
+
+    fun dbNarrativeState(row: DbNarrativeState): DomainNarrativeState = DomainNarrativeState(
+        id = NarrativeStateId(row.narrative_state_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        version = row.version,
+        mainGoal = row.main_goal,
+        currentConflict = row.current_conflict?.let { StoryConflictId(it) },
+        openThreads = json.decodeFromString(ListSerializer(OpenThread.serializer()), row.open_threads),
+        characterStages = characterStageMap(row.character_stages),
+        relationshipDeltas = json.decodeFromString(ListSerializer(RelationshipDelta.serializer()), row.relationship_deltas),
+        foreshadowPressures = json.decodeFromString(ListSerializer(ForeshadowPressure.serializer()), row.foreshadow_pressures),
+        currentPacing = row.current_pacing?.let { json.decodeFromString(PacingProfile.serializer(), it) },
+        lastChapterDelta = row.last_chapter_delta,
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun dbNarrativeDelta(d: DomainNarrativeDelta): DbNarrativeDelta = DbNarrativeDelta(
+        delta_id = d.deltaId.value,
+        narrative_state_id = NarrativeStateFold.ledgerId(d.novelId, d.variantId).value,
+        novel_id = d.novelId.value,
+        variant_id = d.variantId?.value,
+        scope = d.scope.name,
+        chapter_id = d.chapterId?.value,
+        main_goal = d.mainGoal,
+        current_conflict = d.currentConflict?.value,
+        open_threads = json.encodeToString(ListSerializer(OpenThread.serializer()), d.openThreads),
+        character_stages = characterStageMapJson(d.characterStages),
+        relationship_deltas = json.encodeToString(ListSerializer(RelationshipDelta.serializer()), d.relationshipDeltas),
+        foreshadow_pressures = json.encodeToString(ListSerializer(ForeshadowPressure.serializer()), d.foreshadowPressures),
+        current_pacing = d.pacing?.let { json.encodeToString(PacingProfile.serializer(), it) },
+        summary = d.summary,
+        created_at = d.createdAt.toEpochMillis(),
+    )
+
+    fun dbNarrativeDelta(row: DbNarrativeDelta): DomainNarrativeDelta = DomainNarrativeDelta(
+        deltaId = NarrativeDeltaId(row.delta_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        mainGoal = row.main_goal,
+        currentConflict = row.current_conflict?.let { StoryConflictId(it) },
+        openThreads = json.decodeFromString(ListSerializer(OpenThread.serializer()), row.open_threads),
+        characterStages = characterStageMap(row.character_stages),
+        relationshipDeltas = json.decodeFromString(ListSerializer(RelationshipDelta.serializer()), row.relationship_deltas),
+        foreshadowPressures = json.decodeFromString(ListSerializer(ForeshadowPressure.serializer()), row.foreshadow_pressures),
+        pacing = row.current_pacing?.let { json.decodeFromString(PacingProfile.serializer(), it) },
+        summary = row.summary,
         createdAt = epochMillisToInstant(row.created_at),
     )
 }

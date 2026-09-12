@@ -31,6 +31,7 @@ import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
 import com.qianyan.application.usecase.writing.revision.RevisionAgent
 import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
+import com.qianyan.application.usecase.lcl.NarrativeStateUseCases
 import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.provider.LLMGateway
@@ -44,11 +45,13 @@ import com.qianyan.storage.repository.BackupStore
 import com.qianyan.storage.repository.ChapterRepository
 import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.MemoryRepository
+import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.SqliteBackupStore
 import com.qianyan.storage.repository.SqliteChapterRepository
 import com.qianyan.storage.repository.SqliteDraftRepository
 import com.qianyan.storage.repository.SqliteMemoryRepository
+import com.qianyan.storage.repository.SqliteNarrativeStateRepository
 import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteTaskRepository
 import com.qianyan.storage.repository.SqliteTxtRepository
@@ -89,6 +92,7 @@ class ApplicationContainer(
     val chapterRepository: ChapterRepository,
     private val storyStateRepository: StoryStateRepository,
     val workflowRepository: WorkflowRepository,
+    private val narrativeStateRepository: NarrativeStateRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -171,6 +175,10 @@ class ApplicationContainer(
     val storyStateVariant: StoryStateVariantUseCases
         get() = StoryStateVariantUseCases(storyStateRepository, novelRepository, errorMapper)
 
+    /** P13 LCL-A Narrative State 叙事账本（append / project / get；Original 只读；无 LLM）。 */
+    val narrativeState: NarrativeStateUseCases
+        get() = NarrativeStateUseCases(narrativeStateRepository, errorMapper)
+
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文）。 */
     val planningContextAssembly: PlanningContextAssembly
         get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, errorMapper)
@@ -250,6 +258,7 @@ class ApplicationContainer(
                 chapterRepository = SqliteChapterRepository(db),
                 storyStateRepository = SqliteStoryStateRepository(db),
                 workflowRepository = SqliteWorkflowRepository(db),
+                narrativeStateRepository = SqliteNarrativeStateRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

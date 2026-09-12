@@ -42,6 +42,9 @@ object DatabaseInitializer {
     /** v5（P12.1 Story State）→ v6（P12.2：Durable Workflow 5 表 + ChapterDraft chapter_id 索引）迁移起点。 */
     private const val V5 = 5L
 
+    /** v6（P12.2 Workflow）→ v7（P13 LCL-A：NarrativeState + NarrativeDelta）迁移起点。 */
+    private const val V6 = 6L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -119,6 +122,12 @@ object DatabaseInitializer {
             !tableExists(driver, "Workflow") -> withTransaction(driver) {
                 // v5 → v6：新增 Durable Workflow 5 表 + ChapterDraft(chapter_id) 索引（P12.2）。
                 QianyanDb.Schema.migrate(driver, V5, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "NarrativeState") -> withTransaction(driver) {
+                // v6 → v7：新增 LCL-A NarrativeState + NarrativeDelta（P13）。
+                QianyanDb.Schema.migrate(driver, V6, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }
