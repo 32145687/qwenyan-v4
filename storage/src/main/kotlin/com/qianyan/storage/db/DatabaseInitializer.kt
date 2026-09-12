@@ -83,6 +83,9 @@ object DatabaseInitializer {
      * @param driver 任意 SQLDelight [SqlDriver]（JVM 或 Android），不绑定 JDBC。
      */
     fun initializeDatabase(driver: SqlDriver) {
+        // P12.4-M01：SQLite 外键约束为 connection-level、默认关闭；此处每次连接建立时显式开启，
+        // 使 DDL 中的 FOREIGN KEY 在 JVM（JdbcSqliteDriver）与 Android（AndroidSqliteDriver）两条路径都真正生效。
+        driver.execute(null, "PRAGMA foreign_keys = ON", 0)
         when {
             !tableExists(driver, "Novel") -> withTransaction(driver) {
                 QianyanDb.Schema.create(driver)

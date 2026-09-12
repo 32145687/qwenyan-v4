@@ -6,6 +6,9 @@ import com.qianyan.model.CharacterId
 import com.qianyan.model.EventId
 import com.qianyan.model.ForeshadowingId
 import com.qianyan.model.NovelId
+import com.qianyan.model.ProjectId
+import com.qianyan.model.ProjectSource
+import com.qianyan.model.ProjectStatus
 import com.qianyan.model.StateId
 import com.qianyan.model.TimelineEntryId
 import com.qianyan.model.VariantId
@@ -17,6 +20,7 @@ import com.qianyan.model.character.CharacterState
 import com.qianyan.model.character.EmotionalState
 import com.qianyan.model.character.PhysicalState
 import com.qianyan.model.character.SnapshotType
+import com.qianyan.model.core.Novel
 import com.qianyan.model.story.Foreshadow
 import com.qianyan.model.timeline.Event
 import com.qianyan.model.timeline.EventStatus
@@ -25,8 +29,10 @@ import com.qianyan.model.timeline.StoryTime
 import com.qianyan.model.timeline.TimelineEntry
 import com.qianyan.model.timeline.TimelinePosition
 import com.qianyan.model.world.WorldRule
+import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
+import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteStoryStateRepository
 import kotlinx.datetime.Clock
 import kotlin.test.Test
@@ -46,6 +52,17 @@ class StoryStateRepositoryTest {
     private val now = kotlinx.datetime.Instant.fromEpochSeconds(1787777777, 0)
 
     private fun handle(): QianyanDbHandle = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY)
+
+    /** 建父 Novel（P12.4-M01 外键：各 StoryState 表 novel_id → Novel）。 */
+    private fun seedNovel(db: QianyanDb, novelId: String) {
+        SqliteNovelRepository(db).createOriginal(
+            Novel(
+                novelId = NovelId(novelId), projectId = ProjectId("proj-$novelId"), title = "T",
+                source = ProjectSource.ORIGINAL_NOVEL, scope = VariantScope.ORIGINAL,
+                status = ProjectStatus.DRAFT, createdAt = now, updatedAt = now,
+            ),
+        )
+    }
 
     /* ---------- 领域实例构造 ---------- */
 
@@ -165,7 +182,10 @@ class StoryStateRepositoryTest {
 
     @Test
     fun `story state is isolated by novel and variant scope across all tables`() {
-        val repo = SqliteStoryStateRepository(handle().db)
+        val h = handle()
+        seedNovel(h.db, "n1")
+        seedNovel(h.db, "n2")
+        val repo = SqliteStoryStateRepository(h.db)
         val novel = NovelId("n1")
         val otherNovel = NovelId("n2")
         val v1 = VariantId("v1")
@@ -233,7 +253,9 @@ class StoryStateRepositoryTest {
 
     @Test
     fun `save and get roundtrip each table including json fields`() {
-        val repo = SqliteStoryStateRepository(handle().db)
+        val h = handle()
+        seedNovel(h.db, "rt")
+        val repo = SqliteStoryStateRepository(h.db)
         val novel = NovelId("rt")
         val v = VariantId("var")
 
@@ -292,7 +314,9 @@ class StoryStateRepositoryTest {
 
     @Test
     fun `foreshadow resolved defaults false and can be updated to true`() {
-        val repo = SqliteStoryStateRepository(handle().db)
+        val h = handle()
+        seedNovel(h.db, "foreshadow-update")
+        val repo = SqliteStoryStateRepository(h.db)
         val novel = NovelId("foreshadow-update")
 
         repo.saveForeshadow(foreshadow("fs-1", novel, null, VariantScope.ORIGINAL, "墙上剑痕"))
@@ -311,7 +335,9 @@ class StoryStateRepositoryTest {
 
     @Test
     fun `lists filter by scope - original and variant counts are independent`() {
-        val repo = SqliteStoryStateRepository(handle().db)
+        val h = handle()
+        seedNovel(h.db, "filter")
+        val repo = SqliteStoryStateRepository(h.db)
         val novel = NovelId("filter")
         val v1 = VariantId("fv1")
         val v2 = VariantId("fv2")

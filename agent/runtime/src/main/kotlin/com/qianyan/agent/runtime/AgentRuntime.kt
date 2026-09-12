@@ -1,8 +1,9 @@
 package com.qianyan.agent.runtime
 
 import com.qianyan.agent.tool.ToolContext
-import com.qianyan.agent.tool.ToolExecutor
+import com.qianyan.agent.tool.ToolError
 import com.qianyan.agent.tool.ToolException
+import com.qianyan.agent.tool.ToolExecutor
 import com.qianyan.model.agent.AgentContract
 import com.qianyan.model.agent.AgentState
 import com.qianyan.model.tool.ToolRequest
@@ -76,7 +77,12 @@ class AgentRuntime(
             // 追加模型建议 + 实际工具结果，供下一轮 LLM 观察
             messages.add(ChatMessage(ChatRole.ASSISTANT, response.message.content))
             val lastTool = ctx.toolCalls.last()
-            val toolResult = runCatching { toolExecutor.execute(lastTool, ToolContext()) }
+            // P12.4-M10：allowedTools 为执行期强制约束——申请未授权工具绝不执行，向模型返回 ToolNotFound 观察。
+            val toolResult = if (agent.allowedTools.isNotEmpty() && !agent.allowedTools.contains(lastTool.toolName)) {
+                Result.failure(ToolException(ToolError.ToolNotFound(lastTool.toolName)))
+            } else {
+                runCatching { toolExecutor.execute(lastTool, ToolContext()) }
+            }
             messages.add(
                 ChatMessage(
                     ChatRole.USER,

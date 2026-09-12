@@ -46,7 +46,9 @@ class SqliteNovelRepository(
 
         val row = StorageMappers.domainVariant(variant)
         db.transaction {
+            // P12.4-M02：不得吞异常——与 createOriginal/saveOverride 一致，持久化失败须经 mapWriteError 抛给调用方。
             runCatching { db.novelVariantQueries.insertVariant(row.variant_id, row.novel_id, row.base_novel_id, row.project_id, row.name, row.status, row.blueprint, row.scope_spec, row.created_at, row.updated_at) }
+                .onFailure { throw mapWriteError(it) }
         }
         return variant.variantId
     }

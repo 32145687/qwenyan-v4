@@ -80,6 +80,9 @@ class WorkflowOrchestrator(
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
+    /** P12.4-M08 单 step 最大尝试次数（attemptNo 计数）。达到上限后终止为 Workflow.FAILED，禁止无条件重跑。 */
+    private val maxStepAttempts = 5
+
     /** 前进当前 LogicalStep 直到 WAITING_HUMAN / 未接入 phase / COMPLETED。幂等：已 COMPLETED / resultReference 命中不复跑。 */
     fun runForward(workflowId: WorkflowId): WorkflowRunResult {
         var guard = 0
@@ -126,6 +129,12 @@ class WorkflowOrchestrator(
                             WorkflowStepPhase.CONFIRMATION -> last = executeConfirmation(wf, step)
                             WorkflowStepPhase.KNOWLEDGE_UPDATE -> last = executeKnowledgeUpdate(wf, step)
                             else -> { done = true }
+                        }
+                        // P12.4-M08：失败 step 的 retry 策略——Retryable 受 bounded 上限约束（可自动重试），
+                        // NonRetryable 立即终止为 Workflow.FAILED；不再在单次 runForward 内无条件 16 次重跑。
+                        if (last.failed && !shouldRetryStep(wf, step)) {
+                            done = true
+                            last = WorkflowRunResult(status = WorkflowStatus.FAILED, stepCompleted = false, failed = true)
                         }
                     }
                 }
@@ -475,6 +484,24 @@ class WorkflowOrchestrator(
     private fun termFailed(wfId: WorkflowId, message: String) {
         val wf = requireWorkflow(wfId)
         updateWorkflow(wf.copy(status = WorkflowStatus.FAILED, updatedAt = Clock.System.now()))
+    }
+
+    /**
+     * P12.4-M08 重试策略决策。读取当前 step 最近一次 attempt 的错误类别与已用 attempt 数：
+     *  - NonRetryable：不可重试 → 立即将 step 置 FAILED 并将 workflow 置 FAILED，返回 false（终止）。
+     *  - Retryable 但已达 step 重试上限 [MAX_STEP_ATTEMPTS]：继续重试无意义 → 同样 FAILED，返回 false。
+     *  - Retryable 且未达上限：保留 step 为可重试（attempt 已按其类别标记 FAILED），返回 true（允许下一次循环重试）。
+     */
+    private fun shouldRetryStep(wf: Workflow, step: WorkflowStep): Boolean {
+        val attempts = workflowRepository.listAttempts(step.stepId)
+        val lastCategory = attempts.lastOrNull()?.errorCategory ?: AttemptErrorCategory.NON_RETRYABLE
+        val terminal = lastCategory == AttemptErrorCategory.NON_RETRYABLE || attempts.size >= maxStepAttempts
+        if (terminal) {
+            updateStep(step.copy(status = WorkflowStepStatus.FAILED, completedAt = Clock.System.now()))
+            termFailed(wf.workflowId, "step ${step.phase} 属 ${lastCategory} 且尝试 ${attempts.size} 次，终止")
+            return false
+        }
+        return true
     }
 
     /* ---------- critique 编解码 ---------- */

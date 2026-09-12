@@ -11,8 +11,15 @@ import com.qianyan.model.txt.TxtDocument
 import com.qianyan.model.txt.TxtEncoding
 import com.qianyan.model.txt.TxtParseStatus
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.qianyan.model.ProjectId
+import com.qianyan.model.ProjectSource
+import com.qianyan.model.ProjectStatus
+import com.qianyan.model.VariantScope
+import com.qianyan.model.core.Novel
+import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
+import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteTxtRepository
 import kotlinx.datetime.Instant
 import java.nio.file.Files
@@ -58,9 +65,23 @@ class TxtRepositoryP5QueryTest {
         TextBlock(TextBlockId("${docId.value}#b0"), TxtChapterId("${docId.value}#c0"), docId, novelId, 0, "正文。", SourceLocation(4, 7)),
     )
 
+    /** 建父 Novel（P12.4-M01 外键：TxtDocument/TxtChapter/TextBlock novel_id → Novel）。 */
+    private fun seedNovel(db: QianyanDb) {
+        SqliteNovelRepository(db).createOriginal(
+            Novel(
+                novelId = novelId, projectId = ProjectId("proj-$novelId"), title = "T",
+                source = ProjectSource.ORIGINAL_NOVEL, scope = VariantScope.ORIGINAL,
+                status = ProjectStatus.DRAFT, createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+                updatedAt = Instant.parse("2026-01-01T00:00:00Z"),
+            ),
+        )
+    }
+
     @Test
     fun `findByContentHash returns the bound document`() {
-        val repo = SqliteTxtRepository(QianyanDbFactory.open().db)
+        val h = QianyanDbFactory.open()
+        seedNovel(h.db)
+        val repo = SqliteTxtRepository(h.db)
         val doc = boundDocument(docId1, "hash-abc", "a.txt", Instant.parse("2026-01-01T00:00:00Z"))
         repo.saveImport(doc, chapters(docId1), blocks(docId1))
 
@@ -77,7 +98,9 @@ class TxtRepositoryP5QueryTest {
 
     @Test
     fun `findByNovelId returns only bound documents in deterministic order`() {
-        val repo = SqliteTxtRepository(QianyanDbFactory.open().db)
+        val h = QianyanDbFactory.open()
+        seedNovel(h.db)
+        val repo = SqliteTxtRepository(h.db)
         val d1 = boundDocument(docId1, "h1", "a.txt", Instant.parse("2026-01-02T00:00:00Z"))
         val d2 = boundDocument(docId2, "h2", "b.txt", Instant.parse("2026-01-01T00:00:00Z"))
         repo.saveImport(d1, chapters(docId1), blocks(docId1))
@@ -103,6 +126,7 @@ class TxtRepositoryP5QueryTest {
         var reader: QianyanDbHandle? = null
         try {
             writer = QianyanDbFactory.open("jdbc:sqlite:$tmp")
+            seedNovel(writer.db)
             val doc = boundDocument(docId1, "hash-persist", "a.txt", Instant.parse("2026-01-01T00:00:00Z"))
             SqliteTxtRepository(writer.db).saveImport(doc, chapters(docId1), blocks(docId1))
 

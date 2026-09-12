@@ -55,6 +55,7 @@ class WorkflowRevisionBranchTest {
         private val writerContent: String = "正文A",
         private val knowledgeContent: String = """{"changes":[{"changeId":"k1","operation":"ADD","target":"主角","content":"已突破金丹期"}]}""",
         private val throwOnWriter: Boolean = false,
+        private val writerMalformed: Boolean = false,
         private val throwOnCritic: Boolean = false,
         private val throwOnRevision: Boolean = false,
     ) : LLMGateway {
@@ -65,7 +66,8 @@ class WorkflowRevisionBranchTest {
             val body = when {
                 "StoryWriterAgent" in system -> {
                     if (throwOnWriter) throw ProviderException.Timeout("writer should not be called")
-                    """{"content":"$writerContent"}"""
+                    if (writerMalformed) """## not a json"""
+                    else """{"content":"$writerContent"}"""
                 }
                 "StoryCriticAgent" in system -> {
                     if (throwOnCritic) throw ProviderException.Timeout("critic should not be called")
@@ -343,4 +345,35 @@ class WorkflowRevisionBranchTest {
         draftId = DraftId(id), novelId = novelId, chapterId = ch, content = "正文-$id",
         status = status, previousDraftId = prev, createdAt = Clock.System.now(), updatedAt = Clock.System.now(),
     )
+
+    /** M08 — NonRetryable writer 失败：首次即终止为 Workflow.FAILED（不重试）。 */
+    @Test
+    fun `M08 non retryable writer failure terminates workflow at FAILED`() {
+        val app = ApplicationContainer.open(analysisGateway = ScriptedGateway(criticPass = { true }, writerMalformed = true))
+        val novelId = app.novels.createOriginal(title = "T")
+        val ch = app.chapters.createNextChapter(title = "章", novelId = novelId)
+        val wfId = createWorkflow(app, novelId, ch.chapterId, "W-M08b")
+
+        val r = app.workflowOrchestrator.runForward(wfId)
+        assertEquals(WorkflowStatus.FAILED, r.status)
+        assertEquals(WorkflowStatus.FAILED, app.workflowRepository.getWorkflow(wfId)!!.status)
+        val wstep = app.workflowRepository.listSteps(wfId).first { it.phase == WorkflowStepPhase.WRITING }
+        assertEquals(WorkflowStepStatus.FAILED, wstep.status)
+        assertEquals(1, app.workflowRepository.listAttempts(wstep.stepId).size, "NonRetryable 首次即终止，不再重试")
+    }
+
+    /** M08 — Retryable writer 超过单 step 重试上限：Workflow.FAILED（禁止无条件无限重跑）。 */
+    @Test
+    fun `M08 retryable writer over step limit terminates workflow at FAILED`() {
+        val app = ApplicationContainer.open(analysisGateway = ScriptedGateway(criticPass = { true }, throwOnWriter = true))
+        val novelId = app.novels.createOriginal(title = "T")
+        val ch = app.chapters.createNextChapter(title = "章", novelId = novelId)
+        val wfId = createWorkflow(app, novelId, ch.chapterId, "W-M08a")
+
+        val r = app.workflowOrchestrator.runForward(wfId)
+        assertEquals(WorkflowStatus.FAILED, r.status)
+        val wstep = app.workflowRepository.listSteps(wfId).first { it.phase == WorkflowStepPhase.WRITING }
+        assertEquals(WorkflowStepStatus.FAILED, wstep.status)
+        assertEquals(5, app.workflowRepository.listAttempts(wstep.stepId).size, "Retryable 达单 step 上限后终止")
+    }
 }

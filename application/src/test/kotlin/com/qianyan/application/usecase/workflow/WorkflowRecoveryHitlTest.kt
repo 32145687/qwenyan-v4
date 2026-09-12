@@ -5,6 +5,11 @@ import com.qianyan.application.di.ApplicationContainer
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
+import com.qianyan.model.ProjectId
+import com.qianyan.model.ProjectSource
+import com.qianyan.model.ProjectStatus
+import com.qianyan.model.VariantScope
+import com.qianyan.model.core.Novel
 import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.HumanGateStatus
 import com.qianyan.model.workflow.Workflow
@@ -81,6 +86,17 @@ class WorkflowRecoveryHitlTest {
         )
     }
 
+    /** P12.4-M01 外键：ChapterDraft.novel_id → Novel；保存 Draft 前须建父 Novel。 */
+    private fun seedNovel(app: ApplicationContainer, novelId: NovelId) {
+        app.novelRepository.createOriginal(
+            Novel(
+                novelId = novelId, projectId = ProjectId("proj-$novelId"), title = "T",
+                source = ProjectSource.ORIGINAL_NOVEL, scope = VariantScope.ORIGINAL,
+                status = ProjectStatus.DRAFT, createdAt = Clock.System.now(), updatedAt = Clock.System.now(),
+            ),
+        )
+    }
+
     /* Test B — resultReference 指向已持久化 Draft，Step 未 COMPLETED → 重启恢复复用，不重调 LLM。 */
     @Test
     fun `testB writing result reuse after restart`() {
@@ -90,6 +106,7 @@ class WorkflowRecoveryHitlTest {
         try {
             var app = open("jdbc:sqlite:$tmp", handles)
             val novelId = NovelId("n-b"); val ch = ChapterId("c-b")
+            seedNovel(app, novelId)
             val wfId = WorkflowId("W-B"); val stepId = WorkflowStepId("S-B")
             app.workflowRepository.createWorkflow(
                 Workflow(wfId, novelId, null, WorkflowKind.WRITE_NOVEL, status = WorkflowStatus.CREATED, createdAt = Clock.System.now(), updatedAt = Clock.System.now()),
@@ -120,6 +137,7 @@ class WorkflowRecoveryHitlTest {
     /** 构造一个 WAITING_HUMAN + pendingGate 的 Workflow。 */
     private fun gateFixture(app: ApplicationContainer, id: String): Triple<WorkflowId, Draft, com.qianyan.model.workflow.WorkflowHumanGate> {
         val novelId = NovelId("n-$id"); val ch = ChapterId("c-$id")
+        seedNovel(app, novelId)
         val wfId = WorkflowId("W-$id"); val stepId = WorkflowStepId("S-$id")
         app.workflowRepository.createWorkflow(
             Workflow(wfId, novelId, null, WorkflowKind.WRITE_NOVEL, status = WorkflowStatus.WAITING_HUMAN, createdAt = Clock.System.now(), updatedAt = Clock.System.now()),

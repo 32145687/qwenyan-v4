@@ -2,7 +2,12 @@ package com.qianyan.storage
 
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
+import com.qianyan.model.ProjectId
+import com.qianyan.model.ProjectSource
+import com.qianyan.model.ProjectStatus
 import com.qianyan.model.VariantId
+import com.qianyan.model.VariantScope
+import com.qianyan.model.core.Novel
 import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.HumanGateStatus
 import com.qianyan.model.workflow.Workflow
@@ -20,6 +25,7 @@ import com.qianyan.model.workflow.WorkflowStepId
 import com.qianyan.model.workflow.WorkflowStepPhase
 import com.qianyan.model.workflow.WorkflowStepStatus
 import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteWorkflowRepository
 import kotlinx.datetime.Clock
 import kotlin.test.Test
@@ -114,8 +120,16 @@ class WorkflowPersistenceTest {
     fun `draft chapter scoped queries`() {
         val handle = QianyanDbFactory.open()
         val db = handle.db
-        val repo = com.qianyan.storage.repository.SqliteDraftRepository(db)
         val now = Clock.System.now()
+        // P12.4-M01 外键：ChapterDraft.novel_id → Novel，须先建父 Novel。
+        SqliteNovelRepository(db).createOriginal(
+            Novel(
+                novelId = NovelId("n1"), projectId = ProjectId("proj-n1"), title = "T",
+                source = ProjectSource.ORIGINAL_NOVEL, scope = VariantScope.ORIGINAL,
+                status = ProjectStatus.DRAFT, createdAt = now, updatedAt = now,
+            ),
+        )
+        val repo = com.qianyan.storage.repository.SqliteDraftRepository(db)
         val novelId = NovelId("n1")
         val ch1 = com.qianyan.model.ChapterId("c1")
         repo.save(

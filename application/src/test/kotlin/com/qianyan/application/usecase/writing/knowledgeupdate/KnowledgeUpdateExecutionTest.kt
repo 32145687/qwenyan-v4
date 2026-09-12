@@ -13,6 +13,9 @@ import com.qianyan.model.DraftId
 import com.qianyan.model.IntentType
 import com.qianyan.model.NovelId
 import com.qianyan.model.PlanningScope
+import com.qianyan.model.ProjectId
+import com.qianyan.model.ProjectSource
+import com.qianyan.model.ProjectStatus
 import com.qianyan.model.RequestId
 import com.qianyan.model.task.TaskType
 import com.qianyan.model.VariantId
@@ -20,6 +23,7 @@ import com.qianyan.model.VariantScope
 import com.qianyan.model.context.TargetKind
 import com.qianyan.model.context.TargetRef
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.core.Novel
 import com.qianyan.model.knowledge.KnowledgeOperation
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.writing.Draft
@@ -105,9 +109,26 @@ class KnowledgeUpdateExecutionTest {
 
     /** P12.1.4：构造一个已 CONFIRMED 并持久化的 Final Draft，供 KU 过门禁。 */
     private fun confirmedDraft(app: ApplicationContainer): Draft {
+        seedNovel(app)
         val d = draft().copy(status = DraftStatus.CONFIRMED)
         app.draftRepository.save(d)
         return d
+    }
+
+    /** P12.4-M01 外键：ChapterDraft.novel_id → Novel；这些测试固定用 novel-ku，须先建父 Novel。 */
+    private fun seedNovel(app: ApplicationContainer) {
+        app.novelRepository.createOriginal(
+            Novel(
+                novelId = NovelId("novel-ku"),
+                projectId = ProjectId("proj-ku"),
+                title = "知识库原著",
+                source = ProjectSource.ORIGINAL_NOVEL,
+                scope = VariantScope.ORIGINAL,
+                status = ProjectStatus.DRAFT,
+                createdAt = Instant.parse("2026-01-01T00:00:00Z"),
+                updatedAt = Instant.parse("2026-01-01T00:00:00Z"),
+            ),
+        )
     }
 
     /* 合法候选：确定性落地 → Memory(layer=WRITING) + KNOWN_UPDATE Checkpoint */
@@ -146,6 +167,7 @@ class KnowledgeUpdateExecutionTest {
         val id = app.tasks.create(TaskType.WRITING)
 
         // P12.1.4：KU 需要已 CONFIRMED 的 Final Draft。
+        seedNovel(app)
         val originalDraft = draft().copy(variantId = null, scope = VariantScope.ORIGINAL, status = DraftStatus.CONFIRMED)
         app.draftRepository.save(originalDraft)
         val outcome = app.taskRunner.executeKnowledgeUpdate(id, originalDraft)

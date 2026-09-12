@@ -1,17 +1,35 @@
 package com.qianyan.agent.runtime
 
+import com.qianyan.agent.tool.Tool
+import com.qianyan.agent.tool.ToolContext
 import com.qianyan.agent.tool.ToolExecutor
 import com.qianyan.agent.tool.ToolRegistry
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
 import com.qianyan.model.agent.AgentState
 import com.qianyan.model.agent.ToolName
+import com.qianyan.model.tool.ToolDefinition
+import com.qianyan.model.tool.ToolParameterSpec
+import com.qianyan.model.tool.ToolRequest
+import com.qianyan.model.tool.ToolResult
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class AgentRuntimeTest {
+
+    /** 可计数工具：若被执行则 invocations 增加；用于证明 allowedTools 之外的工具有效地不被执行。 */
+    private class CountingToolForAgent : Tool {
+        var invocations = 0
+        override val definition = ToolDefinition(ToolName("secret"), "未授权工具", listOf(ToolParameterSpec("x")))
+        override fun execute(request: ToolRequest, context: ToolContext): ToolResult {
+            invocations++
+            return ToolResult(toolName = definition.toolName, success = true, output = buildJsonObject { put("x", "1") })
+        }
+    }
 
     private fun contract(allowedTools: List<ToolName> = emptyList()) = AgentContract(
         agentId = AgentId("agent-1"),
@@ -96,5 +114,32 @@ class AgentRuntimeTest {
         assertEquals("agent-1", result.agentId.value)
         assertTrue(result.toolCalls.isEmpty())
         assertTrue(result.completed)
+    }
+
+    // P12.4-M10：allowedTools 为执行期强制约束，不允许的工具有效地不被执行。
+    @Test
+    fun `disallowed tool is not executed at runtime`() {
+        val counting = CountingToolForAgent()
+        val provider = FakeProvider(
+            """{"tool":"secret","arguments":{"x":"1"}}""",
+            """{"answer":"done"}""",
+        )
+        val agentRuntime = AgentRuntime(
+            gateway = provider,
+            toolExecutor = ToolExecutor(ToolRegistry().apply { register(counting) }),
+            model = com.qianyan.provider.ModelProfile.MOCK,
+            maxSteps = 10,
+        )
+        // allowedTools 仅含 echo；模型请求的 secret 未授权。
+        val result = agentRuntime.run(contract(allowedTools = listOf(ToolName("echo"))), "hi")
+
+        assertTrue(result.completed)
+        assertEquals("done", result.answer)
+        assertEquals(0, counting.invocations, "未授权工具不得执行")
+        // 向模型返回 ToolNotFound 失败观察
+        assertTrue(provider.messagesSent.size >= 2)
+        val observation = provider.messagesSent[1].last().content
+        assertTrue(observation.contains("false"), "观察应标记失败: $observation")
+        assertTrue(observation.contains("ToolNotFound"), "观察应含 ToolNotFound: $observation")
     }
 }
