@@ -31,6 +31,7 @@ import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
 import com.qianyan.application.usecase.writing.revision.RevisionAgent
 import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
+import com.qianyan.application.usecase.lcl.ChapterContextCompileUseCases
 import com.qianyan.application.usecase.lcl.NarrativeStateUseCases
 import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
@@ -178,6 +179,10 @@ class ApplicationContainer(
     /** P13 LCL-A Narrative State 叙事账本（append / project / get；Original 只读；无 LLM）。 */
     val narrativeState: NarrativeStateUseCases
         get() = NarrativeStateUseCases(narrativeStateRepository, errorMapper)
+
+    /** P13 LCL-B ChapterContextPack 确定性窗口投影（只读编译；无 LLM；不写状态）。 */
+    val chapterContextPack: ChapterContextCompileUseCases
+        get() = ChapterContextCompileUseCases(storyWorldContextResolver, narrativeState, chapterRepository, errorMapper)
 
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文）。 */
     val planningContextAssembly: PlanningContextAssembly
