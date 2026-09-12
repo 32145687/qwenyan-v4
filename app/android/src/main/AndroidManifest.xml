@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- P12.5-M03/M04：真实 Provider（DeepSeek/MiMo）需网络访问 API。Mock 路径仍离线可用。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".QianyanApplication"
         android:allowBackup="true"

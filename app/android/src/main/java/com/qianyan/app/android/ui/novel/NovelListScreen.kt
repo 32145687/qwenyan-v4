@@ -20,6 +20,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,6 +47,7 @@ fun NovelListScreen(
     viewModel: NovelListViewModel,
     onImportClick: () -> Unit,
     onNovelClick: (Novel) -> Unit,
+    onSettingsClick: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
@@ -55,6 +57,7 @@ fun NovelListScreen(
         onRetry = viewModel::load,
         onImportClick = onImportClick,
         onNovelClick = onNovelClick,
+        onSettingsClick = onSettingsClick,
     )
 }
 
@@ -65,6 +68,7 @@ private fun NovelListContent(
     onRetry: () -> Unit,
     onImportClick: () -> Unit,
     onNovelClick: (Novel) -> Unit,
+    onSettingsClick: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -95,12 +99,15 @@ private fun NovelListContent(
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground,
             )
-            Button(
-                onClick = onImportClick,
-                enabled = importState !is TxtImportUiState.Loading,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-            ) {
-                Text(if (importState is TxtImportUiState.Loading) "导入中…" else "导入 TXT")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onImportClick,
+                    enabled = importState !is TxtImportUiState.Loading,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                ) {
+                    Text(if (importState is TxtImportUiState.Loading) "导入中…" else "导入 TXT")
+                }
+                OutlinedButton(onClick = onSettingsClick) { Text("设置") }
             }
         }
         Spacer(Modifier.height(12.dp))

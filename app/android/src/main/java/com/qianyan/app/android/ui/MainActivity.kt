@@ -25,6 +25,8 @@ import com.qianyan.app.android.ui.chapter.ChapterWritingViewModel
 import com.qianyan.app.android.ui.novel.NovelDetailScreen
 import com.qianyan.app.android.ui.novel.NovelListScreen
 import com.qianyan.app.android.ui.novel.NovelListViewModel
+import com.qianyan.app.android.ui.provider.ProviderSettingsScreen
+import com.qianyan.app.android.ui.provider.ProviderSettingsViewModel
 import com.qianyan.app.android.ui.theme.QianyanTheme
 import com.qianyan.model.ChapterId
 import com.qianyan.model.VariantId
@@ -43,6 +45,7 @@ import kotlinx.coroutines.withContext
  */
 private sealed interface Screen {
     data object NovelList : Screen
+    data object Settings : Screen
     data class NovelDetail(val novel: Novel) : Screen
     data class Analysis(val novel: Novel) : Screen
     data class ChapterList(val novel: Novel, val variantId: VariantId?) : Screen
@@ -115,7 +118,16 @@ class MainActivity : ComponentActivity() {
                 viewModel = viewModel,
                 onImportClick = { openDocumentLauncher.launch(arrayOf("text/*")) },
                 onNovelClick = { push(Screen.NovelDetail(it)) },
+                onSettingsClick = { push(Screen.Settings) },
             )
+
+            is Screen.Settings -> {
+                val settingsViewModel: ProviderSettingsViewModel = viewModel(
+                    key = "provider-settings",
+                    factory = ProviderSettingsViewModel.factory(application as QianyanApplication),
+                )
+                ProviderSettingsScreen(viewModel = settingsViewModel, onBack = pop)
+            }
 
             is Screen.NovelDetail -> NovelDetailScreen(
                 novel = screen.novel,
