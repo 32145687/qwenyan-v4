@@ -2006,10 +2006,47 @@ Workflow（Planning / Writing / Critique / Revision / Knowledge Update）
 
 ---
 
-# 32. P12.3 之后：下一阶段架构方向（Long-form Continuity Layer · 🔮 规划 / NOT_STARTED）
+# 32. P12.3 之后：下一阶段架构方向（Long-form Continuity Layer · IN PROGRESS）
 
-> **状态**：仅规划。`IMPLEMENTATION_STATUS = NOT_STARTED`。不进入当前开发阶段。
-> **性质**：本文档为 **P12.3 之后的实际架构盘点 + 下一阶段唯一高优先级工程方向**，不是已实现能力。下列任何「未来设计点」均不构成既有架构，仅作方向记录。
+> **状态**：`IMPLEMENTATION_STATUS = IN_PROGRESS`。本文档为 **P13 Long-form Continuity Layer** 的架构盘点与阶段规划，并持续承载该阶段的交付状态同步（见下方 §32.0）。
+> **性质**：下文的「未来设计点」多数仍为**方向记录**，不代表已实现。凡涉及「哪些已实现能力」请一律以 README「Current Development Roadmap」与实际 Git 基线为准；本阶段已交付项单独列在 §32.0。
+
+## 32.0 P13 交付状态（截至 LCL-B）
+
+```text
+P13 Long-form Continuity Layer (LCL)
+IMPL_STATUS    = IN PROGRESS
+下一阶段         = LCL-C Foreshadow Lifecycle（Implementation Plan / Code Audit；尚未写代码）
+
+P13 Planning    = DELIVERED
+LCL-A Narrative State = DELIVERED / ACCEPTED，Commit e8c0528
+LCL-B Chapter Context Pack = DELIVERED / ACCEPTED，Commit ddd52f9
+LCL-C Foreshadow Lifecycle = NEXT（Audit & Plan；Implementation NOT STARTED）
+LCL-D Reveal / Rolling Horizon = NOT STARTED
+```
+
+LCL 顺序：`Planning → LCL-A → LCL-B → LCL-C → LCL-D → LATER（Knowledge Boundary / Volume / Author Intelligence Layer）`。
+LATER / DEFERRED（不受 LCL-A/B 完成影响，仍未实现）：Author Intelligence Layer、完整 Knowledge Boundary、三方/多方 Knowledge State、Reveal Timeline、Physical Volume、完整 Timeline 三维物理模型、LCL-D、Android UI for P13、Desktop 产品化、RAG / Vector Memory、Multi-Agent Swarm、MCP。
+
+### 32.0.1 P13 已交付内容（LCL-A / LCL-B）
+
+- **LCL-A Narrative State**（Commit `e8c0528`）：`NarrativeState` / `NarrativeDelta` / `NarrativeStateFold` / `OpenThread` 等模型；Schema v7（`NarrativeState` + `NarrativeDelta` 两表 + migration v6→v7）；variant isolation / Original 只读 / 乐观锁（append expectedVersion）；`NarrativeStateRepository` / `SqliteNarrativeStateRepository`；application use cases（append / project / get）+ tests。
+- **LCL-B Chapter Context Pack**（Commit `ddd52f9`）：`ChapterContextPack` / `TokenBudgetGuard` / `PackGroup`；`ChapterContextCompileUseCases` + ApplicationContainer 接线；确定性窗口投影 + 固定优先级 token budget + deterministic `packVersion` fingerprint + invalidate/recompile seam + tests。
+
+### 32.0.2 packVersion（LCL-B）
+
+`packVersion` 为**确定性指纹**（FNV-1a，仅作 fingerprint、非安全哈希），已覆盖**所有影响 `ChapterContextPack` 输出的关键输入**并用**稳定排序**序列化：
+`novelId / variantId / chapterId / horizonWindow / budget` + `NarrativeState` 影响字段（activeNarrative）+ `activeThreads`（id+description）+ `activeForeshadows`（id+content）+ `recentEvents`（id/status/chapterId/name/description/who，覆盖过滤/窗口/排序依据）。
+
+### 32.0.3 recentEvents（LCL-B 精确投影规则）
+
+```text
+recentEvents =
+  { e ∈ events : e.status ∉ {COMPLETED, CANCELLED}
+    ∧ ( e.chapterId ∈ 最近N章窗口 ∨ e.status ∈ {PLANNED, IN_PROGRESS} ) }
+```
+
+即最近 N 章窗口内的未关闭事件 **∪** 窗口外仍处于 PLANNED / IN_PROGRESS 的活跃事件；`COMPLETED` / `CANCELLED` 不会作为 active recentEvents 展开（避免历史线性膨胀）。
 
 ## 32.1 P12.3 最终状态
 
@@ -2137,10 +2174,10 @@ LCL 的职责：把「已沉淀的 Story State + 演进中的 Narrative State + 
 
 ```text
 NEXT_PHASE_RECOMMENDATION = P13 Long-form Continuity Layer (LCL)
-IMPLEMENTATION_STATUS     = NOT_STARTED
+IMPLEMENTATION_STATUS     = IN_PROGRESS
 ```
 
-以上全部为方向性规划；未实现任何 P13 能力。
+P13 已交付：**LCL-A Narrative State**（`e8c0528`）、**LCL-B Chapter Context Pack**（`ddd52f9`）均 DELIVERED / ACCEPTED。尚未实现：**LCL-C Foreshadow Lifecycle（NEXT，Implementation NOT STARTED）**、**LCL-D Reveal / Rolling Horizon**，以及 LATER / DEFERRED 项（Author Intelligence Layer、完整 Knowledge Boundary、Reveal Timeline、Physical Volume、完整 Timeline 三维模型、Android UI for P13、RAG / Vector Memory 等）——**不得仅因规划文档写过就标记为已实现**。
 
 ---
 
