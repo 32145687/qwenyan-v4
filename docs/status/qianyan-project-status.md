@@ -15,8 +15,8 @@
 >   `P12.1.7 Android Planning/Writing/Review Chain` ✅ COMPLETE · `P12.1.8 Chapter1→2 Full E2E + Full Regression + Final Closure` ✅ COMPLETE ·
 >   `P12.2 Durable Workflow` ✅ COMPLETE · `P12.3 Story State Variant Merge/Override` ✅ DELIVERED ·
 >   `P12.4 Limited Hardening` ✅ DELIVERED · `P12.5 Android Real Provider Bridge` ✅ DELIVERED ·
->   `P13 Long-form Continuity Layer` 🔄 **IN PROGRESS**（`LCL-A Narrative State` ✅ DELIVERED · `LCL-B Chapter Context Pack` ✅ DELIVERED · `LCL-C Foreshadow Lifecycle` ⬜ NEXT · `LCL-D Reveal / Rolling Horizon` 🔮 NOT STARTED）。
->   **Current Phase = P13 LCL（IN PROGRESS）**。
+>   `P13 Long-form Continuity Layer` 🔄 **IN PROGRESS**（`LCL-A Narrative State` ✅ DELIVERED/SEALED · `LCL-B Chapter Context Pack` ✅ DELIVERED/SEALED · `LCL-C Foreshadow Lifecycle` ✅ DELIVERED/SEALED，Commit `0d965ec` · `LCL-D Reveal / Rolling Horizon` 🟡 AUDIT COMPLETE / CONDITIONS FROZEN（Implementation NOT STARTED））。
+>   **Current HEAD = `0d965ec`；Current Phase = P13 LCL（IN PROGRESS）**；下一阶段 = LCL-D Implementation，须严格按 Revision 1 Decision Record 执行。
 > - 请勿把本文档的 P 编号当现行阶段；当前进度请以正文中的「Current Development Roadmap」与各 completion report 为准。
 >
 > 本文档内容保留作为 **历史状态档案**，不依据旧编号推导当前状态。

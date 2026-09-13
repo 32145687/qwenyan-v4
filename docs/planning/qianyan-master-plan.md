@@ -2011,27 +2011,44 @@ Workflow（Planning / Writing / Critique / Revision / Knowledge Update）
 > **状态**：`IMPLEMENTATION_STATUS = IN_PROGRESS`。本文档为 **P13 Long-form Continuity Layer** 的架构盘点与阶段规划，并持续承载该阶段的交付状态同步（见下方 §32.0）。
 > **性质**：下文的「未来设计点」多数仍为**方向记录**，不代表已实现。凡涉及「哪些已实现能力」请一律以 README「Current Development Roadmap」与实际 Git 基线为准；本阶段已交付项单独列在 §32.0。
 
-## 32.0 P13 交付状态（截至 LCL-B）
+## 32.0 P13 交付状态（截至 LCL-C SEALED / LCL-D FROZEN）
 
 ```text
 P13 Long-form Continuity Layer (LCL)
 IMPL_STATUS    = IN PROGRESS
-下一阶段         = LCL-C Foreshadow Lifecycle（Implementation Plan / Code Audit；尚未写代码）
+下一阶段         = LCL-D Implementation（须严格按 Decision Record Revision 1 执行）
 
 P13 Planning    = DELIVERED
-LCL-A Narrative State = DELIVERED / ACCEPTED，Commit e8c0528
-LCL-B Chapter Context Pack = DELIVERED / ACCEPTED，Commit ddd52f9
-LCL-C Foreshadow Lifecycle = NEXT（Audit & Plan；Implementation NOT STARTED）
-LCL-D Reveal / Rolling Horizon = NOT STARTED
+LCL-A Narrative State = DELIVERED / SEALED，Commit e8c0528
+LCL-B Chapter Context Pack = DELIVERED / SEALED，Commit ddd52f9
+LCL-C Foreshadow Lifecycle = DELIVERED / SEALED，Commit 0d965ec
+LCL-D Reveal / Rolling Horizon = AUDIT COMPLETE / CONDITIONS FROZEN / Implementation NOT STARTED
 ```
 
 LCL 顺序：`Planning → LCL-A → LCL-B → LCL-C → LCL-D → LATER（Knowledge Boundary / Volume / Author Intelligence Layer）`。
-LATER / DEFERRED（不受 LCL-A/B 完成影响，仍未实现）：Author Intelligence Layer、完整 Knowledge Boundary、三方/多方 Knowledge State、Reveal Timeline、Physical Volume、完整 Timeline 三维物理模型、LCL-D、Android UI for P13、Desktop 产品化、RAG / Vector Memory、Multi-Agent Swarm、MCP。
+LATER / DEFERRED（不受 LCL-A/B/C 完成影响，仍未实现）：Author Intelligence Layer、完整 Knowledge Boundary、三方/多方 Knowledge State、Character Knowledge、Reveal Timeline（物理表）、Physical Volume、完整 Timeline 三维物理模型、Android UI for P13、Desktop 产品化、RAG / Vector Memory、Multi-Agent Swarm、MCP。
 
-### 32.0.1 P13 已交付内容（LCL-A / LCL-B）
+### 32.0.0 LCL-D 冻结边界（Decision Record Revision 1；均 NOT IMPLEMENTED）
+
+```text
+Reveal                = lightweight persistent Story State runtime fact（NEW entity，schema v9 计划）
+RevealSubject         = READER only
+Reveal NOT           → ChapterContextPack
+Reveal NOT           → NarrativeState / NarrativeDelta（不 bump version）
+Reveal NOT           → automatic Foreshadow transition
+Rolling Horizon       = bounded ChapterPlan future-window projection
+Rolling Horizon candidate = Workflow-local / Task Checkpoint
+Gate                  = existing WorkflowHumanGate（不复用新 Gate / 不新增 Agent）
+No Volume · No physical Reveal Timeline · No new Agent · No new Module · No Resolver internal modification
+```
+
+LCL-D Implementation Preconditions（**NOT IMPLEMENTED**）：1) Event/Foreshadow/TimelineEntry scope indexes；2) bounded/windowed reads；3) Reveal entity；4) schema v9；5) WorkflowHumanGate + Task Checkpoint；6) required bounded regression tests（100/500/1000）。
+
+### 32.0.1 P13 已交付内容（LCL-A / LCL-B / LCL-C）
 
 - **LCL-A Narrative State**（Commit `e8c0528`）：`NarrativeState` / `NarrativeDelta` / `NarrativeStateFold` / `OpenThread` 等模型；Schema v7（`NarrativeState` + `NarrativeDelta` 两表 + migration v6→v7）；variant isolation / Original 只读 / 乐观锁（append expectedVersion）；`NarrativeStateRepository` / `SqliteNarrativeStateRepository`；application use cases（append / project / get）+ tests。
 - **LCL-B Chapter Context Pack**（Commit `ddd52f9`）：`ChapterContextPack` / `TokenBudgetGuard` / `PackGroup`；`ChapterContextCompileUseCases` + ApplicationContainer 接线；确定性窗口投影 + 固定优先级 token budget + deterministic `packVersion` fingerprint + invalidate/recompile seam + tests。
+- **LCL-C Foreshadow Lifecycle**（Commit `0d965ec`）：`ForeshadowLifecycleState{PLANTED,ACTIVE,RESOLVED,ABANDONED}` + 纯状态机 `ForeshadowLifecycleRules` + `ForeshadowLifecycleUseCases`（Variant-only / Original 只读 / expectedState 条件 UPDATE / 并发保护）；`resolved` 由 `state` 派生（兼容字段）、DB 双写一致；`updatedAt` / `lastTransitionReason` / `payoffChapterId`；v7→v8 migration（Foreshadow 加列 + 回填）+ 幂等；ContextPack 生命周期过滤兼容（`!resolved` 语义不变）；完整测试 + LCL-A/B regression + 全量 test + Android Debug build。
 
 ### 32.0.2 packVersion（LCL-B）
 
@@ -2177,7 +2194,7 @@ NEXT_PHASE_RECOMMENDATION = P13 Long-form Continuity Layer (LCL)
 IMPLEMENTATION_STATUS     = IN_PROGRESS
 ```
 
-P13 已交付：**LCL-A Narrative State**（`e8c0528`）、**LCL-B Chapter Context Pack**（`ddd52f9`）均 DELIVERED / ACCEPTED。尚未实现：**LCL-C Foreshadow Lifecycle（NEXT，Implementation NOT STARTED）**、**LCL-D Reveal / Rolling Horizon**，以及 LATER / DEFERRED 项（Author Intelligence Layer、完整 Knowledge Boundary、Reveal Timeline、Physical Volume、完整 Timeline 三维模型、Android UI for P13、RAG / Vector Memory 等）——**不得仅因规划文档写过就标记为已实现**。
+P13 已交付：**LCL-A Narrative State**（`e8c0528`）、**LCL-B Chapter Context Pack**（`ddd52f9`）、**LCL-C Foreshadow Lifecycle**（`0d965ec`）均 DELIVERED / SEALED。**LCL-D Reveal / Rolling Horizon = AUDIT COMPLETE / CONDITIONS FROZEN（Decision Record Revision 1；Implementation NOT STARTED）**。LATER / DEFERRED 项（Author Intelligence Layer、完整 Knowledge Boundary、Character Knowledge、Reveal Timeline 物理表、Physical Volume、完整 Timeline 三维模型、Android UI for P13、RAG / Vector Memory 等）——**不得仅因规划文档写过就标记为已实现**。
 
 ---
 
