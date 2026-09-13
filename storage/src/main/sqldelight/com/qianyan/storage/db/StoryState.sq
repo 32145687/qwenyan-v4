@@ -74,15 +74,20 @@ CREATE TABLE TimelineEntry (
     FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
 );
 
+-- P12.1.1/P13 LCL-C：Foreshadow（`state` 为唯一规范源；`resolved` 兼容列 = state∈{RESOLVED,ABANDONED}，由写入方保证一致）
 CREATE TABLE Foreshadow (
-    foreshadow_id TEXT NOT NULL PRIMARY KEY,
-    novel_id      TEXT NOT NULL,
-    variant_id    TEXT,
-    scope         TEXT NOT NULL,             -- VariantScope 枚举名
-    chapter_id    TEXT,
-    content       TEXT NOT NULL,
-    resolved      INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
-    created_at    INTEGER NOT NULL,
+    foreshadow_id        TEXT NOT NULL PRIMARY KEY,
+    novel_id             TEXT NOT NULL,
+    variant_id           TEXT,
+    scope                TEXT NOT NULL,             -- VariantScope 枚举名
+    chapter_id           TEXT,
+    content              TEXT NOT NULL,
+    resolved             INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,  -- 兼容列（state 派生一致性）
+    state                TEXT NOT NULL DEFAULT 'PLANTED',                -- P13 LCL-C：ForeshadowLifecycleState
+    updated_at           INTEGER NOT NULL DEFAULT 0,                     -- P13 LCL-C：最近迁移时间
+    last_transition_reason TEXT,                                         -- P13 LCL-C：最近迁移原因（可空）
+    payoff_chapter_id    TEXT,                                           -- P13 LCL-C：兑现章节（仅 RESOLVED）
+    created_at           INTEGER NOT NULL,
     FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
 );
 
@@ -155,11 +160,23 @@ SELECT * FROM TimelineEntry WHERE novel_id = :novel_id AND variant_id IS :varian
 -- Foreshadow
 -- ============================================================
 insertForeshadow:
-INSERT OR REPLACE INTO Foreshadow(foreshadow_id, novel_id, variant_id, scope, chapter_id, content, resolved, created_at)
-VALUES (:foreshadow_id, :novel_id, :variant_id, :scope, :chapter_id, :content, :resolved, :created_at);
+INSERT OR REPLACE INTO Foreshadow(foreshadow_id, novel_id, variant_id, scope, chapter_id, content, resolved, state, updated_at, last_transition_reason, payoff_chapter_id, created_at)
+VALUES (:foreshadow_id, :novel_id, :variant_id, :scope, :chapter_id, :content, :resolved, :state, :updated_at, :last_transition_reason, :payoff_chapter_id, :created_at);
 
 getForeshadowById:
 SELECT * FROM Foreshadow WHERE foreshadow_id = :foreshadow_id;
 
 listForeshadowsByScope:
 SELECT * FROM Foreshadow WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY created_at ASC, foreshadow_id ASC;
+
+-- P13 LCL-C：条件状态迁移（仅当当前 state == expected_state 时更新；并发/状态不匹配即 affect 0 行）
+transitionForeshadowState:
+UPDATE Foreshadow
+SET state = :state, updated_at = :updated_at,
+    last_transition_reason = :last_transition_reason, payoff_chapter_id = :payoff_chapter_id,
+    resolved = :resolved
+WHERE foreshadow_id = :foreshadow_id AND state = :expected_state;
+
+-- 紧接上一 DML 语句后调用，返回其影响行数（用于区分 不存在 / expectedState 不匹配 / 成功）
+lastAffectedRows:
+SELECT changes() AS n;

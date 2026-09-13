@@ -14,6 +14,7 @@ import com.qianyan.model.story.Foreshadow
 import com.qianyan.model.timeline.Event
 import com.qianyan.model.timeline.TimelineEntry
 import com.qianyan.model.world.WorldRule
+import com.qianyan.model.story.ForeshadowLifecycleState
 
 /**
  * Story State 仓储（P12.1.1 · Story State Persistence）。
@@ -51,4 +52,17 @@ interface StoryStateRepository {
     fun getEventById(eventId: EventId): Event?
     fun getTimelineEntryById(timelineId: TimelineEntryId): TimelineEntry?
     fun getForeshadowById(foreshadowId: ForeshadowingId): Foreshadow?
+
+    /* ---- P13 LCL-C：Foreshadow 生命周期条件迁移 ----
+     * 仅当当前 state == expectedState 时更新（并发/状态不匹配 → affect 0）。
+     * 返回受影响行数：0 = 不存在或 expectedState 不匹配；1 = 成功。
+     * 由 Application 层先加载实体区分 不存在 / 状态不匹配。 */
+    fun transitionForeshadowState(
+        foreshadowId: ForeshadowingId,
+        expectedState: ForeshadowLifecycleState,
+        targetState: ForeshadowLifecycleState,
+        reason: String?,
+        occurredAt: kotlinx.datetime.Instant,
+        payoffChapterId: com.qianyan.model.ChapterId?,
+    ): Int
 }

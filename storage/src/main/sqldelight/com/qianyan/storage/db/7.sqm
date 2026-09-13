@@ -1,0 +1,12 @@
+-- P13 LCL-C · Schema v8（7.sqm：v7 → v8）
+-- Foreshadow 表新增生命周期列（state / updated_at / last_transition_reason / payoff_chapter_id）。
+-- 保留旧 resolved 列（兼容）；回填 state：resolved=1→RESOLVED，resolved=0→PLANTED。
+-- 兼容加列，不删表不改既有列语义；幂等由 DatabaseInitializer 的列存在性判断包裹。
+
+ALTER TABLE Foreshadow ADD COLUMN state TEXT NOT NULL DEFAULT 'PLANTED';
+ALTER TABLE Foreshadow ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE Foreshadow ADD COLUMN last_transition_reason TEXT;
+ALTER TABLE Foreshadow ADD COLUMN payoff_chapter_id TEXT;
+
+UPDATE Foreshadow SET state = CASE WHEN resolved = 1 THEN 'RESOLVED' ELSE 'PLANTED' END;
+UPDATE Foreshadow SET updated_at = created_at WHERE updated_at = 0;

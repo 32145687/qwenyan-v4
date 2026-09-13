@@ -14,7 +14,10 @@ import com.qianyan.model.story.Foreshadow
 import com.qianyan.model.timeline.Event
 import com.qianyan.model.timeline.TimelineEntry
 import com.qianyan.model.world.WorldRule
+import com.qianyan.model.story.ForeshadowLifecycleRules
+import com.qianyan.model.story.ForeshadowLifecycleState
 import com.qianyan.storage.db.QianyanDb
+import kotlinx.datetime.Instant
 
 /** [StoryStateRepository] 的 SQLDelight + SQLite JDBC 实现（P12.1.1 · Story State Persistence）。 */
 class SqliteStoryStateRepository(private val db: QianyanDb) : StoryStateRepository {
@@ -135,6 +138,10 @@ class SqliteStoryStateRepository(private val db: QianyanDb) : StoryStateReposito
             chapter_id = row.chapter_id,
             content = row.content,
             resolved = row.resolved,
+            state = row.state,
+            updated_at = row.updated_at,
+            last_transition_reason = row.last_transition_reason,
+            payoff_chapter_id = row.payoff_chapter_id,
             created_at = row.created_at,
         )
     }
@@ -164,4 +171,30 @@ class SqliteStoryStateRepository(private val db: QianyanDb) : StoryStateReposito
     override fun getForeshadowById(foreshadowId: ForeshadowingId): Foreshadow? =
         db.storyStateQueries.getForeshadowById(foreshadowId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbForeshadow(it) }
+
+    /** P13 LCL-C：条件状态迁移（WHERE id AND expected_state）；返回 affected（0/1）。 */
+    override fun transitionForeshadowState(
+        foreshadowId: ForeshadowingId,
+        expectedState: ForeshadowLifecycleState,
+        targetState: ForeshadowLifecycleState,
+        reason: String?,
+        occurredAt: Instant,
+        payoffChapterId: com.qianyan.model.ChapterId?,
+    ): Int {
+        var affected = 0
+        // 单事务内执行条件 UPDATE + `changes()`，保证"影响行数"与 UPDATE 原子一致。
+        db.transaction {
+            db.storyStateQueries.transitionForeshadowState(
+                foreshadow_id = foreshadowId.value,
+                expected_state = expectedState.name,
+                state = targetState.name,
+                updated_at = occurredAt.toEpochMilliseconds(),
+                last_transition_reason = reason,
+                payoff_chapter_id = payoffChapterId?.value,
+                resolved = ForeshadowLifecycleRules.resolvedOf(targetState),
+            )
+            affected = db.storyStateQueries.lastAffectedRows().executeAsOne().toInt()
+        }
+        return affected
+    }
 }

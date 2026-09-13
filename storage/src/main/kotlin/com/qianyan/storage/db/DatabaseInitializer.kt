@@ -45,6 +45,9 @@ object DatabaseInitializer {
     /** v6（P12.2 Workflow）→ v7（P13 LCL-A：NarrativeState + NarrativeDelta）迁移起点。 */
     private const val V6 = 6L
 
+    /** v7（P13 LCL-A）→ v8（P13 LCL-C：Foreshadow 生命周期加列）迁移起点。 */
+    private const val V7 = 7L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -130,6 +133,12 @@ object DatabaseInitializer {
                 QianyanDb.Schema.migrate(driver, V6, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
+
+            !columnExists(driver, "Foreshadow", "state") -> withTransaction(driver) {
+                // v7 → v8：Foreshadow 加生命周期列 + 回填（P13 LCL-C）。
+                QianyanDb.Schema.migrate(driver, V7, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
         }
         GUARD_DDL.forEach { driver.execute(null, it, 0) }
     }
@@ -146,6 +155,15 @@ object DatabaseInitializer {
         driver.executeQuery(
             null,
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='$table' LIMIT 1",
+            { cursor -> QueryResult.Value(cursor.next().value) },
+            0,
+        ).value
+
+    /** 判断某表某列是否存在（用于"既有表加列"迁移分支判定，如 Foreshadow.state）。 */
+    private fun columnExists(driver: SqlDriver, table: String, column: String): Boolean =
+        driver.executeQuery(
+            null,
+            "SELECT 1 FROM pragma_table_info('$table') WHERE name='$column' LIMIT 1",
             { cursor -> QueryResult.Value(cursor.next().value) },
             0,
         ).value

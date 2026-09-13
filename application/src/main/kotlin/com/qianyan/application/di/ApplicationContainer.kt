@@ -23,6 +23,7 @@ import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.story.StoryStateVariantUseCases
+import com.qianyan.application.usecase.story.ForeshadowLifecycleUseCases
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.application.usecase.writing.confirmation.ConfirmationExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
@@ -175,6 +176,10 @@ class ApplicationContainer(
     /** P12.3 Story State Variant 修改入口（ADD / OVERRIDE / REMOVE / INHERIT；Original 拒绝；Variant 隔离）。 */
     val storyStateVariant: StoryStateVariantUseCases
         get() = StoryStateVariantUseCases(storyStateRepository, novelRepository, errorMapper)
+
+    /** P13 LCL-C Foreshadow 生命周期（Variant-only 状态机迁移；不触碰 NarrativeState）。 */
+    val foreshadowLifecycle: ForeshadowLifecycleUseCases
+        get() = ForeshadowLifecycleUseCases(storyStateRepository, errorMapper)
 
     /** P13 LCL-A Narrative State 叙事账本（append / project / get；Original 只读；无 LLM）。 */
     val narrativeState: NarrativeStateUseCases

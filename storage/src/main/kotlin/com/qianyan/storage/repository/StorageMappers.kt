@@ -80,6 +80,8 @@ import com.qianyan.model.vocabulary.VocabularyEntryType
 import com.qianyan.model.vocabulary.VocabularyRule as DomainVocabularyRule
 import com.qianyan.model.vocabulary.VocabularyScopeLevel
 import com.qianyan.model.story.Chapter as DomainChapter
+import com.qianyan.model.story.ForeshadowLifecycleRules
+import com.qianyan.model.story.ForeshadowLifecycleState
 import com.qianyan.model.writing.Draft as DomainDraft
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.storage.db.Chapter as DbChapter
@@ -652,7 +654,11 @@ internal object StorageMappers {
         scope = f.scope.name,
         chapter_id = f.chapterId?.value,
         content = f.content,
-        resolved = f.resolved,
+        resolved = ForeshadowLifecycleRules.resolvedOf(f.state),
+        state = f.state.name,
+        updated_at = f.updatedAt.toEpochMillis(),
+        last_transition_reason = f.lastTransitionReason,
+        payoff_chapter_id = f.payoffChapterId?.value,
         created_at = f.createdAt.toEpochMillis(),
     )
 
@@ -663,7 +669,10 @@ internal object StorageMappers {
         scope = VariantScope.valueOf(row.scope),
         chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
         content = row.content,
-        resolved = row.resolved,
+        state = ForeshadowLifecycleState.valueOf(row.state),
+        updatedAt = epochMillisToInstant(row.updated_at),
+        lastTransitionReason = row.last_transition_reason,
+        payoffChapterId = row.payoff_chapter_id?.let { com.qianyan.model.ChapterId(it) },
         createdAt = epochMillisToInstant(row.created_at),
     )
 
