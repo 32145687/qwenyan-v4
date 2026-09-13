@@ -48,6 +48,9 @@ object DatabaseInitializer {
     /** v7（P13 LCL-A）→ v8（P13 LCL-C：Foreshadow 生命周期加列）迁移起点。 */
     private const val V7 = 7L
 
+    /** v8（P13 LCL-C）→ v9（P13 LCL-D：Reveal 表 + scope 索引）迁移起点。 */
+    private const val V8 = 8L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -137,6 +140,12 @@ object DatabaseInitializer {
             !columnExists(driver, "Foreshadow", "state") -> withTransaction(driver) {
                 // v7 → v8：Foreshadow 加生命周期列 + 回填（P13 LCL-C）。
                 QianyanDb.Schema.migrate(driver, V7, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "Reveal") -> withTransaction(driver) {
+                // v8 → v9：新增 Reveal 表 + scope 索引（P13 LCL-D）。
+                QianyanDb.Schema.migrate(driver, V8, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

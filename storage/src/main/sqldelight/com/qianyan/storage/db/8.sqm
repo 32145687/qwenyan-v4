@@ -1,0 +1,22 @@
+-- P13 LCL-D · Schema v9（8.sqm：v8 → v9）
+-- 新增 Reveal 表（向读者揭示信息的 Story State fact；READER only，无 revealedTo）。
+-- 为 Event / Foreshadow / TimelineEntry 增加 (novel_id, variant_id) scope 索引（D1 窗口读取）。
+-- 只增不改删、不改已有数据；幂等由 DatabaseInitializer 的表/索引存在性判定包裹。
+
+CREATE TABLE IF NOT EXISTS Reveal (
+    reveal_id      TEXT NOT NULL PRIMARY KEY,
+    novel_id       TEXT NOT NULL,
+    variant_id     TEXT,
+    scope          TEXT NOT NULL,
+    chapter_id     TEXT,
+    information_id TEXT NOT NULL,
+    occurred_at    INTEGER NOT NULL,
+    reason         TEXT,
+    created_at     INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reveal_scope ON Reveal(novel_id, variant_id, occurred_at, reveal_id);
+
+CREATE INDEX IF NOT EXISTS idx_event_scope ON Event(novel_id, variant_id);
+CREATE INDEX IF NOT EXISTS idx_foreshadow_scope ON Foreshadow(novel_id, variant_id);
+CREATE INDEX IF NOT EXISTS idx_timeline_scope ON TimelineEntry(novel_id, variant_id);

@@ -101,6 +101,8 @@ class ForeshadowStateMigrationTest {
             FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
         )
         """,
+        """CREATE TABLE Event (event_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 5, when_json TEXT, who TEXT NOT NULL DEFAULT '[]', chapter_id TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))""",
+        """CREATE TABLE TimelineEntry (timeline_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, position TEXT NOT NULL, event_id TEXT, description TEXT NOT NULL DEFAULT '', chapter_id TEXT, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))""",
         """
         CREATE TABLE Workflow (
             workflow_id         TEXT NOT NULL PRIMARY KEY,
@@ -202,17 +204,21 @@ class ForeshadowStateMigrationTest {
 
             val h = QianyanDbFactory.open(url)
             val driver = h.driver as JdbcSqliteDriver
-            DatabaseInitializer.initializeDatabase(driver)
+            try {
+                DatabaseInitializer.initializeDatabase(driver)
 
-            assertTrue(columnExists(driver, "Foreshadow", "state"), "migration 后应有 state 列")
-            assertTrue(columnExists(driver, "Foreshadow", "payoff_chapter_id"), "migration 后应有 payoff_chapter_id 列")
-            assertEquals(8L, userVersion(driver), "user_version 应为 8（P13 LCL-C Schema v8）")
-            assertEquals("RESOLVED", queryState(driver, "f-r"), "resolved=1 → RESOLVED")
-            assertEquals("PLANTED", queryState(driver, "f-p"), "resolved=0 → PLANTED")
+                assertTrue(columnExists(driver, "Foreshadow", "state"), "migration 后应有 state 列")
+                assertTrue(columnExists(driver, "Foreshadow", "payoff_chapter_id"), "migration 后应有 payoff_chapter_id 列")
+                assertEquals(9L, userVersion(driver), "user_version 应为 9（P13 LCL-D Schema v9）")
+                assertEquals("RESOLVED", queryState(driver, "f-r"), "resolved=1 → RESOLVED")
+                assertEquals("PLANTED", queryState(driver, "f-p"), "resolved=0 → PLANTED")
 
-            // 幂等：重复初始化不报错
-            DatabaseInitializer.initializeDatabase(driver)
-            DatabaseInitializer.initializeDatabase(driver)
+                // 幂等：重复初始化不报错
+                DatabaseInitializer.initializeDatabase(driver)
+                DatabaseInitializer.initializeDatabase(driver)
+            } finally {
+                driver.getConnection().close()
+            }
         } finally {
             java.nio.file.Files.deleteIfExists(file)
         }

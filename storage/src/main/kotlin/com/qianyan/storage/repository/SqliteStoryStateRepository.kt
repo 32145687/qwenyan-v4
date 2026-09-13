@@ -11,6 +11,7 @@ import com.qianyan.model.WorldRuleId
 import com.qianyan.model.character.Character
 import com.qianyan.model.character.CharacterState
 import com.qianyan.model.story.Foreshadow
+import com.qianyan.model.story.Reveal
 import com.qianyan.model.timeline.Event
 import com.qianyan.model.timeline.TimelineEntry
 import com.qianyan.model.world.WorldRule
@@ -171,6 +172,31 @@ class SqliteStoryStateRepository(private val db: QianyanDb) : StoryStateReposito
     override fun getForeshadowById(foreshadowId: ForeshadowingId): Foreshadow? =
         db.storyStateQueries.getForeshadowById(foreshadowId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbForeshadow(it) }
+
+    /* ---- P13 LCL-D：Reveal ---- */
+
+    override fun saveReveal(reveal: Reveal) {
+        val row = StorageMappers.domainReveal(reveal)
+        db.storyStateQueries.insertReveal(
+            reveal_id = row.reveal_id,
+            novel_id = row.novel_id,
+            variant_id = row.variant_id,
+            scope = row.scope,
+            chapter_id = row.chapter_id,
+            information_id = row.information_id,
+            occurred_at = row.occurred_at,
+            reason = row.reason,
+            created_at = row.created_at,
+        )
+    }
+
+    override fun getRevealById(revealId: com.qianyan.model.RevealId): Reveal? =
+        db.storyStateQueries.getRevealById(revealId.value).executeAsOneOrNull()
+            ?.let { StorageMappers.dbReveal(it) }
+
+    override fun listReveals(novelId: NovelId, variantId: VariantId?): List<Reveal> =
+        db.storyStateQueries.listRevealsByScope(novelId.value, variantId?.value).executeAsList()
+            .map { StorageMappers.dbReveal(it) }
 
     /** P13 LCL-C：条件状态迁移（WHERE id AND expected_state）；返回 affected（0/1）。 */
     override fun transitionForeshadowState(

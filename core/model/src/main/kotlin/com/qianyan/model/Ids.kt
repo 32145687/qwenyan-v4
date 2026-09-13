@@ -134,6 +134,11 @@ value class NarrativeStateId(val value: String)
 @Serializable
 value class NarrativeDeltaId(val value: String)
 
+/** P13 LCL-D Reveal（向读者揭示信息）的运行时事实 ID。 */
+@JvmInline
+@Serializable
+value class RevealId(val value: String)
+
 @JvmInline
 @Serializable
 value class VocabularyId(val value: String)

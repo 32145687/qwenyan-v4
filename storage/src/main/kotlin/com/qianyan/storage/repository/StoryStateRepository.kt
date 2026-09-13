@@ -4,6 +4,7 @@ import com.qianyan.model.CharacterId
 import com.qianyan.model.EventId
 import com.qianyan.model.ForeshadowingId
 import com.qianyan.model.NovelId
+import com.qianyan.model.RevealId
 import com.qianyan.model.StateId
 import com.qianyan.model.TimelineEntryId
 import com.qianyan.model.VariantId
@@ -11,6 +12,7 @@ import com.qianyan.model.WorldRuleId
 import com.qianyan.model.character.Character
 import com.qianyan.model.character.CharacterState
 import com.qianyan.model.story.Foreshadow
+import com.qianyan.model.story.Reveal
 import com.qianyan.model.timeline.Event
 import com.qianyan.model.timeline.TimelineEntry
 import com.qianyan.model.world.WorldRule
@@ -44,6 +46,11 @@ interface StoryStateRepository {
     fun saveEvent(event: Event)
     fun saveTimelineEntry(entry: TimelineEntry)
     fun saveForeshadow(foreshadow: Foreshadow)
+
+    /* ---- P13 LCL-D：Reveal（Reader-only Story State fact） ---- */
+    fun saveReveal(reveal: Reveal)
+    fun getRevealById(revealId: RevealId): Reveal?
+    fun listReveals(novelId: NovelId, variantId: VariantId?): List<Reveal>
 
     /* ---- 按主键读取（未命中返回 null） ---- */
     fun getCharacterById(characterId: CharacterId): Character?

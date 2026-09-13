@@ -91,9 +91,25 @@ CREATE TABLE Foreshadow (
     FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
 );
 
--- ============================================================
--- Character
--- ============================================================
+-- P13 LCL-D：Reveal = 向读者揭示信息的运行时 Story State fact（READER only；无 revealedTo）
+CREATE TABLE Reveal (
+    reveal_id      TEXT NOT NULL PRIMARY KEY,
+    novel_id       TEXT NOT NULL,
+    variant_id     TEXT,
+    scope          TEXT NOT NULL,           -- VariantScope 枚举名
+    chapter_id     TEXT,
+    information_id TEXT NOT NULL,           -- 被揭示信息/知识事实的引用（不搭建 Knowledge System）
+    occurred_at    INTEGER NOT NULL,        -- epoch 毫秒
+    reason         TEXT,
+    created_at     INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+CREATE INDEX IF NOT EXISTS idx_reveal_scope ON Reveal(novel_id, variant_id, occurred_at, reveal_id);
+
+-- P13 LCL-D (D1)：Event / Foreshadow / TimelineEntry 的 (novel_id, variant_id) scope 索引
+CREATE INDEX IF NOT EXISTS idx_event_scope ON Event(novel_id, variant_id);
+CREATE INDEX IF NOT EXISTS idx_foreshadow_scope ON Foreshadow(novel_id, variant_id);
+CREATE INDEX IF NOT EXISTS idx_timeline_scope ON TimelineEntry(novel_id, variant_id);
 insertCharacter:
 INSERT OR REPLACE INTO Character(character_id, novel_id, variant_id, scope, name, personality, created_at, updated_at)
 VALUES (:character_id, :novel_id, :variant_id, :scope, :name, :personality, :created_at, :updated_at);
@@ -168,6 +184,19 @@ SELECT * FROM Foreshadow WHERE foreshadow_id = :foreshadow_id;
 
 listForeshadowsByScope:
 SELECT * FROM Foreshadow WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY created_at ASC, foreshadow_id ASC;
+
+-- ============================================================
+-- Reveal（P13 LCL-D；READER only）
+-- ============================================================
+insertReveal:
+INSERT OR REPLACE INTO Reveal(reveal_id, novel_id, variant_id, scope, chapter_id, information_id, occurred_at, reason, created_at)
+VALUES (:reveal_id, :novel_id, :variant_id, :scope, :chapter_id, :information_id, :occurred_at, :reason, :created_at);
+
+getRevealById:
+SELECT * FROM Reveal WHERE reveal_id = :reveal_id;
+
+listRevealsByScope:
+SELECT * FROM Reveal WHERE novel_id = :novel_id AND variant_id IS :variant_id ORDER BY occurred_at ASC, reveal_id ASC;
 
 -- P13 LCL-C：条件状态迁移（仅当当前 state == expected_state 时更新；并发/状态不匹配即 affect 0 行）
 transitionForeshadowState:

@@ -24,6 +24,7 @@ import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAg
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.story.StoryStateVariantUseCases
 import com.qianyan.application.usecase.story.ForeshadowLifecycleUseCases
+import com.qianyan.application.usecase.story.RevealUseCases
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.application.usecase.writing.confirmation.ConfirmationExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
@@ -34,6 +35,7 @@ import com.qianyan.application.usecase.writing.revision.RevisionAgent
 import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
 import com.qianyan.application.usecase.lcl.ChapterContextCompileUseCases
 import com.qianyan.application.usecase.lcl.NarrativeStateUseCases
+import com.qianyan.application.usecase.lcl.RollingHorizonUseCases
 import com.qianyan.engine.analysis.AnalysisInputBuilder
 import com.qianyan.engine.txt.TxtPipeline
 import com.qianyan.provider.LLMGateway
@@ -180,6 +182,14 @@ class ApplicationContainer(
     /** P13 LCL-C Foreshadow 生命周期（Variant-only 状态机迁移；不触碰 NarrativeState）。 */
     val foreshadowLifecycle: ForeshadowLifecycleUseCases
         get() = ForeshadowLifecycleUseCases(storyStateRepository, errorMapper)
+
+    /** P13 LCL-D Reveal（Reader-only Story State fact；Variant-only；不触碰 NarrativeState/ContextPack）。 */
+    val reveals: RevealUseCases
+        get() = RevealUseCases(storyStateRepository, errorMapper)
+
+    /** P13 LCL-D Rolling Horizon（bounded 候选投影 + Task Checkpoint 承载；复用 WorkflowHumanGate 语义）。 */
+    val rollingHorizon: RollingHorizonUseCases
+        get() = RollingHorizonUseCases(tasks, errorMapper)
 
     /** P13 LCL-A Narrative State 叙事账本（append / project / get；Original 只读；无 LLM）。 */
     val narrativeState: NarrativeStateUseCases

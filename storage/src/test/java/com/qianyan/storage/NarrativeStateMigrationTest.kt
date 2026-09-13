@@ -105,6 +105,8 @@ class NarrativeStateMigrationTest {
             FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
         )
         """,
+        """CREATE TABLE Event (event_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 5, when_json TEXT, who TEXT NOT NULL DEFAULT '[]', chapter_id TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))""",
+        """CREATE TABLE TimelineEntry (timeline_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, position TEXT NOT NULL, event_id TEXT, description TEXT NOT NULL DEFAULT '', chapter_id TEXT, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))""",
         """
         CREATE TABLE Workflow (
             workflow_id         TEXT NOT NULL PRIMARY KEY,
@@ -161,16 +163,19 @@ class NarrativeStateMigrationTest {
             // 2) 重新打开：DatabaseInitializer 检测到旧 v6 库 → 应用 6.sqm 迁移到 v7
             val h = QianyanDbFactory.open(url)
             val driver = h.driver as JdbcSqliteDriver
+            try {
+                // 3) NarrativeState / NarrativeDelta 已创建，版本同步为 7
+                assertTrue(tableExists(driver, "NarrativeState"), "migration 后应存在 NarrativeState（P13 LCL-A）")
+                assertTrue(tableExists(driver, "NarrativeDelta"), "migration 后应存在 NarrativeDelta（P13 LCL-A）")
+                assertEquals(9L, userVersion(driver), "migration 后 user_version 应为 9（P13 LCL-D Schema v9）")
 
-            // 3) NarrativeState / NarrativeDelta 已创建，版本同步为 7
-            assertTrue(tableExists(driver, "NarrativeState"), "migration 后应存在 NarrativeState（P13 LCL-A）")
-            assertTrue(tableExists(driver, "NarrativeDelta"), "migration 后应存在 NarrativeDelta（P13 LCL-A）")
-            assertEquals(8L, userVersion(driver), "migration 后 user_version 应为 8（P13 LCL-C Schema v8）")
-
-            // 4) 重复执行初始化幂等安全（不报"表已存在"）
-            DatabaseInitializer.initializeDatabase(driver)
-            DatabaseInitializer.initializeDatabase(driver)
-            assertTrue(tableExists(driver, "NarrativeState"), "重复初始化后 NarrativeState 表仍存在")
+                // 4) 重复执行初始化幂等安全（不报"表已存在"）
+                DatabaseInitializer.initializeDatabase(driver)
+                DatabaseInitializer.initializeDatabase(driver)
+                assertTrue(tableExists(driver, "NarrativeState"), "重复初始化后 NarrativeState 表仍存在")
+            } finally {
+                driver.getConnection().close()
+            }
         } finally {
             java.nio.file.Files.deleteIfExists(file)
         }

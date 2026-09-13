@@ -26,6 +26,7 @@ import com.qianyan.model.ForeshadowingId
 import com.qianyan.model.NarrativeDeltaId
 import com.qianyan.model.NarrativeStateId
 import com.qianyan.model.PacingProfile
+import com.qianyan.model.RevealId
 import com.qianyan.model.StoryConflictId
 import com.qianyan.model.StateId
 import com.qianyan.model.TimelineEntryId
@@ -82,6 +83,7 @@ import com.qianyan.model.vocabulary.VocabularyScopeLevel
 import com.qianyan.model.story.Chapter as DomainChapter
 import com.qianyan.model.story.ForeshadowLifecycleRules
 import com.qianyan.model.story.ForeshadowLifecycleState
+import com.qianyan.model.story.Reveal as DomainReveal
 import com.qianyan.model.writing.Draft as DomainDraft
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.storage.db.Chapter as DbChapter
@@ -95,6 +97,7 @@ import com.qianyan.storage.db.TimelineEntry as DbTimelineEntry
 import com.qianyan.storage.db.WorldRule as DbWorldRule
 import com.qianyan.storage.db.NarrativeDelta as DbNarrativeDelta
 import com.qianyan.storage.db.NarrativeState as DbNarrativeState
+import com.qianyan.storage.db.Reveal as DbReveal
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -673,6 +676,32 @@ internal object StorageMappers {
         updatedAt = epochMillisToInstant(row.updated_at),
         lastTransitionReason = row.last_transition_reason,
         payoffChapterId = row.payoff_chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    /* ---------------- Reveal (P13 LCL-D) ---------------- */
+
+    fun domainReveal(r: DomainReveal): DbReveal = DbReveal(
+        reveal_id = r.revealId.value,
+        novel_id = r.novelId.value,
+        variant_id = r.variantId?.value,
+        scope = r.scope.name,
+        chapter_id = r.chapterId?.value,
+        information_id = r.informationId,
+        occurred_at = r.occurredAt.toEpochMillis(),
+        reason = r.reason,
+        created_at = r.createdAt.toEpochMillis(),
+    )
+
+    fun dbReveal(row: DbReveal): DomainReveal = DomainReveal(
+        revealId = RevealId(row.reveal_id),
+        novelId = NovelId(row.novel_id),
+        variantId = row.variant_id?.let { VariantId(it) },
+        scope = VariantScope.valueOf(row.scope),
+        chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        informationId = row.information_id,
+        occurredAt = epochMillisToInstant(row.occurred_at),
+        reason = row.reason,
         createdAt = epochMillisToInstant(row.created_at),
     )
 
