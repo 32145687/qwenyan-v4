@@ -139,6 +139,11 @@ value class NarrativeDeltaId(val value: String)
 @Serializable
 value class RevealId(val value: String)
 
+/** P14-A Genre（受控故事类型）的稳定 ID。 */
+@JvmInline
+@Serializable
+value class GenreId(val value: String)
+
 @JvmInline
 @Serializable
 value class VocabularyId(val value: String)

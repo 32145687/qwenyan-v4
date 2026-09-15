@@ -5,6 +5,7 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.analysis.AnalysisUseCases
 import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
+import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
@@ -105,6 +106,9 @@ class ApplicationContainer(
     val errorMapper: ErrorMapper = ErrorMapper
 
     val novels: NovelUseCases get() = NovelUseCases(novelRepository, errorMapper)
+
+    /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
+    val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
     val overrides: OverrideUseCases get() = OverrideUseCases(novelRepository, errorMapper)
     val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, errorMapper)
     val memories: MemoryUseCases get() = MemoryUseCases(memoryRepository, errorMapper)
