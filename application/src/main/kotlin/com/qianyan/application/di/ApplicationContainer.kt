@@ -16,6 +16,7 @@ import com.qianyan.application.usecase.chapter.ChapterWritingUseCases
 import com.qianyan.application.usecase.workflow.ChapterWorkflowFacade
 import com.qianyan.application.usecase.workflow.WorkflowOrchestrator
 import com.qianyan.application.usecase.workflow.WorkflowService
+import com.qianyan.application.usecase.foundation.StoryFoundationDecisionUseCases
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
@@ -64,6 +65,8 @@ import com.qianyan.storage.repository.SqliteStoryStateRepository
 import com.qianyan.storage.repository.SqliteVocabularyRepository
 import com.qianyan.storage.repository.SqliteWorkflowRepository
 import com.qianyan.storage.repository.StoryStateRepository
+import com.qianyan.storage.repository.StoryFoundationRepository
+import com.qianyan.storage.repository.SqliteStoryFoundationRepository
 import com.qianyan.storage.repository.TaskRepository
 import com.qianyan.storage.repository.TxtRepository
 import com.qianyan.storage.repository.VocabularyRepository
@@ -98,6 +101,7 @@ class ApplicationContainer(
     private val storyStateRepository: StoryStateRepository,
     val workflowRepository: WorkflowRepository,
     private val narrativeStateRepository: NarrativeStateRepository,
+    val storyFoundationRepository: StoryFoundationRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -203,6 +207,17 @@ class ApplicationContainer(
     val chapterContextPack: ChapterContextCompileUseCases
         get() = ChapterContextCompileUseCases(storyWorldContextResolver, narrativeState, chapterRepository, errorMapper)
 
+    /** P14-F.3 Story Foundation Confirmation Flow（Proposal→Gate→Confirm→Confirmed；既有 PLANNING 前置确认，Plan A）。 */
+    val foundationDecisions: StoryFoundationDecisionUseCases
+        get() = StoryFoundationDecisionUseCases(
+            workflowRepository = workflowRepository,
+            taskManager = tasks,
+            taskRepository = taskRepository,
+            storyFoundationRepository = storyFoundationRepository,
+            workflowService = workflowService,
+            errorMapper = errorMapper,
+        )
+
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文）。 */
     val planningContextAssembly: PlanningContextAssembly
         get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, errorMapper)
@@ -283,6 +298,7 @@ class ApplicationContainer(
                 storyStateRepository = SqliteStoryStateRepository(db),
                 workflowRepository = SqliteWorkflowRepository(db),
                 narrativeStateRepository = SqliteNarrativeStateRepository(db),
+                storyFoundationRepository = SqliteStoryFoundationRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )
