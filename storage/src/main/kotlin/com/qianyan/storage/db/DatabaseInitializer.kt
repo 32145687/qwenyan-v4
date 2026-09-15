@@ -61,14 +61,12 @@ object DatabaseInitializer {
             SELECT RAISE(ABORT, 'Original Novel is immutable');
         END;
         """.trimIndent(),
-        """
-        CREATE TRIGGER IF NOT EXISTS novel_original_delete_protect
-        BEFORE DELETE ON Novel
-        WHEN OLD.scope = 'ORIGINAL'
-        BEGIN
-            SELECT RAISE(ABORT, 'Original Novel is immutable');
-        END;
-        """.trimIndent(),
+        // P2.4 原有的 `novel_original_delete_protect`（禁止 DELETE Original）已于 2026-09-15 移除：
+        // 用户需要能真正删除作品。删除保护不再由数据库承担，改由上层流程保证安全
+        // （桌面端删除前会自动把作品正文备份到 deleted-backups/，见 app/desktop 的 DesktopNovelDeletion）。
+        // 注意：`CREATE TRIGGER IF NOT EXISTS` 不会移除既有库里的旧触发器，故此处显式 DROP（幂等）。
+        // Original 的**改写**保护仍然保留（见上方 update 触发器）。
+        "DROP TRIGGER IF EXISTS novel_original_delete_protect",
         // 禁止 "Variant → Variant"：base 必须以 scope=ORIGINAL 的 Novel 为基座。
         // base 缺失时子查询返回 NULL，`NULL IS NOT 'ORIGINAL'` 亦为真，同样被拦截。
         """
