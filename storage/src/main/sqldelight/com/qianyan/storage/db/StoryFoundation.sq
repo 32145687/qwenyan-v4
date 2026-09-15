@@ -1,0 +1,63 @@
+-- Qianyan Storage · Schema v10（P14-F.2 · Story Foundation Persistence）
+-- StoryFoundation = 用户确认后的本书级故事基础（Novel-level；Original 真源；不进入 Story State）。
+-- FoundationOverride = Variant 相对 Original StoryFoundation 的差异（null = 继承，非 null = 覆盖）。
+-- 约定（与既有一致）：
+--   - ID 一律 TEXT(UUID)，时间 INTEGER(epoch ms)，枚举 TEXT(name)；
+--   - 嵌套对象/列表用 JSON TEXT（kotlinx.serialization），不引入第二套序列化；
+--   - Foundation/Override 均独立于 P13 六类 Story State 与 EntityOverride。
+
+CREATE TABLE StoryFoundation (
+    novel_id       TEXT NOT NULL PRIMARY KEY,
+    base_novel_id  TEXT NOT NULL,
+    scope          TEXT NOT NULL,             -- VariantScope.ORIGINAL
+    version        INTEGER NOT NULL DEFAULT 0, -- 乐观并发/版本游标
+    genre          TEXT NOT NULL DEFAULT '[]', -- JSON List<GenreId>
+    direction      TEXT NOT NULL DEFAULT '{}', -- JSON StoryDirection
+    audience       TEXT NOT NULL DEFAULT '{}', -- JSON NarrativeProfile
+    policy         TEXT NOT NULL DEFAULT '{}', -- JSON WritingPolicy
+    created_at     INTEGER NOT NULL,
+    updated_at     INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id) ON DELETE CASCADE
+);
+
+CREATE TABLE FoundationOverride (
+    variant_id     TEXT NOT NULL PRIMARY KEY,
+    genre          TEXT,                        -- nullable：NULL = 继承 Original
+    direction      TEXT,
+    audience       TEXT,
+    policy         TEXT,
+    updated_at     INTEGER NOT NULL,
+    FOREIGN KEY (variant_id) REFERENCES NovelVariant(variant_id) ON DELETE CASCADE
+);
+
+-- ============================================================
+-- StoryFoundation
+-- ============================================================
+upsertStoryFoundation:
+INSERT OR REPLACE INTO StoryFoundation(novel_id, base_novel_id, scope, version, genre, direction, audience, policy, created_at, updated_at)
+VALUES (:novel_id, :base_novel_id, :scope, :version, :genre, :direction, :audience, :policy, :created_at, :updated_at);
+
+getStoryFoundationByNovelId:
+SELECT * FROM StoryFoundation WHERE novel_id = :novel_id LIMIT 1;
+
+existsStoryFoundation:
+SELECT COUNT(*) FROM StoryFoundation WHERE novel_id = :novel_id;
+
+deleteStoryFoundation:
+DELETE FROM StoryFoundation WHERE novel_id = :novel_id;
+
+-- ============================================================
+-- FoundationOverride
+-- ============================================================
+upsertFoundationOverride:
+INSERT OR REPLACE INTO FoundationOverride(variant_id, genre, direction, audience, policy, updated_at)
+VALUES (:variant_id, :genre, :direction, :audience, :policy, :updated_at);
+
+getFoundationOverrideByVariantId:
+SELECT * FROM FoundationOverride WHERE variant_id = :variant_id LIMIT 1;
+
+existsFoundationOverride:
+SELECT COUNT(*) FROM FoundationOverride WHERE variant_id = :variant_id;
+
+deleteFoundationOverride:
+DELETE FROM FoundationOverride WHERE variant_id = :variant_id;

@@ -23,6 +23,7 @@ import com.qianyan.model.VocabularyRuleId
 import com.qianyan.model.CharacterId
 import com.qianyan.model.EventId
 import com.qianyan.model.ForeshadowingId
+import com.qianyan.model.GenreId
 import com.qianyan.model.NarrativeDeltaId
 import com.qianyan.model.NarrativeStateId
 import com.qianyan.model.PacingProfile
@@ -51,6 +52,11 @@ import com.qianyan.model.lcl.NarrativeState as DomainNarrativeState
 import com.qianyan.model.lcl.NarrativeStateFold
 import com.qianyan.model.lcl.OpenThread
 import com.qianyan.model.lcl.RelationshipDelta
+import com.qianyan.model.foundation.FoundationOverride as DomainFoundationOverride
+import com.qianyan.model.foundation.NarrativeProfile
+import com.qianyan.model.foundation.StoryDirection
+import com.qianyan.model.foundation.StoryFoundation as DomainStoryFoundation
+import com.qianyan.model.foundation.WritingPolicy
 import com.qianyan.model.core.EntityOverride
 import com.qianyan.model.core.Novel as DomainNovel
 import com.qianyan.model.core.NovelVariant as DomainNovelVariant
@@ -98,6 +104,8 @@ import com.qianyan.storage.db.WorldRule as DbWorldRule
 import com.qianyan.storage.db.NarrativeDelta as DbNarrativeDelta
 import com.qianyan.storage.db.NarrativeState as DbNarrativeState
 import com.qianyan.storage.db.Reveal as DbReveal
+import com.qianyan.storage.db.StoryFoundation as DbStoryFoundation
+import com.qianyan.storage.db.FoundationOverride as DbFoundationOverride
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -780,5 +788,51 @@ internal object StorageMappers {
         pacing = row.current_pacing?.let { json.decodeFromString(PacingProfile.serializer(), it) },
         summary = row.summary,
         createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    /* ---------------- StoryFoundation (P14-F.2) ---------------- */
+
+    fun domainStoryFoundation(f: DomainStoryFoundation): DbStoryFoundation = DbStoryFoundation(
+        novel_id = f.novelId.value,
+        base_novel_id = f.baseNovelId.value,
+        scope = f.scope.name,
+        version = f.version,
+        genre = json.encodeToString(ListSerializer(GenreId.serializer()), f.genre),
+        direction = json.encodeToString(StoryDirection.serializer(), f.direction),
+        audience = json.encodeToString(NarrativeProfile.serializer(), f.audience),
+        policy = json.encodeToString(WritingPolicy.serializer(), f.policy),
+        created_at = f.createdAt.toEpochMillis(),
+        updated_at = f.updatedAt.toEpochMillis(),
+    )
+
+    fun dbStoryFoundation(row: DbStoryFoundation): DomainStoryFoundation = DomainStoryFoundation(
+        novelId = NovelId(row.novel_id),
+        baseNovelId = BaseNovelId(row.base_novel_id),
+        scope = VariantScope.valueOf(row.scope),
+        version = row.version,
+        genre = json.decodeFromString(ListSerializer(GenreId.serializer()), row.genre),
+        direction = json.decodeFromString(StoryDirection.serializer(), row.direction),
+        audience = json.decodeFromString(NarrativeProfile.serializer(), row.audience),
+        policy = json.decodeFromString(WritingPolicy.serializer(), row.policy),
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainFoundationOverride(o: DomainFoundationOverride): DbFoundationOverride = DbFoundationOverride(
+        variant_id = o.variantId.value,
+        genre = o.genre?.let { json.encodeToString(ListSerializer(GenreId.serializer()), it) },
+        direction = o.direction?.let { json.encodeToString(StoryDirection.serializer(), it) },
+        audience = o.audience?.let { json.encodeToString(NarrativeProfile.serializer(), it) },
+        policy = o.policy?.let { json.encodeToString(WritingPolicy.serializer(), it) },
+        updated_at = o.updatedAt.toEpochMillis(),
+    )
+
+    fun dbFoundationOverride(row: DbFoundationOverride): DomainFoundationOverride = DomainFoundationOverride(
+        variantId = VariantId(row.variant_id),
+        genre = row.genre?.let { json.decodeFromString(ListSerializer(GenreId.serializer()), it) },
+        direction = row.direction?.let { json.decodeFromString(StoryDirection.serializer(), it) },
+        audience = row.audience?.let { json.decodeFromString(NarrativeProfile.serializer(), it) },
+        policy = row.policy?.let { json.decodeFromString(WritingPolicy.serializer(), it) },
+        updatedAt = epochMillisToInstant(row.updated_at),
     )
 }

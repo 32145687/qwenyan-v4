@@ -51,6 +51,9 @@ object DatabaseInitializer {
     /** v8（P13 LCL-C）→ v9（P13 LCL-D：Reveal 表 + scope 索引）迁移起点。 */
     private const val V8 = 8L
 
+    /** v9（P13 LCL-D）→ v10（P14-F.2：StoryFoundation + FoundationOverride）迁移起点。 */
+    private const val V9 = 9L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -146,6 +149,12 @@ object DatabaseInitializer {
             !tableExists(driver, "Reveal") -> withTransaction(driver) {
                 // v8 → v9：新增 Reveal 表 + scope 索引（P13 LCL-D）。
                 QianyanDb.Schema.migrate(driver, V8, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "StoryFoundation") -> withTransaction(driver) {
+                // v9 → v10：新增 StoryFoundation + FoundationOverride（P14-F.2）。
+                QianyanDb.Schema.migrate(driver, V9, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }
