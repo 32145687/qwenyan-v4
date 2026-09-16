@@ -218,9 +218,9 @@ class ApplicationContainer(
             errorMapper = errorMapper,
         )
 
-    /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文）。 */
+    /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文；P14-F.4 接入已确认 Story Foundation）。 */
     val planningContextAssembly: PlanningContextAssembly
-        get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, errorMapper)
+        get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, storyFoundationRepository, errorMapper)
 
     /** P12.1.3 Continuation 来源解析/校验：解析显式 [ContinuationReference] → source Chapter + source Final Draft。 */
     val continuationResolver: ContinuationResolver

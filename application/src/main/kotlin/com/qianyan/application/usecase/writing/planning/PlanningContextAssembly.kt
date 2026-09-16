@@ -9,6 +9,7 @@ import com.qianyan.model.NovelId
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.story.ContinuationReference
 import com.qianyan.storage.repository.NovelRepository
+import com.qianyan.storage.repository.StoryFoundationRepository
 import com.qianyan.storage.repository.VocabularyRepository
 
 /**
@@ -30,6 +31,7 @@ class PlanningContextAssembly(
     private val novelRepository: NovelRepository,
     private val vocabularyRepository: VocabularyRepository,
     private val worldContextResolver: StoryWorldContextResolver,
+    private val storyFoundationRepository: StoryFoundationRepository,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -80,7 +82,18 @@ class PlanningContextAssembly(
             worldSummary = listOfNotNull(novel.title, novel.synopsis.takeIf { it.isNotBlank() }).joinToString("\n"),
         )
 
-        // 5) 组装最小投影（Character 无持久化仓储 → 空列表，见 Known Issue）
+        // 5) P14-F.4：实时读取用户已确认的 Original Story Foundation（只读投影；未确认 → null，不影响旧流程）。
+        //    只读 [StoryFoundationRepository]；不缓存、不自动创建、不改 Novel.genre / NovelVariant；不消费 FoundationOverride。
+        val confirmedFoundation = guard { storyFoundationRepository.getStoryFoundation(novel.novelId) }?.let { f ->
+            ConfirmedStoryFoundationContext(
+                confirmedGenre = f.genre,
+                direction = f.direction,
+                audience = f.audience,
+                writingPolicy = f.policy,
+            )
+        }
+
+        // 6) 组装最小投影（Character 无持久化仓储 → 空列表，见 Known Issue）
         return PlanningContext(
             request = request,
             novelId = novel.novelId,
@@ -100,6 +113,7 @@ class PlanningContextAssembly(
             continuationReference = continuationReference,
             sourceChapter = resolved?.sourceChapter,
             sourceFinalDraft = resolved?.sourceFinalDraft,
+            foundation = confirmedFoundation,
         )
     }
 }

@@ -91,6 +91,15 @@ class WriterAgent(
         if (context.variantName.isNotBlank()) appendLine("variant: ${context.variantName}")
         if (context.variantDirective.isNotBlank()) appendLine("variantDirective: ${context.variantDirective}")
 
+        // P14-F.4：用户已确认的 Story Foundation（经 PlanningContext 传递；不直读 Repository；null 时保持旧行为）
+        context.foundation?.let { f ->
+            appendLine("【已确认的故事基础 Story Foundation】")
+            if (f.confirmedGenre.isNotEmpty()) appendLine("confirmedGenre: ${f.confirmedGenre}")
+            appendLine("storyDirection: theme=${f.direction.theme}, conflict=${f.direction.conflict}, promise=${f.direction.promise}, storyType=${f.direction.storyType}")
+            appendLine("audience: pov=${f.audience.pov}, readerTone=${f.audience.readerTone}")
+            if (f.writingPolicy.rules.isNotEmpty()) appendLine("writingPolicy: ${f.writingPolicy.rules}")
+        }
+
         appendLine("【本章规划】")
         if (plan.chapterGoal.isNotBlank()) appendLine("chapterGoal: ${plan.chapterGoal}")
         if (plan.expectedEvents.isNotEmpty()) appendLine("expectedEvents: ${plan.expectedEvents}")

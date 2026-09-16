@@ -1,11 +1,15 @@
 package com.qianyan.application.usecase.writing.planning
 
 import com.qianyan.model.CharacterId
+import com.qianyan.model.GenreId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.context.StoryWorldContext
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.foundation.NarrativeProfile
+import com.qianyan.model.foundation.StoryDirection
+import com.qianyan.model.foundation.WritingPolicy
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.story.ContinuationReference
 import com.qianyan.model.writing.Draft
@@ -49,9 +53,27 @@ data class PlanningContext(
     val sourceChapter: Chapter? = null,
     /** 已解析的续篇来源最终 Draft（reference-only 运行时读取；非新持久化，不落正文）。 */
     val sourceFinalDraft: Draft? = null,
+    // ---- P14-F.4：已确认的 Story Foundation（Original-only；只读投影） ----
+    /** 用户已确认的 [com.qianyan.model.foundation.StoryFoundation] 最小只读投影；未确认时 null（可选输入，不影响旧流程）。 */
+    val foundation: ConfirmedStoryFoundationContext? = null,
 ) {
     val isOriginal: Boolean get() = scope == VariantScope.ORIGINAL
 }
+
+/**
+ * P14-F.4 · 已确认 Story Foundation 的只读投影（供 Planner / Writer Agent 消费）。
+ *
+ * 只携带当前真正需要的信息（confirmedGenre / direction / audience / policy），
+ * 不直接暴露 domain [com.qianyan.model.foundation.StoryFoundation]；
+ * 不加 P15/P16/P17 未来字段；不进入 Story State / ChapterContextPack。
+ */
+@Serializable
+data class ConfirmedStoryFoundationContext(
+    val confirmedGenre: List<GenreId> = emptyList(),
+    val direction: StoryDirection = StoryDirection(),
+    val audience: NarrativeProfile = NarrativeProfile(),
+    val writingPolicy: WritingPolicy = WritingPolicy(),
+)
 
 /** Character 最小投影（P11.2：仅收集 Planner 需要的字段）。 */
 @Serializable
