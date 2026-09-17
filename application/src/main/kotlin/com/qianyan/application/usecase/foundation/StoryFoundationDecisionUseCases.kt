@@ -29,6 +29,7 @@ import com.qianyan.storage.repository.StoryFoundationRepository
 import com.qianyan.storage.repository.TaskRepository
 import com.qianyan.storage.repository.WorkflowRepository
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -83,12 +84,17 @@ class StoryFoundationDecisionUseCases(
         return stageNext(workflow, novelId, proposal)
     }
 
-    /** MODIFY（D1=B）：总是写入新的 Proposal Revision + 新的 PENDING Gate；旧 Proposal 保留、旧 Gate 失效。 */
-    fun modifyProposal(novelId: NovelId, modified: FoundationProposal): PreparedFoundation {
+    /** MODIFY（D1=B，D-A）：总是写入新的 Proposal Revision + 新的 PENDING Gate；旧 Proposal 保留、旧 Gate 失效。
+     *  可选 [decision] 记录用户本次修改的结构化信息（sourceRevision=当前 revision；缺省时由其自动推导字段 diff）。 */
+    fun modifyProposal(novelId: NovelId, modified: FoundationProposal): PreparedFoundation =
+        modifyProposal(novelId, modified, null)
+
+    fun modifyProposal(novelId: NovelId, modified: FoundationProposal, decision: FoundationDecision?): PreparedFoundation {
         val workflow = getOrCreateFoundationWorkflow(novelId)
         val taskId = foundationTaskId(workflow)
         getOrCreateFoundationTask(taskId)
-        return stageNext(workflow, novelId, modified)
+        val storedDecision = decision ?: autoDecision(novelId, modified)
+        return stageNext(workflow, novelId, modified, storedDecision)
     }
 
     /**
@@ -192,7 +198,7 @@ class StoryFoundationDecisionUseCases(
 
     /* ---------------- 内部 ---------------- */
 
-    /** 幂等地把最新 Proposal（当前 revision）装载出来（Checkpoint 恢复，只读不重跑）。 */
+    /** 幂等地把最新 Proposal（当前 revision）+ 其 Gate + 其 Decision 装载出来（Checkpoint 恢复，只读不重跑）。 */
     fun restoreProposal(novelId: NovelId): RestoredFoundation {
         val workflow = getOrCreateFoundationWorkflow(novelId)
         val taskId = foundationTaskId(workflow)
@@ -200,18 +206,61 @@ class StoryFoundationDecisionUseCases(
             ?: throw AppCheckpointNotFound("Novel(${novelId.value}) 无 Proposal Checkpoint")
         val proposal = decodeProposal(latest)
         val gate = workflowRepository.getGateByKey(gateKey(workflow.workflowId, proposal.proposalRevision))
-        return RestoredFoundation(workflow, proposal, proposal.proposalRevision, gate)
+        return RestoredFoundation(workflow, proposal, proposal.proposalRevision, gate, decodeDecision(latest))
     }
 
-    /** 写一个新 Proposal Revision 的 Checkpoint + 新 PENDING Gate。 */
-    private fun stageNext(workflow: Workflow, novelId: NovelId, proposal: FoundationProposal): PreparedFoundation {
+    /**
+     * P15-A · 只读 Presentation：把当前 Proposal + Gate 组装为 UI 可读/可比较的 [FoundationProposalView]。
+     * 纯组合 [restoreProposal]，不新建查询体系；UI 不接触 Checkpoint / Gate storage / StoryFoundationRepository。
+     * 不存在 Proposal → CheckpointNotFound（与 [restoreProposal] 一致）。
+     */
+    fun presentProposal(novelId: NovelId): FoundationProposalView {
+        val r = restoreProposal(novelId)
+        val gate = r.gate
+        val pending = gate != null && gate.status == HumanGateStatus.PENDING
+        return FoundationProposalView(
+            proposalId = "foundation:${r.workflow.workflowId.value}:${r.proposalRevision}",
+            revision = r.proposalRevision,
+            genre = r.proposal.genre,
+            direction = r.proposal.direction,
+            audience = r.proposal.audience,
+            writingPolicy = r.proposal.policy,
+            gateStatus = gate?.status,
+            gateDecision = gate?.decision,
+            canModify = pending,
+            canReject = pending,
+            canRequestRevision = pending,
+            canConfirm = pending,
+        )
+    }
+
+    /** 写一个新 Proposal Revision 的 Checkpoint + 新 PENDING Gate（携带可选 [decision]）。 */
+    private fun stageNext(workflow: Workflow, novelId: NovelId, proposal: FoundationProposal, decision: FoundationDecision? = null): PreparedFoundation {
         val taskId = foundationTaskId(workflow)
         val task = taskManager.findById(taskId)
         val nextRevision = (task.revisionCount + 1).toLong()
         val staged = proposal.copy(proposalRevision = nextRevision)
-        taskManager.saveCheckpoint(taskId, STORY_FOUNDATION_PROPOSAL, snapshot(staged))
+        taskManager.saveCheckpoint(taskId, STORY_FOUNDATION_PROPOSAL, snapshot(staged, decision))
         val gate = createFoundationGate(workflow, novelId, nextRevision)
         return PreparedFoundation(workflow, staged, gate)
+    }
+
+    /** 自动推导缺省 Decision：sourceRevision=当前 revision，changedFields=当前与待写 Proposal 的字段 diff。 */
+    private fun autoDecision(novelId: NovelId, modified: FoundationProposal): FoundationDecision {
+        val current = restoreProposal(novelId).proposal
+        return FoundationDecision(
+            sourceRevision = current.proposalRevision,
+            changedFields = changedFields(current, modified),
+            userReason = null,
+            modifiedAt = Clock.System.now(),
+        )
+    }
+
+    private fun changedFields(before: FoundationProposal, after: FoundationProposal): Set<FoundationDecisionField> = buildSet {
+        if (before.genre != after.genre) add(FoundationDecisionField.GENRE)
+        if (before.direction != after.direction) add(FoundationDecisionField.DIRECTION)
+        if (before.audience != after.audience) add(FoundationDecisionField.AUDIENCE)
+        if (before.policy != after.policy) add(FoundationDecisionField.POLICY)
     }
 
     private fun getOrCreateFoundationWorkflow(novelId: NovelId): Workflow {
@@ -280,8 +329,16 @@ class StoryFoundationDecisionUseCases(
     private fun revisionOf(gateKey: String): Long =
         gateKey.substringAfterLast(':').toLong()
 
-    private fun snapshot(proposal: FoundationProposal): JsonObject =
-        JsonObject(mapOf(PROPOSAL_KEY to json.encodeToJsonElement(proposal)))
+    private fun snapshot(proposal: FoundationProposal, decision: FoundationDecision? = null): JsonObject {
+        val fields = mutableMapOf(PROPOSAL_KEY to json.encodeToJsonElement(proposal))
+        if (decision != null) fields[DECISION_KEY] = json.encodeToJsonElement(decision)
+        return JsonObject(fields)
+    }
+
+    private fun decodeDecision(checkpoint: Checkpoint): FoundationDecision? {
+        val element = checkpoint.snapshot?.get(DECISION_KEY) ?: return null
+        return json.decodeFromJsonElement(FoundationDecision.serializer(), element)
+    }
 
     /** 幂等判定：仅比较 Proposal 内容字段（proposalRevision 为运行时字段，不参与内容相等）。 */
     private fun sameContent(a: FoundationProposal, b: FoundationProposal): Boolean =
@@ -316,6 +373,7 @@ class StoryFoundationDecisionUseCases(
     private companion object {
         const val STORY_FOUNDATION_PROPOSAL: String = "STORY_FOUNDATION_PROPOSAL"
         const val PROPOSAL_KEY: String = "proposal"
+        const val DECISION_KEY: String = "decision"
     }
 }
 
@@ -336,12 +394,13 @@ data class PreparedFoundation(
     val gate: WorkflowHumanGate,
 )
 
-/** 恢复结果：workflow + 最新 Proposal + 其 revision + 绑定的 Gate。 */
+/** 恢复结果：workflow + 最新 Proposal + 其 revision + 绑定的 Gate + 产生该 revision 的 Decision（若来自 MODIFY）。 */
 data class RestoredFoundation(
     val workflow: Workflow,
     val proposal: FoundationProposal,
     val proposalRevision: Long,
     val gate: WorkflowHumanGate?,
+    val decision: FoundationDecision? = null,
 )
 
 /** confirm 成功结果：SEALED Confirmed Foundation + resolved Gate + 可进入既有 PLANNING。 */
@@ -349,4 +408,38 @@ data class ConfirmedFoundation(
     val foundation: StoryFoundation,
     val gate: WorkflowHumanGate,
     val canEnterPlanning: Boolean = true,
+)
+
+/** P15-A · 用户修改的具体内容（D-A：结构化 Decision Payload，不修改 WorkflowHumanGate 表结构）。
+ *  `sourceRevision` = 修改前的 Proposal Revision N；oldValue 可由 N 的 Checkpoint 恢复，故不复制明细。 */
+@Serializable
+data class FoundationDecision(
+    val sourceRevision: Long,
+    val changedFields: Set<FoundationDecisionField>,
+    val userReason: String? = null,
+    val modifiedAt: Instant,
+)
+
+/** 用户主动修改的 Foundation 字段（仅这四类，不扩展为通用 Decision 元数据）。 */
+@Serializable
+enum class FoundationDecisionField { GENRE, DIRECTION, AUDIENCE, POLICY }
+
+/**
+ * P15-A · Proposal 只读 Presentation Model（UI 可读/可比较，不承载状态转换）。
+ * 不直接暴露 StoryFoundation / Repository / Checkpoint JSON / Gate storage；`can*` 由当前 Gate 状态确定性派生。
+ */
+@Serializable
+data class FoundationProposalView(
+    val proposalId: String,
+    val revision: Long,
+    val genre: List<GenreId>,
+    val direction: StoryDirection,
+    val audience: NarrativeProfile,
+    val writingPolicy: WritingPolicy,
+    val gateStatus: HumanGateStatus?,
+    val gateDecision: HumanDecision?,
+    val canModify: Boolean,
+    val canReject: Boolean,
+    val canRequestRevision: Boolean,
+    val canConfirm: Boolean,
 )
