@@ -18,6 +18,10 @@ import com.qianyan.application.usecase.workflow.WorkflowOrchestrator
 import com.qianyan.application.usecase.workflow.WorkflowService
 import com.qianyan.application.usecase.foundation.FoundationDecisionFacade
 import com.qianyan.application.usecase.foundation.FoundationDecisionGateway
+import com.qianyan.application.usecase.foundation.IdeaFirstFacade
+import com.qianyan.application.usecase.foundation.IdeaFirstGateway
+import com.qianyan.application.usecase.foundation.IdeaUnderstandingAgent
+import com.qianyan.application.usecase.foundation.StoryIntentUseCases
 import com.qianyan.application.usecase.foundation.StoryFoundationDecisionUseCases
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
@@ -223,6 +227,18 @@ class ApplicationContainer(
     /** P15-B · Android/Desktop 共用的 Foundation 决策 Application seam（极薄委托，不复刻业务规则）。 */
     val foundationDecisionGateway: FoundationDecisionGateway
         get() = FoundationDecisionFacade(foundationDecisions)
+
+    /** P15-C · Idea Understanding Agent（复用 AgentRuntime/LLMGateway；无新 Provider/Runtime）。 */
+    val ideaUnderstandingAgent: IdeaUnderstandingAgent
+        get() = IdeaUnderstandingAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** P15-C · Idea-first 编排（rawIdea→StoryIntent→AI理解→FoundationProposal→既有 PENDING Gate）。 */
+    val storyIntentUseCases: StoryIntentUseCases
+        get() = StoryIntentUseCases(tasks, taskRepository, ideaUnderstandingAgent, foundationDecisions, errorMapper)
+
+    /** P15-C · Android/Desktop 共用的 Idea-first Application seam（极薄委托）。 */
+    val ideaFirstGateway: IdeaFirstGateway
+        get() = IdeaFirstFacade(storyIntentUseCases)
 
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文；P14-F.4 接入已确认 Story Foundation）。 */
     val planningContextAssembly: PlanningContextAssembly
