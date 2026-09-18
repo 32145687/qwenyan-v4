@@ -167,7 +167,7 @@ class NarrativeStateMigrationTest {
                 // 3) NarrativeState / NarrativeDelta 已创建，版本同步为 7
                 assertTrue(tableExists(driver, "NarrativeState"), "migration 后应存在 NarrativeState（P13 LCL-A）")
                 assertTrue(tableExists(driver, "NarrativeDelta"), "migration 后应存在 NarrativeDelta（P13 LCL-A）")
-                assertEquals(10L, userVersion(driver), "migration 后 user_version 应为 10（P14-F.2 Schema v10）")
+                assertEquals(11L, userVersion(driver), "migration 后 user_version 应为最新版本 11（P16 AIL-1 Schema v11）")
 
                 // 4) 重复执行初始化幂等安全（不报"表已存在"）
                 DatabaseInitializer.initializeDatabase(driver)

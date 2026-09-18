@@ -223,3 +223,20 @@ value class TxtChapterId(val value: String)
 @JvmInline
 @Serializable
 value class TextBlockId(val value: String)
+
+/* ---- P16 AIL-1 Author Intelligence（独立 Author Domain / Storage Boundary） ---- */
+
+/** Author Profile（全局单例作者画像）ID。 */
+@JvmInline
+@Serializable
+value class AuthorProfileId(val value: String)
+
+/** Author Preference（作者偏好，Global 或 Novel-scoped）ID。 */
+@JvmInline
+@Serializable
+value class AuthorPreferenceId(val value: String)
+
+/** Author Evidence（来自 P15 信号的作者学习证据）ID。 */
+@JvmInline
+@Serializable
+value class AuthorEvidenceId(val value: String)

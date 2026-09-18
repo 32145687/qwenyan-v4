@@ -5,6 +5,7 @@ import com.qianyan.model.GenreId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
 import com.qianyan.model.VariantScope
+import com.qianyan.model.author.AuthorContext
 import com.qianyan.model.context.StoryWorldContext
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.foundation.NarrativeProfile
@@ -56,6 +57,9 @@ data class PlanningContext(
     // ---- P14-F.4：已确认的 Story Foundation（Original-only；只读投影） ----
     /** 用户已确认的 [com.qianyan.model.foundation.StoryFoundation] 最小只读投影；未确认时 null（可选输入，不影响旧流程）。 */
     val foundation: ConfirmedStoryFoundationContext? = null,
+    // ---- P16 AIL-1：AuthorContext（最小只读投影；Planner/Writer 唯一 Author 入口） ----
+    /** 当前创作的作者偏好最小只读投影（只含稳定且激活偏好，不含未确认 Candidate / 原始 Evidence）；无则 null。 */
+    val authorContext: AuthorContext? = null,
 ) {
     val isOriginal: Boolean get() = scope == VariantScope.ORIGINAL
 }

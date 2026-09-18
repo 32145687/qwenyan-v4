@@ -91,6 +91,15 @@ class PlannerAgent(
             if (f.writingPolicy.rules.isNotEmpty()) appendLine("writingPolicy: ${f.writingPolicy.rules}")
         }
 
+        // P16 AIL-1：AuthorContext（最小只读投影；只显式稳定且激活的作者偏好,不含原始 Evidence）
+        context.authorContext?.takeIf { !it.isEmpty }?.let { a ->
+            appendLine("【作者偏好 Author Preference】")
+            a.preferences.forEach { p ->
+                val scope = if (p.scope.name == "NOVEL") "(本书)" else "(全局)"
+                appendLine("- ${p.statement} [${p.dimension}$scope 置信度=${p.confidence.value}]")
+            }
+        }
+
         if (context.characters.isNotEmpty()) {
             appendLine("【相关人物】")
             context.characters.forEach { c ->

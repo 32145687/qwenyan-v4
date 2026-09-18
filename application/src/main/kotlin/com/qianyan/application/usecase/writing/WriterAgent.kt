@@ -100,6 +100,15 @@ class WriterAgent(
             if (f.writingPolicy.rules.isNotEmpty()) appendLine("writingPolicy: ${f.writingPolicy.rules}")
         }
 
+        // P16 AIL-1：AuthorContext（最小只读投影；只显式稳定且激活的作者偏好,不含原始 Evidence）
+        context.authorContext?.takeIf { !it.isEmpty }?.let { a ->
+            appendLine("【作者偏好 Author Preference】")
+            a.preferences.forEach { p ->
+                val scope = if (p.scope.name == "NOVEL") "(本节)" else "(全局)"
+                appendLine("- ${p.statement} [${p.dimension}$scope 置信度=${p.confidence.value}]")
+            }
+        }
+
         appendLine("【本章规划】")
         if (plan.chapterGoal.isNotBlank()) appendLine("chapterGoal: ${plan.chapterGoal}")
         if (plan.expectedEvents.isNotEmpty()) appendLine("expectedEvents: ${plan.expectedEvents}")

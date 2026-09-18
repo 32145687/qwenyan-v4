@@ -1,0 +1,38 @@
+-- P16 AIL-1 · Schema v11（10.sqm：v10 → v11）
+-- addititive migration：仅新增 AuthorProfile / AuthorPreference / AuthorEvidence 三张 Author Intelligence
+-- 独立存储表，不修改任何既有 P10/P12/P13/P14 表、不触碰 P15 数据。
+-- 幂等由 DatabaseInitializer 的 !tableExists("AuthorProfile") 分支包裹；无 backfill、无既有数据转换。
+
+CREATE TABLE IF NOT EXISTS AuthorProfile (
+    profile_id   TEXT NOT NULL PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS AuthorPreference (
+    preference_id TEXT NOT NULL PRIMARY KEY,
+    scope         TEXT NOT NULL,
+    novel_id      TEXT,
+    dimension     TEXT NOT NULL,
+    statement     TEXT NOT NULL DEFAULT '',
+    origin        TEXT NOT NULL,
+    confidence    REAL NOT NULL,
+    confirmed     INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    revocable     INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    paused        INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    obtained_at   INTEGER NOT NULL,
+    expiry        INTEGER,
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_author_pref_scope ON AuthorPreference(scope, novel_id);
+
+CREATE TABLE IF NOT EXISTS AuthorEvidence (
+    evidence_id TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    type        TEXT NOT NULL,
+    detail      TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT '',
+    observed_at INTEGER NOT NULL
+);

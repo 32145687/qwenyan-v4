@@ -4,6 +4,7 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
+import com.qianyan.application.usecase.author.AuthorContextProjection
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.model.NovelId
 import com.qianyan.model.context.UserWritingRequest
@@ -32,6 +33,7 @@ class PlanningContextAssembly(
     private val vocabularyRepository: VocabularyRepository,
     private val worldContextResolver: StoryWorldContextResolver,
     private val storyFoundationRepository: StoryFoundationRepository,
+    private val authorContextProjection: AuthorContextProjection,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -114,6 +116,8 @@ class PlanningContextAssembly(
             sourceChapter = resolved?.sourceChapter,
             sourceFinalDraft = resolved?.sourceFinalDraft,
             foundation = confirmedFoundation,
+            // P16 AIL-1：AuthorContext 最小只读投影（仅稳定且激活偏好，不含原始 Evidence）
+            authorContext = authorContextProjection.project(novel.novelId),
         )
     }
 }

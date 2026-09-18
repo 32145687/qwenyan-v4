@@ -1,0 +1,96 @@
+-- Qianyan Storage · Schema v11（P16 AIL-1 · Author Intelligence 独立 Storage Boundary）
+-- AuthorProfile / AuthorPreference / AuthorEvidence = Author Intelligence 的独立持久化边界。
+-- 语义（P16 AIL-0 DEC-013/014）：
+--   - **禁止复用** StoryFoundation / StoryState / NovelKnowledge / MemoryEntry / Checkpoint / Gate 存储；
+--   - Author 不属于任何 Novel / Variant（Global 偏好跨作品），故不建立对 Novel/Variant 的 FK 级联；
+--     仅以 novel_id TEXT 作为可空作用域关联（NOVEL scope 时填值），独立生命周期。
+--   - Explicit / Inferred 双态、Candidate → Confidence → User Confirmation → Stable、expiry 衰减均体现在
+--     AuthorPreference 字段（origin / confirmed / confidence / revocable / expiry / paused）。
+-- 约定（与既有一致）：ID TEXT(UUID)，时间 INTEGER(epoch ms)，枚举 TEXT(name)，布尔 INTEGER AS kotlin.Boolean，
+--   结构化字段 JSON TEXT（kotlinx.serialization）。
+
+CREATE TABLE AuthorProfile (
+    profile_id   TEXT NOT NULL PRIMARY KEY,
+    display_name TEXT NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+
+CREATE TABLE AuthorPreference (
+    preference_id TEXT NOT NULL PRIMARY KEY,
+    scope         TEXT NOT NULL,             -- PreferenceScope.GLOBAL / NOVEL
+    novel_id      TEXT,                      -- NOVEL scope 时填该书 ID；GLOBAL 为 NULL
+    dimension     TEXT NOT NULL,             -- PreferenceDimension
+    statement     TEXT NOT NULL DEFAULT '',
+    origin        TEXT NOT NULL,             -- PreferenceOrigin.EXPLICIT / INFERRED
+    confidence    REAL NOT NULL,             -- 0.0..1.0（DB REAL，边界恢复 Double）
+    confirmed     INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,   -- Candidate→Stable 确认位
+    revocable     INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    paused        INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    obtained_at   INTEGER NOT NULL,
+    expiry        INTEGER,                   -- 候选衰减/失效时间；NULL = 不自动失效
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+CREATE INDEX idx_author_pref_scope ON AuthorPreference(scope, novel_id);
+
+CREATE TABLE AuthorEvidence (
+    evidence_id TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,               -- 来源 Novel（与该 Novel 的 P15 信号对应）
+    type        TEXT NOT NULL,               -- AuthorEvidenceType
+    detail      TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT '',
+    observed_at INTEGER NOT NULL
+);
+
+-- ============================================================
+-- AuthorProfile
+-- ============================================================
+upsertAuthorProfile:
+INSERT OR REPLACE INTO AuthorProfile(profile_id, display_name, created_at, updated_at)
+VALUES (:profile_id, :display_name, :created_at, :updated_at);
+
+getAuthorProfile:
+SELECT * FROM AuthorProfile LIMIT 1;
+
+-- ============================================================
+-- AuthorPreference
+-- ============================================================
+upsertAuthorPreference:
+INSERT OR REPLACE INTO AuthorPreference(
+    preference_id, scope, novel_id, dimension, statement, origin,
+    confidence, confirmed, revocable, paused, obtained_at, expiry, created_at, updated_at)
+VALUES (
+    :preference_id, :scope, :novel_id, :dimension, :statement, :origin,
+    :confidence, :confirmed, :revocable, :paused, :obtained_at, :expiry, :created_at, :updated_at);
+
+getAuthorPreferenceById:
+SELECT * FROM AuthorPreference WHERE preference_id = :preference_id LIMIT 1;
+
+getAuthorPreferencesByScope:
+SELECT * FROM AuthorPreference WHERE scope = :scope ORDER BY obtained_at DESC, preference_id;
+
+getAuthorPreferencesByNovel:
+SELECT * FROM AuthorPreference WHERE scope = 'NOVEL' AND novel_id = :novel_id ORDER BY obtained_at DESC, preference_id;
+
+getAllAuthorPreferences:
+SELECT * FROM AuthorPreference ORDER BY obtained_at DESC, preference_id;
+
+deleteAuthorPreference:
+DELETE FROM AuthorPreference WHERE preference_id = :preference_id;
+
+-- ============================================================
+-- AuthorEvidence
+-- ============================================================
+upsertAuthorEvidence:
+INSERT OR REPLACE INTO AuthorEvidence(evidence_id, novel_id, type, detail, source, observed_at)
+VALUES (:evidence_id, :novel_id, :type, :detail, :source, :observed_at);
+
+getAuthorEvidenceById:
+SELECT * FROM AuthorEvidence WHERE evidence_id = :evidence_id LIMIT 1;
+
+getAuthorEvidenceByNovel:
+SELECT * FROM AuthorEvidence WHERE novel_id = :novel_id ORDER BY observed_at DESC, evidence_id;
+
+getAllAuthorEvidence:
+SELECT * FROM AuthorEvidence ORDER BY observed_at DESC, evidence_id;

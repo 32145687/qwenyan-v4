@@ -57,6 +57,17 @@ import com.qianyan.model.foundation.NarrativeProfile
 import com.qianyan.model.foundation.StoryDirection
 import com.qianyan.model.foundation.StoryFoundation as DomainStoryFoundation
 import com.qianyan.model.foundation.WritingPolicy
+import com.qianyan.model.AuthorPreferenceId
+import com.qianyan.model.AuthorProfileId
+import com.qianyan.model.AuthorEvidenceId
+import com.qianyan.model.author.AuthorEvidence as DomainAuthorEvidence
+import com.qianyan.model.author.AuthorEvidenceType
+import com.qianyan.model.author.AuthorPreference as DomainAuthorPreference
+import com.qianyan.model.author.AuthorProfile as DomainAuthorProfile
+import com.qianyan.model.author.Confidence
+import com.qianyan.model.author.PreferenceDimension
+import com.qianyan.model.author.PreferenceOrigin
+import com.qianyan.model.author.PreferenceScope
 import com.qianyan.model.core.EntityOverride
 import com.qianyan.model.core.Novel as DomainNovel
 import com.qianyan.model.core.NovelVariant as DomainNovelVariant
@@ -106,6 +117,9 @@ import com.qianyan.storage.db.NarrativeState as DbNarrativeState
 import com.qianyan.storage.db.Reveal as DbReveal
 import com.qianyan.storage.db.StoryFoundation as DbStoryFoundation
 import com.qianyan.storage.db.FoundationOverride as DbFoundationOverride
+import com.qianyan.storage.db.AuthorEvidence as DbAuthorEvidence
+import com.qianyan.storage.db.AuthorPreference as DbAuthorPreference
+import com.qianyan.storage.db.AuthorProfile as DbAuthorProfile
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -834,5 +848,73 @@ internal object StorageMappers {
         audience = row.audience?.let { json.decodeFromString(NarrativeProfile.serializer(), it) },
         policy = row.policy?.let { json.decodeFromString(WritingPolicy.serializer(), it) },
         updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    /* ---------------- Author Intelligence (P16 AIL-1) ---------------- */
+
+    fun domainAuthorProfile(p: DomainAuthorProfile): DbAuthorProfile = DbAuthorProfile(
+        profile_id = p.profileId.value,
+        display_name = p.displayName,
+        created_at = p.createdAt.toEpochMillis(),
+        updated_at = p.updatedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorProfile(row: DbAuthorProfile): DomainAuthorProfile = DomainAuthorProfile(
+        profileId = AuthorProfileId(row.profile_id),
+        displayName = row.display_name,
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainAuthorPreference(p: DomainAuthorPreference): DbAuthorPreference = DbAuthorPreference(
+        preference_id = p.preferenceId.value,
+        scope = p.scope.name,
+        novel_id = p.novelId?.value,
+        dimension = p.dimension.name,
+        statement = p.statement,
+        origin = p.origin.name,
+        confidence = p.confidence.value,
+        confirmed = p.confirmed,
+        revocable = p.revocable,
+        paused = p.paused,
+        obtained_at = p.obtainedAt.toEpochMillis(),
+        expiry = p.expiry?.toEpochMillis(),
+        created_at = p.createdAt.toEpochMillis(),
+        updated_at = p.updatedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorPreference(row: DbAuthorPreference): DomainAuthorPreference = DomainAuthorPreference(
+        preferenceId = AuthorPreferenceId(row.preference_id),
+        scope = PreferenceScope.valueOf(row.scope),
+        novelId = row.novel_id?.let { NovelId(it) },
+        dimension = PreferenceDimension.valueOf(row.dimension),
+        statement = row.statement,
+        origin = PreferenceOrigin.valueOf(row.origin),
+        confidence = Confidence(row.confidence),
+        confirmed = row.confirmed,
+        revocable = row.revocable,
+        paused = row.paused,
+        obtainedAt = epochMillisToInstant(row.obtained_at),
+        expiry = row.expiry?.let { epochMillisToInstant(it) },
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainAuthorEvidence(e: DomainAuthorEvidence): DbAuthorEvidence = DbAuthorEvidence(
+        evidence_id = e.evidenceId.value,
+        novel_id = e.novelId.value,
+        type = e.type.name,
+        detail = e.detail,
+        source = e.source,
+        observed_at = e.observedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorEvidence(row: DbAuthorEvidence): DomainAuthorEvidence = DomainAuthorEvidence(
+        evidenceId = AuthorEvidenceId(row.evidence_id),
+        novelId = NovelId(row.novel_id),
+        type = AuthorEvidenceType.valueOf(row.type),
+        detail = row.detail,
+        source = row.source,
+        observedAt = epochMillisToInstant(row.observed_at),
     )
 }

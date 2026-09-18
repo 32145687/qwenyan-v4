@@ -23,6 +23,11 @@ import com.qianyan.application.usecase.foundation.IdeaFirstGateway
 import com.qianyan.application.usecase.foundation.IdeaUnderstandingAgent
 import com.qianyan.application.usecase.foundation.StoryIntentUseCases
 import com.qianyan.application.usecase.foundation.StoryFoundationDecisionUseCases
+import com.qianyan.application.usecase.author.AuthorContextProjection
+import com.qianyan.application.usecase.author.AuthorIntelligenceFacade
+import com.qianyan.application.usecase.author.AuthorIntelligenceGateway
+import com.qianyan.application.usecase.author.AuthorPreferenceUseCases
+import com.qianyan.application.usecase.author.P15FoundationEvidenceSource
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
@@ -53,12 +58,14 @@ import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
+import com.qianyan.storage.repository.AuthorPreferenceRepository
 import com.qianyan.storage.repository.BackupStore
 import com.qianyan.storage.repository.ChapterRepository
 import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
+import com.qianyan.storage.repository.SqliteAuthorPreferenceRepository
 import com.qianyan.storage.repository.SqliteBackupStore
 import com.qianyan.storage.repository.SqliteChapterRepository
 import com.qianyan.storage.repository.SqliteDraftRepository
@@ -108,6 +115,7 @@ class ApplicationContainer(
     val workflowRepository: WorkflowRepository,
     private val narrativeStateRepository: NarrativeStateRepository,
     val storyFoundationRepository: StoryFoundationRepository,
+    val authorPreferenceRepository: AuthorPreferenceRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -240,9 +248,25 @@ class ApplicationContainer(
     val ideaFirstGateway: IdeaFirstGateway
         get() = IdeaFirstFacade(storyIntentUseCases)
 
+    /** P16 AIL-1 · P15 信号 → AuthorEvidence 的**只读**来源（读取 P15 Checkpoint/Gate，不改 P15）。 */
+    val p15FoundationEvidenceSource: P15FoundationEvidenceSource
+        get() = P15FoundationEvidenceSource(workflowRepository, taskRepository)
+
+    /** P16 AIL-1 · AuthorContext 最小只读投影（仅稳定且激活偏好；Planner/Writer 唯一 Author 入口）。 */
+    val authorContextProjection: AuthorContextProjection
+        get() = AuthorContextProjection(authorPreferenceRepository, errorMapper)
+
+    /** P16 AIL-1 · Author Preference Use Cases（Explicit/Inferred、Confirmation Gate、User Control）。 */
+    val authorPreferenceUseCases: AuthorPreferenceUseCases
+        get() = AuthorPreferenceUseCases(authorPreferenceRepository, authorContextProjection, p15FoundationEvidenceSource, errorMapper)
+
+    /** P16 AIL-1 · Android/Desktop 共用 Author Intelligence Application seam（极薄委托）。 */
+    val authorIntelligenceGateway: AuthorIntelligenceGateway
+        get() = AuthorIntelligenceFacade(authorPreferenceUseCases)
+
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文；P14-F.4 接入已确认 Story Foundation）。 */
     val planningContextAssembly: PlanningContextAssembly
-        get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, storyFoundationRepository, errorMapper)
+        get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, storyFoundationRepository, authorContextProjection, errorMapper)
 
     /** P12.1.3 Continuation 来源解析/校验：解析显式 [ContinuationReference] → source Chapter + source Final Draft。 */
     val continuationResolver: ContinuationResolver
@@ -321,6 +345,7 @@ class ApplicationContainer(
                 workflowRepository = SqliteWorkflowRepository(db),
                 narrativeStateRepository = SqliteNarrativeStateRepository(db),
                 storyFoundationRepository = SqliteStoryFoundationRepository(db),
+                authorPreferenceRepository = SqliteAuthorPreferenceRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

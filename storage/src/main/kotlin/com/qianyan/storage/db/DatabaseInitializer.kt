@@ -54,6 +54,9 @@ object DatabaseInitializer {
     /** v9（P13 LCL-D）→ v10（P14-F.2：StoryFoundation + FoundationOverride）迁移起点。 */
     private const val V9 = 9L
 
+    /** v10（P14-F.2：StoryFoundation）→ v11（P16 AIL-1：AuthorProfile + AuthorPreference + AuthorEvidence）迁移起点。 */
+    private const val V10 = 10L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -155,6 +158,12 @@ object DatabaseInitializer {
             !tableExists(driver, "StoryFoundation") -> withTransaction(driver) {
                 // v9 → v10：新增 StoryFoundation + FoundationOverride（P14-F.2）。
                 QianyanDb.Schema.migrate(driver, V9, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "AuthorProfile") -> withTransaction(driver) {
+                // v10 → v11：新增 Author Intelligence 独立存储（AuthorProfile / AuthorPreference / AuthorEvidence）（P16 AIL-1）。
+                QianyanDb.Schema.migrate(driver, V10, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }
