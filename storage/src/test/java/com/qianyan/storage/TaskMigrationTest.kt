@@ -1,4 +1,4 @@
-package com.qianyan.storage
+﻿package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -265,7 +265,7 @@ class TaskMigrationTest {
         assertTrue(tableExists(driver, "Checkpoint"), "migration 后应存在 Checkpoint 表")
         assertTrue(tableExists(driver, "ChapterDraft"), "migration 后应存在 ChapterDraft 表")
         assertTrue(tableExists(driver, "Chapter"), "migration 后应存在 Chapter 表（P12.0 P0-4）")
-        assertEquals(11L, userVersion(driver), "migration 后 user_version 应为当前最新版本 11（P16 AIL-1 Schema v11）")
+        assertEquals(12L, userVersion(driver), "migration 后 user_version 应为当前最新版本 12（P17 Schema v12）")
 
         // 5) v5 新增的 6 张 Story State 表在旧库逐级迁移后均存在（P12.1.1）
         listOf("Character", "CharacterState", "WorldRule", "Event", "TimelineEntry", "Foreshadow").forEach { tbl ->

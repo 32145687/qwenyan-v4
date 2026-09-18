@@ -1,4 +1,4 @@
-package com.qianyan.storage
+﻿package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -140,7 +140,7 @@ class StoryStateMigrationTest {
             listOf("Character", "CharacterState", "WorldRule", "Event", "TimelineEntry", "Foreshadow").forEach { tbl ->
                 assertTrue(tableExists(driver, tbl), "migration 后应存在 $tbl 表（P12.1.1 Story State）")
             }
-            assertEquals(11L, userVersion(driver), "migration 后 user_version 应为最新版本 11（P16 AIL-1 Schema v11）")
+            assertEquals(12L, userVersion(driver), "migration 后 user_version 应为最新版本 12（P17 Schema v12）")
 
             // 4) 重复执行初始化幂等安全（不报"表已存在"）
             DatabaseInitializer.initializeDatabase(driver)

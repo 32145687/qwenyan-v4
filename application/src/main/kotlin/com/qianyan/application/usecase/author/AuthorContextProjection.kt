@@ -4,8 +4,12 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.model.NovelId
 import com.qianyan.model.author.AuthorContext
+import com.qianyan.model.author.AuthorCore
+import com.qianyan.model.author.AuthorCoreScope
+import com.qianyan.model.author.AuthorCoreStatus
 import com.qianyan.model.author.AuthorPreference
 import com.qianyan.model.author.PreferenceScope
+import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorPreferenceRepository
 import kotlinx.datetime.Clock
 
@@ -21,6 +25,7 @@ import kotlinx.datetime.Clock
  */
 class AuthorContextProjection(
     private val repository: AuthorPreferenceRepository,
+    private val coreRepository: AuthorCoreRepository? = null,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -48,11 +53,53 @@ class AuthorContextProjection(
         val resolved = novelStable + globalStable.filter { it.dimension !in overriddenDimensions }
 
         // 4) 投影为最小只读 AuthorContext（按置信度降序，稳定顺序）
-        return AuthorContext(
-            preferences = resolved
-                .sortedByDescending { it.confidence.value }
-                .map { it.toLite() },
-        )
+        val preferences = resolved
+            .sortedByDescending { it.confidence.value }
+            .map { it.toLite() }
+
+        // P17：AuthorCore 最小只读 Core Lite 投影（DEC-P17-013/016：防泄漏、scope 解析、暂停不投影）。
+        val cores = buildCoreLite(novelId)
+
+        return AuthorContext(preferences = preferences, cores = cores)
+    }
+
+    /**
+     * P17 · 长期 AuthorCore 的最小只读投影。
+     * Scope 解析：Context > Novel > Global；Context 未提供 → Novel(匹配当前书) 覆盖 Global。
+     * 只投影 STABLE 且学习未暂停的 Core；输出 [AuthorContext.AuthorCoreLite]（patternKey/statement/confidence/scope/condition），
+     * **不**输出 evidence / 内部统计 / contradictionCount / weightedScore / Repository / Storage。
+     */
+    private fun buildCoreLite(novelId: NovelId?): List<AuthorContext.AuthorCoreLite> {
+        val coreRepo = coreRepository ?: return emptyList()
+        if (coreRepo.isLearningPaused()) return emptyList()
+        val stable = coreRepo.listStableCores()
+        if (stable.isEmpty()) return emptyList()
+
+        return stable
+            .groupBy { it.corePatternKey }
+            .mapNotNull { (key, cores) ->
+                val best = bestForScope(cores, novelId) ?: return@mapNotNull null
+                val pattern = best.patternId?.let { coreRepo.getAuthorCorePattern(it) }
+                    ?: coreRepo.getAuthorCorePatternsByKey(key)
+                        .firstOrNull { it.scope == best.scope && it.novelId == best.novelId }
+                AuthorContext.AuthorCoreLite(
+                    patternKey = best.corePatternKey,
+                    statement = pattern?.statement?.takeIf { it.isNotBlank() } ?: best.corePatternKey,
+                    confidence = best.confidence,
+                    scope = best.scope,
+                    condition = pattern?.condition,
+                )
+            }
+    }
+
+    /** 同一 patternKey 下按优先级选一个：Novel(匹配) > Global（Context 未提供）。 */
+    private fun bestForScope(cores: List<AuthorCore>, novelId: NovelId?): AuthorCore? {
+        if (novelId != null) {
+            cores.firstOrNull { it.scope == AuthorCoreScope.NOVEL && it.novelId == novelId }
+                ?.let { return it }
+        }
+        return cores.firstOrNull { it.scope == AuthorCoreScope.GLOBAL }
+            ?: cores.firstOrNull { it.scope == AuthorCoreScope.NOVEL }
     }
 }
 

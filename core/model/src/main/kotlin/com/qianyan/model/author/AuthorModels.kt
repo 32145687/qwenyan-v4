@@ -138,8 +138,11 @@ data class AuthorEvidence(
 @Serializable
 data class AuthorContext(
     val preferences: List<AuthorPreferenceLite> = emptyList(),
+    // ---- P17：AuthorCore 最小只读投影（DEC-P17-013/016：防泄漏） ----
+    /** 长期创作决策倾向（Core Lite）；只投影 patternKey/statement/confidence/scope/condition，不投影任何内部学习数据。 */
+    val cores: List<AuthorCoreLite> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = preferences.isEmpty()
+    val isEmpty: Boolean get() = preferences.isEmpty() && cores.isEmpty()
 
     /** 供 Planner / Writer 消费的最小偏好投影（不携带原始 Evidence / Repository / 未确认候选）。 */
     @Serializable
@@ -151,5 +154,20 @@ data class AuthorContext(
         val statement: String,
         val confidence: Confidence,
         val revocable: Boolean,
+    )
+
+    /**
+     * P17 · AuthorCore 最小只读投影（DEC-P17-016 防泄漏）。
+     * 只允许投影 patternKey / statement / confidence / scope / condition。
+     * 禁止投影 Evidence、Evidence 原文、positive/negative counts、contradictionCount、weightedScore、
+     * Repository/Storage Model、内部学习过程 —— 防 Prompt 膨胀。
+     */
+    @Serializable
+    data class AuthorCoreLite(
+        val patternKey: String,
+        val statement: String,
+        val confidence: Confidence,
+        val scope: AuthorCoreScope,
+        val condition: String? = null,
     )
 }

@@ -109,6 +109,15 @@ class WriterAgent(
             }
         }
 
+        // P17：AuthorCore 长期创作决策倾向（Core Lite；只显式 patternKey/statement/confidence/scope/condition）
+        context.authorContext?.takeIf { it.cores.isNotEmpty() }?.let { a ->
+            appendLine("【作者长期创作决策倾向 Author Core】")
+            a.cores.forEach { c ->
+                val cond = c.condition?.let { "(条件: $it)" } ?: ""
+                appendLine("- ${c.statement} [${c.scope.name}$cond 置信度=${c.confidence.value}]")
+            }
+        }
+
         appendLine("【本章规划】")
         if (plan.chapterGoal.isNotBlank()) appendLine("chapterGoal: ${plan.chapterGoal}")
         if (plan.expectedEvents.isNotEmpty()) appendLine("expectedEvents: ${plan.expectedEvents}")

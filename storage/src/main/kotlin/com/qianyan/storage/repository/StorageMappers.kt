@@ -60,6 +60,16 @@ import com.qianyan.model.foundation.WritingPolicy
 import com.qianyan.model.AuthorPreferenceId
 import com.qianyan.model.AuthorProfileId
 import com.qianyan.model.AuthorEvidenceId
+import com.qianyan.model.AuthorCoreId
+import com.qianyan.model.AuthorCoreCandidateId
+import com.qianyan.model.AuthorCorePatternId
+import com.qianyan.model.AuthorCoreEvidenceLinkId
+import com.qianyan.model.author.AuthorCore as DomainAuthorCore
+import com.qianyan.model.author.AuthorCoreCandidate as DomainAuthorCoreCandidate
+import com.qianyan.model.author.AuthorCoreEvidenceLink as DomainAuthorCoreEvidenceLink
+import com.qianyan.model.author.AuthorCorePattern as DomainAuthorCorePattern
+import com.qianyan.model.author.AuthorCoreScope
+import com.qianyan.model.author.AuthorCoreStatus
 import com.qianyan.model.author.AuthorEvidence as DomainAuthorEvidence
 import com.qianyan.model.author.AuthorEvidenceType
 import com.qianyan.model.author.AuthorPreference as DomainAuthorPreference
@@ -118,6 +128,10 @@ import com.qianyan.storage.db.Reveal as DbReveal
 import com.qianyan.storage.db.StoryFoundation as DbStoryFoundation
 import com.qianyan.storage.db.FoundationOverride as DbFoundationOverride
 import com.qianyan.storage.db.AuthorEvidence as DbAuthorEvidence
+import com.qianyan.storage.db.AuthorCore as DbAuthorCore
+import com.qianyan.storage.db.AuthorCoreCandidate as DbAuthorCoreCandidate
+import com.qianyan.storage.db.AuthorCoreEvidenceLink as DbAuthorCoreEvidenceLink
+import com.qianyan.storage.db.AuthorCorePattern as DbAuthorCorePattern
 import com.qianyan.storage.db.AuthorPreference as DbAuthorPreference
 import com.qianyan.storage.db.AuthorProfile as DbAuthorProfile
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
@@ -916,5 +930,125 @@ internal object StorageMappers {
         detail = row.detail,
         source = row.source,
         observedAt = epochMillisToInstant(row.observed_at),
+    )
+
+    /* ---------------- Author Core (P17) ---------------- */
+
+    fun domainAuthorCore(c: DomainAuthorCore): DbAuthorCore = DbAuthorCore(
+        core_id = c.coreId.value,
+        version = c.version,
+        scope = c.scope.name,
+        novel_id = c.novelId?.value,
+        status = c.status.name,
+        confirmed = c.confirmed,
+        confidence = c.confidence.value,
+        core_pattern_key = c.corePatternKey,
+        pattern_id = c.patternId?.value,
+        created_at = c.createdAt.toEpochMillis(),
+        updated_at = c.updatedAt.toEpochMillis(),
+        superseded_by = c.supersededBy?.value,
+        revoked_at = c.revokedAt?.toEpochMillis(),
+    )
+
+    fun dbAuthorCore(row: DbAuthorCore): DomainAuthorCore = DomainAuthorCore(
+        coreId = AuthorCoreId(row.core_id),
+        version = row.version,
+        scope = AuthorCoreScope.valueOf(row.scope),
+        novelId = row.novel_id?.let { NovelId(it) },
+        status = AuthorCoreStatus.valueOf(row.status),
+        confirmed = row.confirmed,
+        confidence = Confidence(row.confidence),
+        corePatternKey = row.core_pattern_key,
+        patternId = row.pattern_id?.let { AuthorCorePatternId(it) },
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+        supersededBy = row.superseded_by?.let { AuthorCoreId(it) },
+        revokedAt = row.revoked_at?.let { epochMillisToInstant(it) },
+    )
+
+    fun domainAuthorCorePattern(p: DomainAuthorCorePattern): DbAuthorCorePattern = DbAuthorCorePattern(
+        pattern_id = p.patternId.value,
+        pattern_key = p.patternKey,
+        statement = p.statement,
+        condition = p.condition,
+        direction = p.direction,
+        scope = p.scope.name,
+        novel_id = p.novelId?.value,
+        version = p.version,
+        confidence = p.confidence.value,
+        status = p.status.name,
+        evidence_refs = json.encodeToString(ListSerializer(AuthorEvidenceId.serializer()), p.evidenceRefs),
+        created_at = p.createdAt.toEpochMillis(),
+        updated_at = p.updatedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorCorePattern(row: DbAuthorCorePattern): DomainAuthorCorePattern = DomainAuthorCorePattern(
+        patternId = AuthorCorePatternId(row.pattern_id),
+        patternKey = row.pattern_key,
+        statement = row.statement,
+        condition = row.condition,
+        direction = row.direction,
+        scope = AuthorCoreScope.valueOf(row.scope),
+        novelId = row.novel_id?.let { NovelId(it) },
+        version = row.version,
+        confidence = Confidence(row.confidence),
+        status = AuthorCoreStatus.valueOf(row.status),
+        evidenceRefs = json.decodeFromString(ListSerializer(AuthorEvidenceId.serializer()), row.evidence_refs),
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainAuthorCoreCandidate(c: DomainAuthorCoreCandidate): DbAuthorCoreCandidate = DbAuthorCoreCandidate(
+        candidate_id = c.candidateId.value,
+        pattern_key = c.patternKey,
+        scope = c.scope.name,
+        novel_id = c.novelId?.value,
+        statement = c.statement,
+        condition = c.condition,
+        positive_evidence = c.positiveEvidence.toLong(),
+        negative_evidence = c.negativeEvidence.toLong(),
+        observation_count = c.observationCount.toLong(),
+        weighted_score = c.weightedScore,
+        consistency = c.consistency,
+        recency = c.recency.toEpochMillis(),
+        contradiction_count = c.contradictionCount.toLong(),
+        confidence = c.confidence.value,
+        status = c.status.name,
+        created_at = c.createdAt.toEpochMillis(),
+        updated_at = c.updatedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorCoreCandidate(row: DbAuthorCoreCandidate): DomainAuthorCoreCandidate = DomainAuthorCoreCandidate(
+        candidateId = AuthorCoreCandidateId(row.candidate_id),
+        patternKey = row.pattern_key,
+        scope = AuthorCoreScope.valueOf(row.scope),
+        novelId = row.novel_id?.let { NovelId(it) },
+        statement = row.statement,
+        condition = row.condition,
+        positiveEvidence = row.positive_evidence.toInt(),
+        negativeEvidence = row.negative_evidence.toInt(),
+        observationCount = row.observation_count.toInt(),
+        weightedScore = row.weighted_score,
+        consistency = row.consistency,
+        recency = epochMillisToInstant(row.recency),
+        contradictionCount = row.contradiction_count.toInt(),
+        confidence = Confidence(row.confidence),
+        status = AuthorCoreStatus.valueOf(row.status),
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainAuthorCoreEvidenceLink(l: DomainAuthorCoreEvidenceLink): DbAuthorCoreEvidenceLink = DbAuthorCoreEvidenceLink(
+        link_id = l.linkId.value,
+        core_pattern_key = l.corePatternKey,
+        evidence_id = l.evidenceId.value,
+        created_at = l.createdAt.toEpochMillis(),
+    )
+
+    fun dbAuthorCoreEvidenceLink(row: DbAuthorCoreEvidenceLink): DomainAuthorCoreEvidenceLink = DomainAuthorCoreEvidenceLink(
+        linkId = AuthorCoreEvidenceLinkId(row.link_id),
+        corePatternKey = row.core_pattern_key,
+        evidenceId = AuthorEvidenceId(row.evidence_id),
+        createdAt = epochMillisToInstant(row.created_at),
     )
 }

@@ -1,0 +1,70 @@
+-- P17 · Schema v12（11.sqm：v11 → v12）
+-- addititive migration：仅新增 AuthorCore 独立表族（AuthorCore / AuthorCorePattern / AuthorCoreCandidate /
+-- AuthorCoreEvidenceLink / AuthorCoreLearning），不修改任何既有 P10/P12/P13/P14/P16 表、不触碰 P15 数据、
+-- 不改 P16 三张 Author 表（AuthorProfile/AuthorPreference/AuthorEvidence）。
+-- 幂等由 DatabaseInitializer 的 !tableExists("AuthorCore") 分支包裹；无 backfill、无既有数据转换。
+
+CREATE TABLE IF NOT EXISTS AuthorCore (
+    core_id          TEXT NOT NULL PRIMARY KEY,
+    version          INTEGER NOT NULL DEFAULT 1,
+    scope            TEXT NOT NULL,
+    novel_id         TEXT,
+    status           TEXT NOT NULL,
+    confirmed        INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    confidence       REAL NOT NULL,
+    core_pattern_key TEXT NOT NULL,
+    pattern_id       TEXT,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    superseded_by    TEXT,
+    revoked_at       INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS AuthorCorePattern (
+    pattern_id    TEXT NOT NULL PRIMARY KEY,
+    pattern_key   TEXT NOT NULL,
+    statement     TEXT NOT NULL DEFAULT '',
+    condition     TEXT,
+    direction     TEXT NOT NULL DEFAULT '',
+    scope         TEXT NOT NULL,
+    novel_id      TEXT,
+    version       INTEGER NOT NULL DEFAULT 1,
+    confidence    REAL NOT NULL,
+    status        TEXT NOT NULL,
+    evidence_refs TEXT NOT NULL DEFAULT '[]',
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS AuthorCoreCandidate (
+    candidate_id        TEXT NOT NULL PRIMARY KEY,
+    pattern_key         TEXT NOT NULL,
+    scope               TEXT NOT NULL,
+    novel_id            TEXT,
+    statement           TEXT NOT NULL DEFAULT '',
+    condition           TEXT,
+    positive_evidence   INTEGER NOT NULL DEFAULT 0,
+    negative_evidence   INTEGER NOT NULL DEFAULT 0,
+    observation_count   INTEGER NOT NULL DEFAULT 0,
+    weighted_score      REAL NOT NULL DEFAULT 0,
+    consistency         REAL NOT NULL DEFAULT 1,
+    recency             INTEGER NOT NULL,
+    contradiction_count INTEGER NOT NULL DEFAULT 0,
+    confidence          REAL NOT NULL,
+    status              TEXT NOT NULL,
+    created_at          INTEGER NOT NULL,
+    updated_at          INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS AuthorCoreEvidenceLink (
+    link_id          TEXT NOT NULL PRIMARY KEY,
+    core_pattern_key TEXT NOT NULL,
+    evidence_id      TEXT NOT NULL,
+    created_at       INTEGER NOT NULL,
+    UNIQUE (core_pattern_key, evidence_id)
+);
+
+CREATE TABLE IF NOT EXISTS AuthorCoreLearning (
+    id     INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    paused INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0
+);

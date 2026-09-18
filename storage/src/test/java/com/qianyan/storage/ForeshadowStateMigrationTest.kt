@@ -1,4 +1,4 @@
-package com.qianyan.storage
+﻿package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -209,7 +209,7 @@ class ForeshadowStateMigrationTest {
 
                 assertTrue(columnExists(driver, "Foreshadow", "state"), "migration 后应有 state 列")
                 assertTrue(columnExists(driver, "Foreshadow", "payoff_chapter_id"), "migration 后应有 payoff_chapter_id 列")
-                assertEquals(11L, userVersion(driver), "user_version 应为最新版本 11（P16 AIL-1 Schema v11）")
+                assertEquals(12L, userVersion(driver), "user_version 应为最新版本 12（P17 Schema v12）")
                 assertEquals("RESOLVED", queryState(driver, "f-r"), "resolved=1 → RESOLVED")
                 assertEquals("PLANTED", queryState(driver, "f-p"), "resolved=0 → PLANTED")
 

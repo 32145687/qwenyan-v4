@@ -1,0 +1,201 @@
+-- Qianyan Storage · Schema v12（P17 · Author Core 独立 Storage Boundary）
+-- AuthorCore / AuthorCorePattern / AuthorCoreCandidate / AuthorCoreEvidenceLink (+ AuthorCoreLearning) =
+-- P17 长期创作决策倾向的独立持久化边界。
+-- 语义（DEC-P17-001~016）：
+--   - **独立于 P16 三张 Author 表**（AuthorProfile/AuthorPreference/AuthorEvidence），不修改其职责；
+--   - 不依赖 / 不写 StoryFoundation / StoryState / NarrativeState / NovelKnowledge / ChapterContextPack；
+--   - NovelId 仅作 scope 键（NOVEL scope 时填值），不建对 Novel 的 FK 级联（独立生命周期，同 P16）。
+--   - author_core_evidence_link 以 UNIQUE(core_pattern_key, evidence_id) 保证"同一 Evidence 只入链一次"（幂等）。
+-- 约定（与既有一致）：ID TEXT(UUID)，时间 INTEGER(epoch ms)，枚举 TEXT(name)，布尔 INTEGER AS kotlin.Boolean，
+--   confidence REAL(0.0..1.0)，JSON TEXT（kotlinx.serialization）。
+
+CREATE TABLE AuthorCore (
+    core_id          TEXT NOT NULL PRIMARY KEY,
+    version          INTEGER NOT NULL DEFAULT 1,
+    scope            TEXT NOT NULL,             -- AuthorCoreScope.GLOBAL / NOVEL / CONTEXT
+    novel_id         TEXT,
+    status           TEXT NOT NULL,             -- AuthorCoreStatus
+    confirmed        INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0,
+    confidence       REAL NOT NULL,
+    core_pattern_key TEXT NOT NULL,
+    pattern_id       TEXT,                      -- M-1：本 Core 当前实现的具体 Pattern revision（版本历史可追溯）
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    superseded_by    TEXT,
+    revoked_at       INTEGER
+);
+
+CREATE TABLE AuthorCorePattern (
+    pattern_id    TEXT NOT NULL PRIMARY KEY,
+    pattern_key   TEXT NOT NULL,
+    statement     TEXT NOT NULL DEFAULT '',
+    condition     TEXT,
+    direction     TEXT NOT NULL DEFAULT '',
+    scope         TEXT NOT NULL,
+    novel_id      TEXT,
+    version       INTEGER NOT NULL DEFAULT 1,
+    confidence    REAL NOT NULL,
+    status        TEXT NOT NULL,
+    evidence_refs TEXT NOT NULL DEFAULT '[]',   -- JSON List<AuthorEvidenceId>
+    created_at    INTEGER NOT NULL,
+    updated_at    INTEGER NOT NULL
+);
+
+CREATE TABLE AuthorCoreCandidate (
+    candidate_id        TEXT NOT NULL PRIMARY KEY,
+    pattern_key         TEXT NOT NULL,
+    scope               TEXT NOT NULL,
+    novel_id            TEXT,
+    statement           TEXT NOT NULL DEFAULT '',
+    condition           TEXT,
+    positive_evidence   INTEGER NOT NULL DEFAULT 0,
+    negative_evidence   INTEGER NOT NULL DEFAULT 0,
+    observation_count   INTEGER NOT NULL DEFAULT 0,
+    weighted_score      REAL NOT NULL DEFAULT 0,
+    consistency         REAL NOT NULL DEFAULT 1,
+    recency             INTEGER NOT NULL,
+    contradiction_count INTEGER NOT NULL DEFAULT 0,
+    confidence          REAL NOT NULL,
+    status              TEXT NOT NULL,
+    created_at          INTEGER NOT NULL,
+    updated_at          INTEGER NOT NULL
+);
+
+CREATE TABLE AuthorCoreEvidenceLink (
+    link_id         TEXT NOT NULL PRIMARY KEY,
+    core_pattern_key TEXT NOT NULL,
+    evidence_id     TEXT NOT NULL,
+    created_at      INTEGER NOT NULL,
+    UNIQUE (core_pattern_key, evidence_id)
+);
+
+CREATE TABLE AuthorCoreLearning (
+    id      INTEGER NOT NULL PRIMARY KEY CHECK (id = 1),
+    paused  INTEGER AS kotlin.Boolean NOT NULL DEFAULT 0
+);
+
+-- ============================================================
+-- AuthorCore
+-- ============================================================
+upsertAuthorCore:
+INSERT OR REPLACE INTO AuthorCore(
+    core_id, version, scope, novel_id, status, confirmed, confidence,
+    core_pattern_key, pattern_id, created_at, updated_at, superseded_by, revoked_at)
+VALUES (
+    :core_id, :version, :scope, :novel_id, :status, :confirmed, :confidence,
+    :core_pattern_key, :pattern_id, :created_at, :updated_at, :superseded_by, :revoked_at);
+
+getAuthorCoreById:
+SELECT * FROM AuthorCore WHERE core_id = :core_id LIMIT 1;
+
+getAuthorCoresByScope:
+SELECT * FROM AuthorCore WHERE scope = :scope ORDER BY updated_at DESC, core_id;
+
+getAllAuthorCores:
+SELECT * FROM AuthorCore ORDER BY updated_at DESC, core_id;
+
+setAuthorCoreStatus:
+UPDATE AuthorCore SET status = :status, updated_at = :updated_at, superseded_by = :superseded_by, revoked_at = :revoked_at WHERE core_id = :core_id;
+
+deleteAuthorCore:
+DELETE FROM AuthorCore WHERE core_id = :core_id;
+
+-- ============================================================
+-- AuthorCorePattern
+-- ============================================================
+upsertAuthorCorePattern:
+INSERT OR REPLACE INTO AuthorCorePattern(
+    pattern_id, pattern_key, statement, condition, direction, scope, novel_id,
+    version, confidence, status, evidence_refs, created_at, updated_at)
+VALUES (
+    :pattern_id, :pattern_key, :statement, :condition, :direction, :scope, :novel_id,
+    :version, :confidence, :status, :evidence_refs, :created_at, :updated_at);
+
+getAuthorCorePatternById:
+SELECT * FROM AuthorCorePattern WHERE pattern_id = :pattern_id LIMIT 1;
+
+getAuthorCorePatternsByKey:
+SELECT * FROM AuthorCorePattern WHERE pattern_key = :pattern_key ORDER BY updated_at DESC, pattern_id;
+
+getAuthorCorePatternsByScope:
+SELECT * FROM AuthorCorePattern WHERE scope = :scope ORDER BY updated_at DESC, pattern_id;
+
+getAuthorCorePatternsByNovel:
+SELECT * FROM AuthorCorePattern WHERE scope = 'NOVEL' AND novel_id = :novel_id ORDER BY updated_at DESC, pattern_id;
+
+getAllAuthorCorePatterns:
+SELECT * FROM AuthorCorePattern ORDER BY updated_at DESC, pattern_id;
+
+deleteAuthorCorePattern:
+DELETE FROM AuthorCorePattern WHERE pattern_id = :pattern_id;
+
+-- ============================================================
+-- AuthorCoreCandidate
+-- ============================================================
+upsertAuthorCoreCandidate:
+INSERT OR REPLACE INTO AuthorCoreCandidate(
+    candidate_id, pattern_key, scope, novel_id, statement, condition,
+    positive_evidence, negative_evidence, observation_count, weighted_score,
+    consistency, recency, contradiction_count, confidence, status, created_at, updated_at)
+VALUES (
+    :candidate_id, :pattern_key, :scope, :novel_id, :statement, :condition,
+    :positive_evidence, :negative_evidence, :observation_count, :weighted_score,
+    :consistency, :recency, :contradiction_count, :confidence, :status, :created_at, :updated_at);
+
+getAuthorCoreCandidateById:
+SELECT * FROM AuthorCoreCandidate WHERE candidate_id = :candidate_id LIMIT 1;
+
+getAuthorCoreCandidatesByScope:
+SELECT * FROM AuthorCoreCandidate WHERE scope = :scope ORDER BY updated_at DESC, candidate_id;
+
+getAuthorCoreCandidatesByNovel:
+SELECT * FROM AuthorCoreCandidate WHERE scope IN ('NOVEL','CONTEXT') AND novel_id = :novel_id ORDER BY updated_at DESC, candidate_id;
+
+getAllAuthorCoreCandidates:
+SELECT * FROM AuthorCoreCandidate ORDER BY updated_at DESC, candidate_id;
+
+deleteAuthorCoreCandidate:
+DELETE FROM AuthorCoreCandidate WHERE candidate_id = :candidate_id;
+
+-- ============================================================
+-- AuthorCoreEvidenceLink（幂等：同 (patternKey, evidenceId) 只入链一次）
+-- ============================================================
+insertAuthorCoreEvidenceLink:
+INSERT OR IGNORE INTO AuthorCoreEvidenceLink(link_id, core_pattern_key, evidence_id, created_at)
+VALUES (:link_id, :core_pattern_key, :evidence_id, :created_at);
+
+evidenceLinkExists:
+SELECT COUNT(*) FROM AuthorCoreEvidenceLink WHERE core_pattern_key = :core_pattern_key AND evidence_id = :evidence_id;
+
+getEvidenceLinksByPattern:
+SELECT * FROM AuthorCoreEvidenceLink WHERE core_pattern_key = :core_pattern_key ORDER BY created_at, link_id;
+
+getEvidenceLinksByEvidenceId:
+SELECT * FROM AuthorCoreEvidenceLink WHERE evidence_id = :evidence_id ORDER BY created_at;
+
+deleteEvidenceLinksByPattern:
+DELETE FROM AuthorCoreEvidenceLink WHERE core_pattern_key = :core_pattern_key;
+
+-- ============================================================
+-- AuthorCoreLearning（单例：是否暂停学习）
+-- ============================================================
+upsertAuthorCoreLearning:
+INSERT OR REPLACE INTO AuthorCoreLearning(id, paused) VALUES (1, :paused);
+
+getAuthorCoreLearning:
+SELECT * FROM AuthorCoreLearning WHERE id = 1 LIMIT 1;
+
+-- ============================================================
+-- P17 Reset：清空本表族学习结果（不触碰 P16 AuthorPreference/AuthorEvidence）
+-- ============================================================
+wipeAuthorCores:
+DELETE FROM AuthorCore;
+
+wipeAuthorCorePatterns:
+DELETE FROM AuthorCorePattern;
+
+wipeAuthorCoreCandidates:
+DELETE FROM AuthorCoreCandidate;
+
+wipeAuthorCoreEvidenceLinks:
+DELETE FROM AuthorCoreEvidenceLink;

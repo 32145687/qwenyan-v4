@@ -240,3 +240,25 @@ value class AuthorPreferenceId(val value: String)
 @JvmInline
 @Serializable
 value class AuthorEvidenceId(val value: String)
+
+/* ---- P17 Author Core（长期创作决策倾向；独立于 Preference 之上） ---- */
+
+/** Author Core（长期稳定确认后的创作决策倾向）ID。 */
+@JvmInline
+@Serializable
+value class AuthorCoreId(val value: String)
+
+/** Author Core Pattern（内容性决策模式）ID。 */
+@JvmInline
+@Serializable
+value class AuthorCorePatternId(val value: String)
+
+/** Author Core Candidate（聚合中的长期决策候选）ID。 */
+@JvmInline
+@Serializable
+value class AuthorCoreCandidateId(val value: String)
+
+/** Author Core Evidence Link（Core 形成原因的证据引用）ID。 */
+@JvmInline
+@Serializable
+value class AuthorCoreEvidenceLinkId(val value: String)

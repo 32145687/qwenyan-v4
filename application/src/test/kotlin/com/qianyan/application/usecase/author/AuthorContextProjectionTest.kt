@@ -27,7 +27,7 @@ class AuthorContextProjectionTest {
     private fun repoAndProjection(): Pair<AuthorPreferenceRepository, AuthorContextProjection> {
         val db = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY).db
         val repo = SqliteAuthorPreferenceRepository(db)
-        return repo to AuthorContextProjection(repo, ErrorMapper)
+        return repo to AuthorContextProjection(repo, null, ErrorMapper)
     }
 
     private fun stable(dim: PreferenceDimension, stmt: String, id: String) = AuthorPreference(
