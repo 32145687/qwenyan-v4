@@ -60,6 +60,9 @@ object DatabaseInitializer {
     /** v11（P16 AIL-1：Author 三表）→ v12（P17：AuthorCore 独立表族）迁移起点。 */
     private const val V11 = 11L
 
+    /** v12（P17：AuthorCore）→ v13（P18-A：AuthorObservation 独立表）迁移起点。 */
+    private const val V12 = 12L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -173,6 +176,12 @@ object DatabaseInitializer {
             !tableExists(driver, "AuthorCore") -> withTransaction(driver) {
                 // v11 → v12：新增 Author Core 独立表族（AuthorCore/Pattern/Candidate/EvidenceLink/Learning）（P17）。
                 QianyanDb.Schema.migrate(driver, V11, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "AuthorObservation") -> withTransaction(driver) {
+                // v12 → v13：新增 AuthorObservation 独立表（P18-A）。
+                QianyanDb.Schema.migrate(driver, V12, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

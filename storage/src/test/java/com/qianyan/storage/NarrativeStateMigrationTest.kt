@@ -1,4 +1,4 @@
-﻿package com.qianyan.storage
+package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -167,7 +167,7 @@ class NarrativeStateMigrationTest {
                 // 3) NarrativeState / NarrativeDelta 已创建，版本同步为 7
                 assertTrue(tableExists(driver, "NarrativeState"), "migration 后应存在 NarrativeState（P13 LCL-A）")
                 assertTrue(tableExists(driver, "NarrativeDelta"), "migration 后应存在 NarrativeDelta（P13 LCL-A）")
-                assertEquals(12L, userVersion(driver), "migration 后 user_version 应为最新版本 12（P17 Schema v12）")
+                assertEquals(13L, userVersion(driver), "migration 后 user_version 应为最新版本 13（P18-A Schema v13）")
 
                 // 4) 重复执行初始化幂等安全（不报"表已存在"）
                 DatabaseInitializer.initializeDatabase(driver)

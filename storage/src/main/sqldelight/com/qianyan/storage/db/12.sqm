@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS AuthorObservation (
+    observation_id TEXT NOT NULL PRIMARY KEY,
+    scope          TEXT NOT NULL,
+    decision_type  TEXT NOT NULL,
+    novel_id       TEXT,
+    source         TEXT NOT NULL,
+    metadata       TEXT NOT NULL DEFAULT '{}',
+    occurred_at    INTEGER NOT NULL,
+    created_at     INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_author_observation_scope ON AuthorObservation(scope, novel_id, source);

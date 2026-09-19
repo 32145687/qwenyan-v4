@@ -1,0 +1,42 @@
+-- Qianyan Storage · Schema v13（P18-A · AuthorObservation 独立表）
+-- AuthorObservation = **一次真实作者创作决策**的持久化观测，Author Feedback Loop 上游（DEC-P18-001）。
+-- 语义（DEC-P18-001/003）：
+--   - **Observation ≠ Evidence**：观测只记录"作者做了什么决策"，不含正文 / StoryState / StoryFoundation /
+--     NarrativeState / NovelKnowledge（禁止复制 Story 内容进 Author Storage，见开发约束）。
+--   - 决策语义复用 AuthorEvidenceType（5 类），来源区分用 AuthorObservationSource（FOUNDATION/WRITING/REVISION/CRITIQUE/USER_DECISION）。
+--   - observationId 为 **deterministic 键**（同一用户行为只允许一份；幂等提交）。
+--   - 独立 Author boundary：不建立对 Novel/Variant 的 FK 级联，novel_id 仅作可空作用域归属；**不改任何 Story 表**。
+
+CREATE TABLE AuthorObservation (
+    observation_id TEXT NOT NULL PRIMARY KEY,
+    scope          TEXT NOT NULL,             -- AuthorCoreScope.GLOBAL / NOVEL（CONTEXT 不进入学习）
+    decision_type  TEXT NOT NULL,             -- AuthorEvidenceType（MODIFY/ADOPT/REJECT/PARTIAL_REWRITE/ADOPT_THEN_REVISE）
+    novel_id       TEXT,                      -- NOVEL scope 时该书 ID；GLOBAL 为 NULL
+    source         TEXT NOT NULL,             -- AuthorObservationSource
+    metadata       TEXT NOT NULL DEFAULT '{}', -- JSON Map<String,String>（仅非内容性归属元数据）
+    occurred_at    INTEGER NOT NULL,
+    created_at     INTEGER NOT NULL
+);
+CREATE INDEX idx_author_observation_scope ON AuthorObservation(scope, novel_id, source);
+
+-- ============================================================
+-- AuthorObservation
+-- ============================================================
+upsertAuthorObservation:
+INSERT OR REPLACE INTO AuthorObservation(observation_id, scope, decision_type, novel_id, source, metadata, occurred_at, created_at)
+VALUES (:observation_id, :scope, :decision_type, :novel_id, :source, :metadata, :occurred_at, :created_at);
+
+getAuthorObservationById:
+SELECT * FROM AuthorObservation WHERE observation_id = :observation_id LIMIT 1;
+
+existsAuthorObservation:
+SELECT COUNT(*) FROM AuthorObservation WHERE observation_id = :observation_id;
+
+getAllAuthorObservations:
+SELECT * FROM AuthorObservation ORDER BY occurred_at DESC, observation_id;
+
+countAuthorObservations:
+SELECT COUNT(*) FROM AuthorObservation;
+
+deleteAuthorObservation:
+DELETE FROM AuthorObservation WHERE observation_id = :observation_id;

@@ -1,15 +1,23 @@
 package com.qianyan.application.usecase.author
 
 import com.qianyan.application.error.ErrorMapper
+import com.qianyan.model.AuthorCoreId
+import com.qianyan.model.AuthorCorePatternId
 import com.qianyan.model.AuthorPreferenceId
 import com.qianyan.model.NovelId
+import com.qianyan.model.author.AuthorCore
+import com.qianyan.model.author.AuthorCorePattern
+import com.qianyan.model.author.AuthorCoreScope
+import com.qianyan.model.author.AuthorCoreStatus
 import com.qianyan.model.author.AuthorPreference
 import com.qianyan.model.author.Confidence
 import com.qianyan.model.author.PreferenceDimension
 import com.qianyan.model.author.PreferenceOrigin
 import com.qianyan.model.author.PreferenceScope
 import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorPreferenceRepository
+import com.qianyan.storage.repository.SqliteAuthorCoreRepository
 import com.qianyan.storage.repository.SqliteAuthorPreferenceRepository
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import kotlinx.datetime.Clock
@@ -103,5 +111,82 @@ class AuthorContextProjectionTest {
             setOf("g-struct", "n-pacing"),
             ctx.preferences.map { it.preferenceId.value }.toSet(),
         )
+    }
+
+    // =============== DEC-P18-008：project(null) → GLOBAL only ===============
+
+    private fun coreProjection(): Pair<AuthorCoreRepository, AuthorContextProjection> {
+        val db = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY).db
+        val coreRepo: AuthorCoreRepository = SqliteAuthorCoreRepository(db)
+        val prefRepo = SqliteAuthorPreferenceRepository(db)
+        return coreRepo to AuthorContextProjection(prefRepo, coreRepo, ErrorMapper)
+    }
+
+    private fun seedStableCore(repo: AuthorCoreRepository, coreId: String, scope: AuthorCoreScope, novelId: NovelId?, stmt: String) {
+        val pattern = AuthorCorePattern(
+            patternId = AuthorCorePatternId("pat-$coreId"),
+            patternKey = "core:foundation",
+            statement = stmt,
+            condition = null,
+            scope = scope,
+            novelId = novelId,
+            version = 1L,
+            confidence = Confidence(0.8),
+            status = AuthorCoreStatus.STABLE,
+            evidenceRefs = emptyList(),
+            createdAt = now,
+            updatedAt = now,
+        )
+        repo.upsertAuthorCorePattern(pattern)
+        repo.upsertAuthorCore(
+            AuthorCore(
+                coreId = AuthorCoreId(coreId),
+                version = 1L,
+                scope = scope,
+                novelId = novelId,
+                status = AuthorCoreStatus.STABLE,
+                confirmed = true,
+                confidence = Confidence(0.8),
+                corePatternKey = "core:foundation",
+                patternId = pattern.patternId,
+                createdAt = now,
+                updatedAt = now,
+            ),
+        )
+    }
+
+    @Test
+    fun `project null returns only GLOBAL core even when novel cores exist`() {
+        val (coreRepo, p) = coreProjection()
+        seedStableCore(coreRepo, "g", AuthorCoreScope.GLOBAL, null, "全局倾向")
+        seedStableCore(coreRepo, "a", AuthorCoreScope.NOVEL, NovelId("n-a"), "A 书倾向")
+
+        val ctx = p.project(null)
+        assertEquals(1, ctx.cores.size, "null 上下文只应投影 GLOBAL")
+        assertEquals(AuthorCoreScope.GLOBAL, ctx.cores.first().scope)
+        assertEquals("全局倾向", ctx.cores.first().statement)
+    }
+
+    @Test
+    fun `project novelA returns novelA over global`() {
+        val (coreRepo, p) = coreProjection()
+        seedStableCore(coreRepo, "g", AuthorCoreScope.GLOBAL, null, "全局倾向")
+        seedStableCore(coreRepo, "a", AuthorCoreScope.NOVEL, NovelId("n-a"), "A 书覆盖")
+
+        val ctx = p.project(NovelId("n-a"))
+        assertEquals(1, ctx.cores.size)
+        assertEquals(AuthorCoreScope.NOVEL, ctx.cores.first().scope)
+        assertEquals("A 书覆盖", ctx.cores.first().statement)
+    }
+
+    @Test
+    fun `project novelB returns global core when no novelB override`() {
+        val (coreRepo, p) = coreProjection()
+        seedStableCore(coreRepo, "g", AuthorCoreScope.GLOBAL, null, "全局倾向")
+        seedStableCore(coreRepo, "a", AuthorCoreScope.NOVEL, NovelId("n-a"), "A 书倾向")
+
+        val ctx = p.project(NovelId("n-b"))
+        assertEquals(1, ctx.cores.size, "无 novelB override 时回退 GLOBAL")
+        assertEquals(AuthorCoreScope.GLOBAL, ctx.cores.first().scope)
     }
 }

@@ -1,4 +1,4 @@
-﻿package com.qianyan.storage
+package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -65,7 +65,7 @@ class AuthorPreferenceMigrationTest {
                 assertTrue(tableExists(driver, "AuthorProfile"), "migration 后应存在 AuthorProfile（P16 AIL-1）")
                 assertTrue(tableExists(driver, "AuthorPreference"), "migration 后应存在 AuthorPreference（P16 AIL-1）")
                 assertTrue(tableExists(driver, "AuthorEvidence"), "migration 后应存在 AuthorEvidence（P16 AIL-1）")
-                assertEquals(12L, userVersion(driver), "migration 后 user_version 应为 11（P16 AIL-1 Schema v11）")
+                assertEquals(13L, userVersion(driver), "migration 后 user_version 应为最新版本 13（P18-A Schema v13）")
 
                 // 既有 v10 数据仍可读取
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"))

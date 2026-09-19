@@ -1,4 +1,4 @@
-﻿package com.qianyan.storage
+package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -58,7 +58,7 @@ class RevealMigrationTest {
                 DatabaseInitializer.initializeDatabase(driver)
 
                 assertTrue(tableExists(driver, "Reveal"), "migration 后应有 Reveal 表（P13 LCL-D）")
-                assertEquals(12L, userVersion(driver), "user_version 应为最新版本 12（P17 Schema v12）")
+                assertEquals(13L, userVersion(driver), "user_version 应为最新版本 13（P18-A Schema v13）")
                 // scope 索引已建
                 val idxEvent = driver.executeQuery(null,
                     "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_event_scope' LIMIT 1",

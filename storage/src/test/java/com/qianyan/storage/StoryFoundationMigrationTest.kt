@@ -1,4 +1,4 @@
-﻿package com.qianyan.storage
+package com.qianyan.storage
 
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -72,7 +72,7 @@ class StoryFoundationMigrationTest {
                 // 3) 两新表已创建，版本同步为 10
                 assertTrue(tableExists(driver, "StoryFoundation"), "migration 后应存在 StoryFoundation（P14-F.2）")
                 assertTrue(tableExists(driver, "FoundationOverride"), "migration 后应存在 FoundationOverride（P14-F.2）")
-                assertEquals(12L, userVersion(driver), "migration 后 user_version 应为最新版本 12（P17 Schema v12）")
+                assertEquals(13L, userVersion(driver), "migration 后 user_version 应为最新版本 13（P18-A Schema v13）")
 
                 // 4) 既有 v9 数据仍可读取，迁移未触碰既有表语义
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"), "Novel 旧数据应保持")

@@ -61,7 +61,9 @@ import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
+import com.qianyan.application.usecase.author.ObservationCollector
 import com.qianyan.storage.repository.AuthorCoreRepository
+import com.qianyan.storage.repository.AuthorObservationRepository
 import com.qianyan.storage.repository.AuthorPreferenceRepository
 import com.qianyan.storage.repository.BackupStore
 import com.qianyan.storage.repository.ChapterRepository
@@ -70,6 +72,7 @@ import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.SqliteAuthorCoreRepository
+import com.qianyan.storage.repository.SqliteAuthorObservationRepository
 import com.qianyan.storage.repository.SqliteAuthorPreferenceRepository
 import com.qianyan.storage.repository.SqliteBackupStore
 import com.qianyan.storage.repository.SqliteChapterRepository
@@ -122,6 +125,7 @@ class ApplicationContainer(
     val storyFoundationRepository: StoryFoundationRepository,
     val authorPreferenceRepository: AuthorPreferenceRepository,
     val authorCoreRepository: AuthorCoreRepository,
+    val authorObservationRepository: AuthorObservationRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -278,6 +282,10 @@ class ApplicationContainer(
     val authorCoreGateway: AuthorCoreGateway
         get() = AuthorCoreFacade(authorCoreUseCases)
 
+    /** P18-A · Android/Desktop 共用的 Observation Collector（Application 层 Feedback Loop seam；DEC-P18-002）。 */
+    val observationCollector: ObservationCollector
+        get() = ObservationCollector(authorObservationRepository, authorCoreUseCases)
+
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文；P14-F.4 接入已确认 Story Foundation）。 */
     val planningContextAssembly: PlanningContextAssembly
         get() = PlanningContextAssembly(novelRepository, vocabularyRepository, storyWorldContextResolver, storyFoundationRepository, authorContextProjection, errorMapper)
@@ -361,6 +369,7 @@ class ApplicationContainer(
                 storyFoundationRepository = SqliteStoryFoundationRepository(db),
                 authorPreferenceRepository = SqliteAuthorPreferenceRepository(db),
                 authorCoreRepository = SqliteAuthorCoreRepository(db),
+                authorObservationRepository = SqliteAuthorObservationRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

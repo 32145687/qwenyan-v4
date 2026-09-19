@@ -64,6 +64,7 @@ import com.qianyan.model.AuthorCoreId
 import com.qianyan.model.AuthorCoreCandidateId
 import com.qianyan.model.AuthorCorePatternId
 import com.qianyan.model.AuthorCoreEvidenceLinkId
+import com.qianyan.model.AuthorObservationId
 import com.qianyan.model.author.AuthorCore as DomainAuthorCore
 import com.qianyan.model.author.AuthorCoreCandidate as DomainAuthorCoreCandidate
 import com.qianyan.model.author.AuthorCoreEvidenceLink as DomainAuthorCoreEvidenceLink
@@ -72,6 +73,8 @@ import com.qianyan.model.author.AuthorCoreScope
 import com.qianyan.model.author.AuthorCoreStatus
 import com.qianyan.model.author.AuthorEvidence as DomainAuthorEvidence
 import com.qianyan.model.author.AuthorEvidenceType
+import com.qianyan.model.author.AuthorObservation as DomainAuthorObservation
+import com.qianyan.model.author.AuthorObservationSource
 import com.qianyan.model.author.AuthorPreference as DomainAuthorPreference
 import com.qianyan.model.author.AuthorProfile as DomainAuthorProfile
 import com.qianyan.model.author.Confidence
@@ -134,6 +137,7 @@ import com.qianyan.storage.db.AuthorCoreEvidenceLink as DbAuthorCoreEvidenceLink
 import com.qianyan.storage.db.AuthorCorePattern as DbAuthorCorePattern
 import com.qianyan.storage.db.AuthorPreference as DbAuthorPreference
 import com.qianyan.storage.db.AuthorProfile as DbAuthorProfile
+import com.qianyan.storage.db.AuthorObservation as DbAuthorObservation
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -1049,6 +1053,32 @@ internal object StorageMappers {
         linkId = AuthorCoreEvidenceLinkId(row.link_id),
         corePatternKey = row.core_pattern_key,
         evidenceId = AuthorEvidenceId(row.evidence_id),
+        createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    /* ---------------- AuthorObservation（P18-A） ---------------- */
+
+    private val stringMapSerializer = MapSerializer(String.serializer(), String.serializer())
+
+    fun domainAuthorObservation(o: DomainAuthorObservation): DbAuthorObservation = DbAuthorObservation(
+        observation_id = o.observationId.value,
+        scope = o.scope.name,
+        decision_type = o.decisionType.name,
+        novel_id = o.novelId?.value,
+        source = o.source.name,
+        metadata = json.encodeToString(stringMapSerializer, o.metadata),
+        occurred_at = o.occurredAt.toEpochMillis(),
+        created_at = o.createdAt.toEpochMillis(),
+    )
+
+    fun dbAuthorObservation(row: DbAuthorObservation): DomainAuthorObservation = DomainAuthorObservation(
+        observationId = AuthorObservationId(row.observation_id),
+        scope = AuthorCoreScope.valueOf(row.scope),
+        decisionType = AuthorEvidenceType.valueOf(row.decision_type),
+        novelId = row.novel_id?.let { NovelId(it) },
+        source = AuthorObservationSource.valueOf(row.source),
+        metadata = json.decodeFromString(stringMapSerializer, row.metadata),
+        occurredAt = epochMillisToInstant(row.occurred_at),
         createdAt = epochMillisToInstant(row.created_at),
     )
 }

@@ -262,3 +262,8 @@ value class AuthorCoreCandidateId(val value: String)
 @JvmInline
 @Serializable
 value class AuthorCoreEvidenceLinkId(val value: String)
+
+/** P18-A Author Observation（作者创作决策观测）deterministic ID。 */
+@JvmInline
+@Serializable
+value class AuthorObservationId(val value: String)

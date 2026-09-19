@@ -92,14 +92,13 @@ class AuthorContextProjection(
             }
     }
 
-    /** 同一 patternKey 下按优先级选一个：Novel(匹配) > Global（Context 未提供）。 */
+    /** 同一 patternKey 下按优先级选一个：Novel(匹配) > Global（Context 未提供）。（DEC-P18-008：novelId 缺失时**仅 GLOBAL**，禁止降级到任意 NOVEL。） */
     private fun bestForScope(cores: List<AuthorCore>, novelId: NovelId?): AuthorCore? {
         if (novelId != null) {
             cores.firstOrNull { it.scope == AuthorCoreScope.NOVEL && it.novelId == novelId }
                 ?.let { return it }
         }
         return cores.firstOrNull { it.scope == AuthorCoreScope.GLOBAL }
-            ?: cores.firstOrNull { it.scope == AuthorCoreScope.NOVEL }
     }
 }
 
