@@ -1,0 +1,1 @@
+ALTER TABLE AuthorCoreEvidenceLink ADD COLUMN provenance_novel_id TEXT;

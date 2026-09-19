@@ -21,11 +21,12 @@ class AuthorCoreGatewayTest {
     @Test
     fun `gateway drives evidence candidate confirm and reset`() {
         val g = app().authorCoreGateway
+        val novel = com.qianyan.model.NovelId("n1")
 
-        // Evidence → Candidate（幂等）
-        assertTrue(g.recordCoreEvidence(AuthorEvidenceType.ADOPT, AuthorEvidenceId("g-1")))
-        assertEquals(false, g.recordCoreEvidence(AuthorEvidenceType.ADOPT, AuthorEvidenceId("g-1")), "重复采集幂等")
-        assertTrue(g.recordCoreEvidence(AuthorEvidenceType.ADOPT, AuthorEvidenceId("g-2")))
+        // Evidence → Candidate（幂等；NOVEL scope：Global 多书门槛不适用）
+        assertTrue(g.recordCoreEvidence(AuthorEvidenceType.ADOPT, AuthorEvidenceId("g-1"), scope = AuthorCoreScope.NOVEL, novelId = novel))
+        assertEquals(false, g.recordCoreEvidence(AuthorEvidenceType.ADOPT, AuthorEvidenceId("g-1"), scope = AuthorCoreScope.NOVEL, novelId = novel), "重复采集幂等")
+        assertTrue(g.recordCoreEvidence(AuthorEvidenceType.ADOPT, AuthorEvidenceId("g-2"), scope = AuthorCoreScope.NOVEL, novelId = novel))
 
         val cand = g.viewCandidates().first()
         assertTrue(g.viewCores().isEmpty(), "确认前无长期 Core")

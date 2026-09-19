@@ -40,8 +40,8 @@ class AuthorCoreUseCasesTest {
     @Test
     fun `two observations then confirm forms stable core`() {
         val (uc, repo) = setup()
-        assertTrue(uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("a-1")))
-        assertTrue(uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("a-2")))
+        assertTrue(uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("a-1"), provenanceNovelId = NovelId("n1")))
+        assertTrue(uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("a-2"), provenanceNovelId = NovelId("n2")))
         val cand = uc.viewCandidates().first()
         assertTrue(cand.observationCount >= 2)
         assertTrue(uc.viewCores().isEmpty(), "确认前无长期 Core")
@@ -76,13 +76,13 @@ class AuthorCoreUseCasesTest {
     @Test
     fun `global direction flip supersedes old core awaiting re-confirmation`() {
         val (uc, _) = setup()
-        // 形成正向 Core
-        repeat(2) { i -> uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("p-$i")) }
+        // 形成正向 Core（跨两本来源，满足 Global 多书门槛）
+        repeat(2) { i -> uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("p-$i"), provenanceNovelId = NovelId(if (i % 2 == 0) "n1" else "n2")) }
         val core = uc.confirmCoreCandidate(uc.viewCandidates().first().candidateId)
 
         // 反向证据进入 → 同一候选方向翻转
-        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n-1"))
-        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n-2"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n-1"), provenanceNovelId = NovelId("n1"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n-2"), provenanceNovelId = NovelId("n2"))
         val flippedCand = uc.viewCandidates().first()
         assertTrue(flippedCand.contradictionCount >= 1)
         // 旧 Core 仍是 STABLE，直到用户重新确认翻转后的候选
@@ -125,8 +125,8 @@ class AuthorCoreUseCasesTest {
     @Test
     fun `reset wipes core results but not preference evidence`() {
         val (uc, repo) = setup()
-        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("rs-1"))
-        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("rs-2"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("rs-1"), provenanceNovelId = NovelId("n1"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("rs-2"), provenanceNovelId = NovelId("n2"))
         uc.confirmCoreCandidate(uc.viewCandidates().first().candidateId)
         assertTrue(uc.viewCores().isNotEmpty())
 
@@ -160,8 +160,8 @@ class AuthorCoreUseCasesTest {
     @Test
     fun `modify creates new revision and preserves old content`() {
         val (uc, repo) = setup()
-        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("m-1"))
-        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("m-2"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("m-1"), provenanceNovelId = NovelId("n1"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("m-2"), provenanceNovelId = NovelId("n2"))
         val v1 = uc.confirmCoreCandidate(uc.viewCandidates().first().candidateId)
         val oldStatement = repoPattern(repo, v1).statement
 
@@ -190,13 +190,13 @@ class AuthorCoreUseCasesTest {
     @Test
     fun `global direction flip preserves history`() {
         val (uc, repo) = setup()
-        repeat(2) { i -> uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("p$i")) }
+        repeat(2) { i -> uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("p$i"), provenanceNovelId = NovelId(if (i % 2 == 0) "n1" else "n2")) }
         val a = uc.confirmCoreCandidate(uc.viewCandidates().first().candidateId)
         val aStatement = repoPattern(repo, a).statement
 
-        // 反向证据（两例）
-        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n1"))
-        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n2"))
+        // 反向证据（两例，跨两本来源）
+        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n1"), provenanceNovelId = NovelId("n1"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n2"), provenanceNovelId = NovelId("n2"))
         val b = uc.confirmCoreCandidate(uc.viewCandidates().first().candidateId)
 
         val oldA = repoCore(repo, a.coreId)
@@ -212,13 +212,13 @@ class AuthorCoreUseCasesTest {
     @Test
     fun `evidence link history preserved across revision`() {
         val (uc, repo) = setup()
-        repeat(2) { i -> uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("p$i")) }
+        repeat(2) { i -> uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("p$i"), provenanceNovelId = NovelId(if (i % 2 == 0) "n1" else "n2")) }
         val a = uc.confirmCoreCandidate(uc.viewCandidates().first().candidateId)
         val aPattern = repoPattern(repo, a)
         val aRefs = aPattern.evidenceRefs.map { it.value }.toSet()
 
-        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n1"))
-        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n2"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n1"), provenanceNovelId = NovelId("n1"))
+        uc.recordCoreEvidence(type = AuthorEvidenceType.REJECT, evidenceId = AuthorEvidenceId("n2"), provenanceNovelId = NovelId("n2"))
         val b = uc.confirmCoreCandidate(uc.viewCandidates().first().candidateId)
         val bRefs = repoPattern(repo, b).evidenceRefs.map { it.value }.toSet()
 

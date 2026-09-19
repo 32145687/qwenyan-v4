@@ -1046,6 +1046,7 @@ internal object StorageMappers {
         link_id = l.linkId.value,
         core_pattern_key = l.corePatternKey,
         evidence_id = l.evidenceId.value,
+        provenance_novel_id = l.provenanceNovelId?.value,
         created_at = l.createdAt.toEpochMillis(),
     )
 
@@ -1053,6 +1054,7 @@ internal object StorageMappers {
         linkId = AuthorCoreEvidenceLinkId(row.link_id),
         corePatternKey = row.core_pattern_key,
         evidenceId = AuthorEvidenceId(row.evidence_id),
+        provenanceNovelId = row.provenance_novel_id?.let { NovelId(it) },
         createdAt = epochMillisToInstant(row.created_at),
     )
 

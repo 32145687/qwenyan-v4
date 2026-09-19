@@ -47,7 +47,10 @@ class ObservationCollector constructor(
             val ok = coreUseCases.recordCoreEvidence(
                 type = e.type,
                 scope = observation.scope,
-                novelId = observation.novelId,
+                // 候选作用域绑定：NOVEL 绑定该书；GLOBAL 保持全局(null)。
+                novelId = if (observation.scope == AuthorCoreScope.NOVEL) observation.novelId else null,
+                // 证据来源归属：任何 scope 都把出处书写入 evidence（Global 多书门槛 DEC-P18B-005 依赖 provenance）。
+                provenanceNovelId = observation.novelId,
                 evidenceId = e.evidenceId,
                 detail = e.detail,
                 source = "observation:" + observation.source.name.lowercase(),

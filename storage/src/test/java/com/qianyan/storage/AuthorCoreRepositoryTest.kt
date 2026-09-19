@@ -104,7 +104,7 @@ class AuthorCoreRepositoryTest {
     fun `evidence link is idempotent per pattern`() {
         val h = handle()
         val r = repo(h.db)
-        val link = AuthorCoreEvidenceLink(AuthorCoreEvidenceLinkId("l-1"), "core:foundation", AuthorEvidenceId("e1"), now)
+        val link = AuthorCoreEvidenceLink(AuthorCoreEvidenceLinkId("l-1"), "core:foundation", AuthorEvidenceId("e1"), createdAt = now)
         r.linkEvidence(link)
         r.linkEvidence(link)
         assertTrue(r.evidenceLinkExists("core:foundation", AuthorEvidenceId("e1")))
@@ -127,7 +127,7 @@ class AuthorCoreRepositoryTest {
         val h = handle()
         val r = repo(h.db)
         r.upsertAuthorCore(core())
-        r.linkEvidence(AuthorCoreEvidenceLink(AuthorCoreEvidenceLinkId("l-1"), "core:foundation", AuthorEvidenceId("e1"), now))
+        r.linkEvidence(AuthorCoreEvidenceLink(AuthorCoreEvidenceLinkId("l-1"), "core:foundation", AuthorEvidenceId("e1"), createdAt = now))
         r.wipeLearningResults()
         assertNull(r.getAuthorCore(AuthorCoreId("c-1")))
         assertTrue(r.listEvidenceLinks("core:foundation").isEmpty())

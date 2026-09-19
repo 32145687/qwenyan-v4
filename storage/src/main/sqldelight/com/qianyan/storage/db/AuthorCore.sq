@@ -65,6 +65,7 @@ CREATE TABLE AuthorCoreEvidenceLink (
     link_id         TEXT NOT NULL PRIMARY KEY,
     core_pattern_key TEXT NOT NULL,
     evidence_id     TEXT NOT NULL,
+    provenance_novel_id TEXT,              -- P18-B：证据来源/归属 Novel（Global 多书门槛；可空）
     created_at      INTEGER NOT NULL,
     UNIQUE (core_pattern_key, evidence_id)
 );
@@ -161,8 +162,8 @@ DELETE FROM AuthorCoreCandidate WHERE candidate_id = :candidate_id;
 -- AuthorCoreEvidenceLink（幂等：同 (patternKey, evidenceId) 只入链一次）
 -- ============================================================
 insertAuthorCoreEvidenceLink:
-INSERT OR IGNORE INTO AuthorCoreEvidenceLink(link_id, core_pattern_key, evidence_id, created_at)
-VALUES (:link_id, :core_pattern_key, :evidence_id, :created_at);
+INSERT OR IGNORE INTO AuthorCoreEvidenceLink(link_id, core_pattern_key, evidence_id, provenance_novel_id, created_at)
+VALUES (:link_id, :core_pattern_key, :evidence_id, :provenance_novel_id, :created_at);
 
 evidenceLinkExists:
 SELECT COUNT(*) FROM AuthorCoreEvidenceLink WHERE core_pattern_key = :core_pattern_key AND evidence_id = :evidence_id;
@@ -175,6 +176,18 @@ SELECT * FROM AuthorCoreEvidenceLink WHERE evidence_id = :evidence_id ORDER BY c
 
 deleteEvidenceLinksByPattern:
 DELETE FROM AuthorCoreEvidenceLink WHERE core_pattern_key = :core_pattern_key;
+
+-- ============================================================
+-- P18-B · Global 多书门槛（DEC-P18B-005）：某个 patternKey 已链证据的去重来源 Novel 数。
+-- 基于 AuthorCoreEvidenceLink.provenance_novel_id（证据来源归属，去重、排除空来源），runtime-derived，
+-- 避免依赖未持久化的 AuthorEvidence 实体行。
+-- ============================================================
+selectDistinctProvenanceNovelCount:
+SELECT COUNT(DISTINCT provenance_novel_id)
+FROM AuthorCoreEvidenceLink
+WHERE core_pattern_key = :pattern_key
+  AND provenance_novel_id IS NOT NULL
+  AND provenance_novel_id != '';
 
 -- ============================================================
 -- AuthorCoreLearning（单例：是否暂停学习）

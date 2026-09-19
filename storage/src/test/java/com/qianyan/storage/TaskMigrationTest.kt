@@ -265,7 +265,7 @@ class TaskMigrationTest {
         assertTrue(tableExists(driver, "Checkpoint"), "migration 后应存在 Checkpoint 表")
         assertTrue(tableExists(driver, "ChapterDraft"), "migration 后应存在 ChapterDraft 表")
         assertTrue(tableExists(driver, "Chapter"), "migration 后应存在 Chapter 表（P12.0 P0-4）")
-        assertEquals(13L, userVersion(driver), "migration 后 user_version 应为当前最新版本 13（P18-A Schema v13）")
+        assertEquals(14L, userVersion(driver), "migration 后 user_version 应为当前最新版本 13（P18-B Schema v14）")
 
         // 5) v5 新增的 6 张 Story State 表在旧库逐级迁移后均存在（P12.1.1）
         listOf("Character", "CharacterState", "WorldRule", "Event", "TimelineEntry", "Foreshadow").forEach { tbl ->

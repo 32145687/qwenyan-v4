@@ -100,7 +100,10 @@ class AuthorCoreFacade(
         novelId: NovelId?,
         detail: String,
         source: String,
-    ): Boolean = useCases.recordCoreEvidence(patternKey, type, statement, condition, scope, novelId, evidenceId, detail, source)
+    ): Boolean = useCases.recordCoreEvidence(
+        patternKey = patternKey, type = type, statement = statement, condition = condition, scope = scope,
+        novelId = novelId, evidenceId = evidenceId, detail = detail, source = source,
+    )
 
     override fun collectFoundationCoreEvidence(novelId: NovelId): Int =
         useCases.collectFoundationCoreEvidence(novelId)

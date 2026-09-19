@@ -63,6 +63,9 @@ object DatabaseInitializer {
     /** v12（P17：AuthorCore）→ v13（P18-A：AuthorObservation 独立表）迁移起点。 */
     private const val V12 = 12L
 
+    /** v13（P18-A：AuthorObservation）→ v14（P18-B：AuthorCoreEvidenceLink 加 provenance_novel_id 列）迁移起点。 */
+    private const val V13 = 13L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -182,6 +185,12 @@ object DatabaseInitializer {
             !tableExists(driver, "AuthorObservation") -> withTransaction(driver) {
                 // v12 → v13：新增 AuthorObservation 独立表（P18-A）。
                 QianyanDb.Schema.migrate(driver, V12, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !columnExists(driver, "AuthorCoreEvidenceLink", "provenance_novel_id") -> withTransaction(driver) {
+                // v13 → v14：AuthorCoreEvidenceLink 加 provenance_novel_id（P18-B Global 多书门槛）。
+                QianyanDb.Schema.migrate(driver, V13, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

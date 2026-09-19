@@ -123,5 +123,7 @@ data class AuthorCoreEvidenceLink(
     val linkId: AuthorCoreEvidenceLinkId,
     val corePatternKey: String,
     val evidenceId: AuthorEvidenceId,
+    /** P18-B：证据来源/归属 Novel（dec-id 供 Global 多书门槛），可空。 */
+    val provenanceNovelId: NovelId? = null,
     val createdAt: Instant,
 )

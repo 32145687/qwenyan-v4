@@ -130,7 +130,8 @@ class SqliteAuthorCoreRepository(private val db: QianyanDb) : AuthorCoreReposito
         val r = StorageMappers.domainAuthorCoreEvidenceLink(link)
         db.authorCoreQueries.insertAuthorCoreEvidenceLink(
             link_id = r.link_id, core_pattern_key = r.core_pattern_key,
-            evidence_id = r.evidence_id, created_at = r.created_at,
+            evidence_id = r.evidence_id, provenance_novel_id = r.provenance_novel_id,
+            created_at = r.created_at,
         )
     }
 
@@ -139,6 +140,10 @@ class SqliteAuthorCoreRepository(private val db: QianyanDb) : AuthorCoreReposito
 
     override fun listEvidenceLinks(corePatternKey: String): List<AuthorCoreEvidenceLink> =
         db.authorCoreQueries.getEvidenceLinksByPattern(corePatternKey).executeAsList().map { StorageMappers.dbAuthorCoreEvidenceLink(it) }
+
+    /** P18-B：某 patternKey 已链证据的去重来源 Novel 数（runtime-derived，DEC-P18B-005）。 */
+    override fun distinctProvenanceNovelCount(patternKey: String): Long =
+        db.authorCoreQueries.selectDistinctProvenanceNovelCount(patternKey).executeAsOne()
 
     override fun listEvidenceKeysByEvidenceId(evidenceId: AuthorEvidenceId): List<String> =
         db.authorCoreQueries.getEvidenceLinksByEvidenceId(evidenceId.value).executeAsList().map { it.core_pattern_key }

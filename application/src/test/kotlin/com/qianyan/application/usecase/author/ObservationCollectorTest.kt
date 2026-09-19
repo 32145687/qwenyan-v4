@@ -113,8 +113,9 @@ class ObservationCollectorTest {
     @Test
     fun `confirm is the only path from candidate to stable core`() {
         val h = setup()
-        h.collector.record(obs("c1"))
-        h.collector.record(obs("c2"))
+        // NOVEL scope：Global 多书门槛不适用，验证"确认是唯一从候选到稳定的路径"
+        h.collector.record(obs("c1", scope = AuthorCoreScope.NOVEL))
+        h.collector.record(obs("c2", scope = AuthorCoreScope.NOVEL))
         val cand = h.coreUseCases.viewCandidates().first()
         assertTrue(h.coreUseCases.viewCores().isEmpty(), "确认前无长期 Core")
         // 确保达到最小观察门槛后确认

@@ -50,6 +50,8 @@ class AuthorCoreUseCases(
 
     /**
      * 记录一条 Explicit Core Evidence 并聚合（幂等：同一 evidenceId 只应用一次）。
+     * @param novelId 候选作用域绑定 Novel（NOVEL scope 必填；GLOBAL/无 → null）。
+     * @param provenanceNovelId 证据的来源/归属 Novel（用于 Global 多书门槛 DEC-P18B-005；GLOBAL 观测的出处书）。
      * @return true = 本次新应用；false = 幂等跳过（已应用 或 学习已暂停）。
      */
     fun recordCoreEvidence(
@@ -59,6 +61,7 @@ class AuthorCoreUseCases(
         condition: String? = null,
         scope: AuthorCoreScope = AuthorCoreScope.GLOBAL,
         novelId: NovelId? = null,
+        provenanceNovelId: NovelId? = null,
         evidenceId: AuthorEvidenceId,
         detail: String = "",
         source: String = "author-core",
@@ -69,7 +72,7 @@ class AuthorCoreUseCases(
         val now = Clock.System.now()
         val evidence = AuthorEvidence(
             evidenceId = evidenceId,
-            novelId = novelId ?: NovelId(""),
+            novelId = (provenanceNovelId ?: novelId) ?: NovelId(""),
             type = type,
             detail = detail,
             source = source,
@@ -77,7 +80,15 @@ class AuthorCoreUseCases(
         )
         val candidate = ensureCandidate(patternKey, scope, novelId, statement, condition, now)
         repository.upsertAuthorCoreCandidate(AuthorCoreAggregator.aggregate(candidate, evidence, now))
-        repository.linkEvidence(AuthorCoreEvidenceLink(AuthorCoreEvidenceLinkId(nextId()), patternKey, evidenceId, now))
+        repository.linkEvidence(
+            AuthorCoreEvidenceLink(
+                linkId = AuthorCoreEvidenceLinkId(nextId()),
+                corePatternKey = patternKey,
+                evidenceId = evidenceId,
+                provenanceNovelId = (provenanceNovelId ?: novelId)?.takeIf { it.value.isNotBlank() },
+                createdAt = now,
+            ),
+        )
         return true
     }
 
@@ -90,7 +101,15 @@ class AuthorCoreUseCases(
                 val now = signal.observedAt
                 val candidate = ensureCandidate(defaultPatternKey, AuthorCoreScope.GLOBAL, null, defaultStatement, null, now)
                 repository.upsertAuthorCoreCandidate(AuthorCoreAggregator.aggregate(candidate, signal, now))
-                repository.linkEvidence(AuthorCoreEvidenceLink(AuthorCoreEvidenceLinkId(nextId()), defaultPatternKey, signal.evidenceId, now))
+                repository.linkEvidence(
+                    AuthorCoreEvidenceLink(
+                        linkId = AuthorCoreEvidenceLinkId(nextId()),
+                        corePatternKey = defaultPatternKey,
+                        evidenceId = signal.evidenceId,
+                        provenanceNovelId = signal.novelId.takeIf { it.value.isNotBlank() },
+                        createdAt = now,
+                    ),
+                )
                 applied++
             }
         }
@@ -112,6 +131,19 @@ class AuthorCoreUseCases(
                     "需至少 ${AuthorCoreAggregator.MIN_OBSERVATION} 次观测才能形成长期 Core（当前 ${cand.observationCount}）",
                 ),
             )
+        }
+        // P18-B · Global 多书门槛（DEC-P18B-005）：Global Core 晋升必须跨 ≥ 阈值本不同 Novel 的来源证据。
+        // distinct == 0（无 provenance / legacy）或 1 均不得绕过该门槛 → 一律阻止；无来源证据不视为满足 multi-Novel。
+        if (cand.scope == AuthorCoreScope.GLOBAL) {
+            val distinctNovel = repository.distinctProvenanceNovelCount(cand.patternKey)
+            val threshold = AuthorCoreAggregator.GLOBAL_MULTI_NOVEL_THRESHOLD
+            if (distinctNovel < threshold) {
+                throw ApplicationException(
+                    ApplicationError.InvalidOperation(
+                        "Global Author Core 晋升需跨至少 $threshold 本不同 Novel 的来源证据（当前 $distinctNovel 本）",
+                    ),
+                )
+            }
         }
         val now = Clock.System.now()
 

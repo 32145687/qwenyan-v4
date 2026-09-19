@@ -48,6 +48,8 @@ interface AuthorCoreRepository {
     fun linkEvidence(link: AuthorCoreEvidenceLink)
     fun evidenceLinkExists(corePatternKey: String, evidenceId: AuthorEvidenceId): Boolean
     fun listEvidenceLinks(corePatternKey: String): List<AuthorCoreEvidenceLink>
+    /** P18-B：某 patternKey 已链证据的去重来源 Novel 数（runtime-derived；DEC-P18B-005 Global 多书门槛）。 */
+    fun distinctProvenanceNovelCount(patternKey: String): Long
     /** 某 Evidence 已被何 patternKey 引用（用于全局幂等核查）。 */
     fun listEvidenceKeysByEvidenceId(evidenceId: AuthorEvidenceId): List<String>
     fun deleteEvidenceLinksByPattern(corePatternKey: String)
