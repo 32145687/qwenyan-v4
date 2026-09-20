@@ -208,4 +208,74 @@ class AuthorCoreP18BTests {
         assertEquals(coreB.coreId, old.supersededBy)
         assertTrue(coreB.coreId != coreA.coreId)
     }
+
+    // ---------------- P18-B Post-Seal Scope Boundary（Application 层 invariant） ----------------
+
+    @Test
+    fun `global with null novel is valid`() {
+        val (uc, _) = setup()
+        assertTrue(uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("g-null-1")))
+        assertEquals(1, uc.viewCandidates().size, "GLOBAL + novelId=null 应正常创建候选")
+    }
+
+    @Test
+    fun `global with non-null novel is rejected`() {
+        val (uc, _) = setup()
+        assertFailsWith<ApplicationException> {
+            uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("g-bad"), novelId = NovelId("n1"))
+        }
+        assertTrue(uc.viewCandidates().isEmpty(), "非法 GLOBAL 候选不得创建")
+        assertTrue(uc.viewCores().isEmpty())
+    }
+
+    @Test
+    fun `novel with null novel is rejected`() {
+        val (uc, _) = setup()
+        assertFailsWith<ApplicationException> {
+            uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("n-null"), scope = AuthorCoreScope.NOVEL)
+        }
+        assertTrue(uc.viewCandidates().isEmpty(), "非法 NOVEL/null 候选不得创建")
+        assertTrue(uc.viewCores().isEmpty())
+    }
+
+    @Test
+    fun `novel with non-null novel is valid`() {
+        val (uc, _) = setup()
+        val n1 = NovelId("n1")
+        assertTrue(uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("n-ok"), scope = AuthorCoreScope.NOVEL, novelId = n1))
+        assertEquals(1, uc.viewCandidates().size)
+        assertEquals(AuthorCoreScope.NOVEL, uc.viewCandidates().first().scope)
+        assertEquals(n1, uc.viewCandidates().first().novelId)
+    }
+
+    @Test
+    fun `context candidate cannot be promoted to stable`() {
+        val (uc, repo) = setup()
+        val n1 = NovelId("n1")
+        // CONTEXT 允许产生 Candidate（临时中间态）
+        assertTrue(uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("ctx-1"), scope = AuthorCoreScope.CONTEXT, novelId = n1))
+        val cand = uc.viewCandidates().first()
+        assertEquals(AuthorCoreScope.CONTEXT, cand.scope)
+        assertFailsWith<ApplicationException> {
+            uc.confirmCoreCandidate(cand.candidateId)
+        }
+        // 断言未产生任何持久化 Stable Core / Pattern，且候选未被置 STABLE
+        assertTrue(uc.viewCores().isEmpty(), "CONTEXT 不得晋升 STABLE Core")
+        assertEquals(0, repo.listStableCores().size)
+        assertEquals(0, repo.getAuthorCorePatternsByKey("core:foundation").count { it.status == AuthorCoreStatus.STABLE })
+        assertTrue(uc.viewCandidate(cand.candidateId)!!.status != AuthorCoreStatus.STABLE, "候选不得被置 STABLE")
+        assertEquals(0, repo.getAuthorCorePatternsByKey("core:foundation").size, "CONTEXT 不写 Pattern")
+    }
+
+    @Test
+    fun `context guard does not affect normal novel promotion`() {
+        val (uc, _) = setup()
+        val n1 = NovelId("n1")
+        // 先构造一个 CONTEXT 候选，验证其不影响 NOVEL 晋升
+        uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("ctx-x"), scope = AuthorCoreScope.CONTEXT, novelId = n1)
+        repeat(2) { i -> uc.recordCoreEvidence(type = AuthorEvidenceType.ADOPT, evidenceId = AuthorEvidenceId("grant$i"), scope = AuthorCoreScope.NOVEL, novelId = n1) }
+        val novelCand = uc.viewCandidates().first { it.scope == AuthorCoreScope.NOVEL }
+        val core = uc.confirmCoreCandidate(novelCand.candidateId)
+        assertEquals(AuthorCoreStatus.STABLE, core.status, "NOVEL 单书晋升不受 CONTEXT 拦截影响")
+    }
 }

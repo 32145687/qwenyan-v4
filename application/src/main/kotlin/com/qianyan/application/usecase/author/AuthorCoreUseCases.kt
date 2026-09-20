@@ -68,6 +68,7 @@ class AuthorCoreUseCases(
     ): Boolean {
         if (repository.isLearningPaused()) return false
         if (repository.listEvidenceKeysByEvidenceId(evidenceId).isNotEmpty()) return false // 幂等
+        validateScopeInvariant(scope, novelId)
 
         val now = Clock.System.now()
         val evidence = AuthorEvidence(
@@ -124,6 +125,13 @@ class AuthorCoreUseCases(
         val cand = requireCandidate(candidateId)
         if (cand.status != AuthorCoreStatus.CANDIDATE) {
             throw ApplicationException(ApplicationError.InvalidOperation("候选状态 ${cand.status} 不可确认"))
+        }
+        // Scope invariant：仅允许合法作用域组合晋升；CONTEXT 为临时作用域，绝不晋升 STABLE AuthorCore。
+        validateScopeInvariant(cand.scope, cand.novelId)
+        if (cand.scope == AuthorCoreScope.CONTEXT) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation("Context Author Core 不能被晋升为 STABLE"),
+            )
         }
         if (cand.observationCount < AuthorCoreAggregator.MIN_OBSERVATION) {
             throw ApplicationException(
@@ -278,6 +286,7 @@ class AuthorCoreUseCases(
         condition: String?,
         now: Instant,
     ): AuthorCoreCandidate {
+        validateScopeInvariant(scope, novelId)
         val existing = repository.listCandidates(scope, novelId)
             .firstOrNull { it.patternKey == patternKey && it.scope == scope && it.novelId == novelId }
         if (existing != null) return existing
@@ -322,6 +331,29 @@ class AuthorCoreUseCases(
     private fun requireLearningActive() {
         if (repository.isLearningPaused()) {
             throw ApplicationException(ApplicationError.InvalidOperation("Author Core 学习已暂停"))
+        }
+    }
+
+    /**
+     * Scope 合法性不变式（P18-B Post-Seal 边界一致性修复；Application UseCase 层强制校验）。
+     *  - GLOBAL → novelId 必须为 null
+     *  - NOVEL  → novelId 必须非 null（绑定明确 Novel）
+     *  - CONTEXT → 允许产生临时 Candidate，但**不得** confirm 为 STABLE（由 confirmCoreCandidate 另行拦截）
+     * 不做 panic/存储变更；非法组合直接抛 [ApplicationError.InvalidOperation]。
+     */
+    private fun validateScopeInvariant(scope: AuthorCoreScope, novelId: NovelId?) {
+        when (scope) {
+            AuthorCoreScope.GLOBAL -> if (novelId != null) {
+                throw ApplicationException(
+                    ApplicationError.InvalidOperation("GLOBAL Author Core 不允许绑定 novelId"),
+                )
+            }
+            AuthorCoreScope.NOVEL -> if (novelId == null) {
+                throw ApplicationException(
+                    ApplicationError.InvalidOperation("NOVEL Author Core 必须绑定 novelId"),
+                )
+            }
+            AuthorCoreScope.CONTEXT -> Unit // 临时作用域：允许 Candidate 存在，但不可晋升 STABLE
         }
     }
 }
