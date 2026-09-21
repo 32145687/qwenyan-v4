@@ -58,8 +58,11 @@ import com.qianyan.model.foundation.StoryDirection
 import com.qianyan.model.foundation.StoryFoundation as DomainStoryFoundation
 import com.qianyan.model.foundation.WritingPolicy
 import com.qianyan.model.AuthorPreferenceId
-import com.qianyan.model.AuthorProfileId
 import com.qianyan.model.AuthorEvidenceId
+import com.qianyan.model.AuthorDnaFeatureId
+import com.qianyan.model.AuthorDnaSourceId
+import com.qianyan.model.AuthorDnaVersionId
+import com.qianyan.model.AuthorProfileId
 import com.qianyan.model.AuthorCoreId
 import com.qianyan.model.AuthorCoreCandidateId
 import com.qianyan.model.AuthorCorePatternId
@@ -76,6 +79,13 @@ import com.qianyan.model.author.AuthorEvidenceType
 import com.qianyan.model.author.AuthorObservation as DomainAuthorObservation
 import com.qianyan.model.author.AuthorObservationSource
 import com.qianyan.model.author.AuthorPreference as DomainAuthorPreference
+import com.qianyan.model.author.AuthorDnaDimension
+import com.qianyan.model.author.AuthorDnaFeature as DomainAuthorDnaFeature
+import com.qianyan.model.author.AuthorDnaFeatureStatus
+import com.qianyan.model.author.AuthorDnaSource as DomainAuthorDnaSource
+import com.qianyan.model.author.AuthorDnaSourceRef
+import com.qianyan.model.author.AuthorDnaVersion as DomainAuthorDnaVersion
+import com.qianyan.model.author.AuthorDnaVersionStatus
 import com.qianyan.model.author.AuthorProfile as DomainAuthorProfile
 import com.qianyan.model.author.Confidence
 import com.qianyan.model.author.PreferenceDimension
@@ -138,6 +148,9 @@ import com.qianyan.storage.db.AuthorCorePattern as DbAuthorCorePattern
 import com.qianyan.storage.db.AuthorPreference as DbAuthorPreference
 import com.qianyan.storage.db.AuthorProfile as DbAuthorProfile
 import com.qianyan.storage.db.AuthorObservation as DbAuthorObservation
+import com.qianyan.storage.db.AuthorDnaVersion as DbAuthorDnaVersion
+import com.qianyan.storage.db.AuthorDnaFeature as DbAuthorDnaFeature
+import com.qianyan.storage.db.AuthorDnaSource as DbAuthorDnaSource
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -1082,5 +1095,79 @@ internal object StorageMappers {
         metadata = json.decodeFromString(stringMapSerializer, row.metadata),
         occurredAt = epochMillisToInstant(row.occurred_at),
         createdAt = epochMillisToInstant(row.created_at),
+    )
+
+    /* ---------------- Author DNA（P18-C） ---------------- */
+
+    private val dnaSourceRefSerializer = ListSerializer(AuthorDnaSourceRef.serializer())
+
+    fun domainAuthorDnaVersion(v: DomainAuthorDnaVersion): DbAuthorDnaVersion = DbAuthorDnaVersion(
+        dna_id = v.versionId.value,
+        author_id = v.authorId.value,
+        version = v.version,
+        status = v.status.name,
+        rule_version = v.ruleVersion,
+        created_at = v.createdAt.toEpochMillis(),
+        updated_at = v.updatedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorDnaVersion(row: DbAuthorDnaVersion): DomainAuthorDnaVersion = DomainAuthorDnaVersion(
+        versionId = AuthorDnaVersionId(row.dna_id),
+        authorId = AuthorProfileId(row.author_id),
+        version = row.version,
+        status = AuthorDnaVersionStatus.valueOf(row.status),
+        ruleVersion = row.rule_version,
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainAuthorDnaFeature(f: DomainAuthorDnaFeature): DbAuthorDnaFeature = DbAuthorDnaFeature(
+        feature_id = f.featureId.value,
+        dna_id = f.versionId.value,
+        author_id = f.authorId.value,
+        dimension = f.dimension.name,
+        feature_key = f.featureKey,
+        value_text = f.value,
+        statement = f.statement,
+        confidence = f.confidence.value,
+        status = f.status.name,
+        source_refs = json.encodeToString(dnaSourceRefSerializer, f.sourceRefs),
+        created_at = f.createdAt.toEpochMillis(),
+        updated_at = f.updatedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorDnaFeature(row: DbAuthorDnaFeature): DomainAuthorDnaFeature = DomainAuthorDnaFeature(
+        featureId = AuthorDnaFeatureId(row.feature_id),
+        versionId = AuthorDnaVersionId(row.dna_id),
+        authorId = AuthorProfileId(row.author_id),
+        dimension = AuthorDnaDimension.valueOf(row.dimension),
+        featureKey = row.feature_key,
+        value = row.value_text,
+        statement = row.statement,
+        confidence = Confidence(row.confidence),
+        status = AuthorDnaFeatureStatus.valueOf(row.status),
+        sourceRefs = json.decodeFromString(dnaSourceRefSerializer, row.source_refs),
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    fun domainAuthorDnaSource(s: DomainAuthorDnaSource): DbAuthorDnaSource = DbAuthorDnaSource(
+        source_id = s.sourceId.value,
+        author_id = s.authorId.value,
+        txt_document_id = s.txtDocumentId.value,
+        source_novel_id = s.sourceNovelId?.value,
+        content_hash = s.contentHash,
+        created_at = s.createdAt.toEpochMillis(),
+        updated_at = s.updatedAt.toEpochMillis(),
+    )
+
+    fun dbAuthorDnaSource(row: DbAuthorDnaSource): DomainAuthorDnaSource = DomainAuthorDnaSource(
+        sourceId = AuthorDnaSourceId(row.source_id),
+        authorId = AuthorProfileId(row.author_id),
+        txtDocumentId = TxtDocumentId(row.txt_document_id),
+        sourceNovelId = row.source_novel_id?.let { NovelId(it) },
+        contentHash = row.content_hash,
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
     )
 }

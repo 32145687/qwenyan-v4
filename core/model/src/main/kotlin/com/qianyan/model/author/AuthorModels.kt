@@ -141,8 +141,11 @@ data class AuthorContext(
     // ---- P17：AuthorCore 最小只读投影（DEC-P17-013/016：防泄漏） ----
     /** 长期创作决策倾向（Core Lite）；只投影 patternKey/statement/confidence/scope/condition，不投影任何内部学习数据。 */
     val cores: List<AuthorCoreLite> = emptyList(),
+    // ---- P18-C：AuthorDna 最小只读投影（DEC-P18C-014：防泄漏） ----
+    /** 作者风格指纹（DnaLite）；只投影 feature 最小集，不投影原文 / 分析过程 / storage 细节。 */
+    val dna: List<AuthorDnaLite> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = preferences.isEmpty() && cores.isEmpty()
+    val isEmpty: Boolean get() = preferences.isEmpty() && cores.isEmpty() && dna.isEmpty()
 
     /** 供 Planner / Writer 消费的最小偏好投影（不携带原始 Evidence / Repository / 未确认候选）。 */
     @Serializable

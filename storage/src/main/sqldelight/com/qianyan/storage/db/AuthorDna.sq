@@ -1,0 +1,109 @@
+-- Qianyan Storage · Schema v15（P18-C · Author DNA 独立 Storage Boundary）
+-- AuthorDnaVersion / AuthorDnaFeature / AuthorDnaSource = 作者风格指纹的独立持久化边界。
+-- 语义（P18-C · DEC-P18C-001~015）：
+--   - **独立 Author DNA Storage Boundary**：不修改 AuthorCore / AuthorPreference / AuthorObservation，
+--     不修改任何 Story 表（NovelKnowledge / StoryState / NarrativeState 等）。
+--   - DNA scope = GLOBAL，identity = author_id（== AuthorProfile.profile_id；DEC-P18C-015）。
+--     source_novel_id 仅作**来源追踪**（provenance），不是 DNA scope。
+--   - 版本化：每次 Full Rebuild 产生新 version；旧 version 保留（status=SUPERSEDED）可追溯。
+--   - Feature 生命周期：CANDIDATE → ACTIVE(Confirm) / REJECTED(Reject)，REJECT 仅属当前 version。
+--   - 来源：删除来源删除 AuthorDnaSource 行；不物理改 TxtDocument。
+-- 约定（与既有一致）：ID TEXT(UUID)，时间 INTEGER(epoch ms)，枚举 TEXT(name)，置信度 REAL(0.0..1.0)，
+--   JSON TEXT（kotlinx.serialization）。
+
+-- 每个 author 一个当前 DNA + 历史 version 族。
+CREATE TABLE AuthorDnaVersion (
+    dna_id       TEXT NOT NULL PRIMARY KEY,
+    author_id    TEXT NOT NULL,
+    version      INTEGER NOT NULL,          -- 该作者的版本号（单调递增）
+    status       TEXT NOT NULL,             -- AuthorDnaVersionStatus EMPTY/ACTIVE/SUPERSEDED
+    rule_version TEXT NOT NULL DEFAULT '',  -- 分析规则版本（确定性可复现）
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    UNIQUE (author_id, version)
+);
+
+CREATE TABLE AuthorDnaFeature (
+    feature_id   TEXT NOT NULL PRIMARY KEY,
+    dna_id       TEXT NOT NULL,             -- 所属 DNA version
+    author_id    TEXT NOT NULL,
+    dimension    TEXT NOT NULL,             -- AuthorDnaDimension（受控 8 类）
+    feature_key  TEXT NOT NULL,
+    value_text   TEXT NOT NULL DEFAULT '',
+    statement    TEXT NOT NULL DEFAULT '',
+    confidence   REAL NOT NULL,             -- 0.0..0.9（程序校正）
+    status       TEXT NOT NULL,             -- AuthorDnaFeatureStatus CANDIDATE/ACTIVE/REJECTED
+    source_refs  TEXT NOT NULL DEFAULT '[]',-- JSON List<AuthorDnaSourceRef>（程序绑定，非 LLM）
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+CREATE INDEX idx_author_dna_feature_dna ON AuthorDnaFeature(dna_id, dimension, feature_key);
+
+-- 每个 author 的可参与来源（删除来源即删除行；不物理改 TXT）。
+CREATE TABLE AuthorDnaSource (
+    source_id        TEXT NOT NULL PRIMARY KEY,
+    author_id        TEXT NOT NULL,
+    txt_document_id  TEXT NOT NULL,
+    source_novel_id  TEXT,                  -- provenance only（≠ DNA scope）
+    content_hash     TEXT NOT NULL DEFAULT '',
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL
+);
+CREATE INDEX idx_author_dna_source_author ON AuthorDnaSource(author_id);
+
+-- ============================================================
+-- AuthorDnaVersion
+-- ============================================================
+upsertAuthorDnaVersion:
+INSERT OR REPLACE INTO AuthorDnaVersion(dna_id, author_id, version, status, rule_version, created_at, updated_at)
+VALUES (:dna_id, :author_id, :version, :status, :rule_version, :created_at, :updated_at);
+
+getAuthorDnaVersionById:
+SELECT * FROM AuthorDnaVersion WHERE dna_id = :dna_id LIMIT 1;
+
+getAuthorDnaVersions:
+SELECT * FROM AuthorDnaVersion WHERE author_id = :author_id ORDER BY version DESC, dna_id;
+
+getAuthorDnaVersionByStatus:
+SELECT * FROM AuthorDnaVersion WHERE author_id = :author_id AND status = :status ORDER BY version DESC, dna_id;
+
+countAuthorDnaVersions:
+SELECT COUNT(*) FROM AuthorDnaVersion WHERE author_id = :author_id;
+
+-- ============================================================
+-- AuthorDnaFeature
+-- ============================================================
+upsertAuthorDnaFeature:
+INSERT OR REPLACE INTO AuthorDnaFeature(feature_id, dna_id, author_id, dimension, feature_key, value_text, statement, confidence, status, source_refs, created_at, updated_at)
+VALUES (:feature_id, :dna_id, :author_id, :dimension, :feature_key, :value_text, :statement, :confidence, :status, :source_refs, :created_at, :updated_at);
+
+getAuthorDnaFeatureById:
+SELECT * FROM AuthorDnaFeature WHERE feature_id = :feature_id LIMIT 1;
+
+getAuthorDnaFeatures:
+SELECT * FROM AuthorDnaFeature WHERE dna_id = :dna_id ORDER BY dimension, feature_key, feature_id;
+
+setAuthorDnaFeatureStatus:
+UPDATE AuthorDnaFeature SET status = :status, updated_at = :updated_at WHERE feature_id = :feature_id;
+
+deleteAuthorDnaFeaturesByDna:
+DELETE FROM AuthorDnaFeature WHERE dna_id = :dna_id;
+
+-- ============================================================
+-- AuthorDnaSource
+-- ============================================================
+upsertAuthorDnaSource:
+INSERT OR REPLACE INTO AuthorDnaSource(source_id, author_id, txt_document_id, source_novel_id, content_hash, created_at, updated_at)
+VALUES (:source_id, :author_id, :txt_document_id, :source_novel_id, :content_hash, :created_at, :updated_at);
+
+getAuthorDnaSourceById:
+SELECT * FROM AuthorDnaSource WHERE source_id = :source_id LIMIT 1;
+
+getAuthorDnaSources:
+SELECT * FROM AuthorDnaSource WHERE author_id = :author_id ORDER BY created_at, source_id;
+
+deleteAuthorDnaSource:
+DELETE FROM AuthorDnaSource WHERE source_id = :source_id;
+
+deleteAuthorDnaSourcesByAuthor:
+DELETE FROM AuthorDnaSource WHERE author_id = :author_id;

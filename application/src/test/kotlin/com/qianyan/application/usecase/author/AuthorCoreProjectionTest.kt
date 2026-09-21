@@ -65,7 +65,7 @@ class AuthorCoreProjectionTest {
     fun `projects stable global core as minimal lite`() {
         val (prefRepo, coreRepo) = setup()
         stableCore(coreRepo, "core:foundation", AuthorCoreScope.GLOBAL, statement = "作者稳定地逐步揭示关键信息")
-        val p = AuthorContextProjection(prefRepo, coreRepo, ErrorMapper)
+        val p = AuthorContextProjection(prefRepo, coreRepo, dnaRepository = null, errorMapper = ErrorMapper)
 
         val ctx = p.project(NovelId("n1"))
         assertEquals(1, ctx.cores.size)
@@ -84,7 +84,7 @@ class AuthorCoreProjectionTest {
         stableCore(coreRepo, "core:foundation", AuthorCoreScope.GLOBAL, statement = "全局慢热")
         stableCore(coreRepo, "core:foundation", AuthorCoreScope.NOVEL, novelId = novel, statement = "本书节奏更快")
 
-        val ctx = AuthorContextProjection(prefRepo, coreRepo, ErrorMapper).project(novel)
+        val ctx = AuthorContextProjection(prefRepo, coreRepo, dnaRepository = null, errorMapper = ErrorMapper).project(novel)
         assertEquals(1, ctx.cores.size)
         assertEquals(AuthorCoreScope.NOVEL, ctx.cores.first().scope, "本书覆盖全局")
         assertEquals("本书节奏更快", ctx.cores.first().statement)
@@ -95,7 +95,7 @@ class AuthorCoreProjectionTest {
         val (prefRepo, coreRepo) = setup()
         stableCore(coreRepo, "core:foundation", AuthorCoreScope.GLOBAL)
         coreRepo.setLearningPaused(true)
-        val ctx = AuthorContextProjection(prefRepo, coreRepo, ErrorMapper).project(null)
+        val ctx = AuthorContextProjection(prefRepo, coreRepo, dnaRepository = null, errorMapper = ErrorMapper).project(null)
         assertTrue(ctx.cores.isEmpty(), "暂停学习时不投影 Core")
     }
 }

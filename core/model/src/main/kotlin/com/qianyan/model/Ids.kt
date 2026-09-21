@@ -267,3 +267,20 @@ value class AuthorCoreEvidenceLinkId(val value: String)
 @JvmInline
 @Serializable
 value class AuthorObservationId(val value: String)
+
+/* ---- P18-C Author DNA（作者风格指纹；独立 Author Storage Boundary，scope=GLOBAL，identity=authorId） ---- */
+
+/** Author DNA 版本（一次 Full Rebuild 指纹快照）ID。 */
+@JvmInline
+@Serializable
+value class AuthorDnaVersionId(val value: String)
+
+/** Author DNA 特征（风格指纹 feature）ID。 */
+@JvmInline
+@Serializable
+value class AuthorDnaFeatureId(val value: String)
+
+/** Author DNA 来源（一份 TXT 输入来源）ID。 */
+@JvmInline
+@Serializable
+value class AuthorDnaSourceId(val value: String)

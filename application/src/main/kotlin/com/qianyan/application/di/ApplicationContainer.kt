@@ -27,6 +27,9 @@ import com.qianyan.application.usecase.author.AuthorContextProjection
 import com.qianyan.application.usecase.author.AuthorCoreFacade
 import com.qianyan.application.usecase.author.AuthorCoreGateway
 import com.qianyan.application.usecase.author.AuthorCoreUseCases
+import com.qianyan.application.usecase.author.AuthorDnaFacade
+import com.qianyan.application.usecase.author.AuthorDnaGateway
+import com.qianyan.application.usecase.author.AuthorDnaUseCases
 import com.qianyan.application.usecase.author.AuthorIntelligenceFacade
 import com.qianyan.application.usecase.author.AuthorIntelligenceGateway
 import com.qianyan.application.usecase.author.AuthorPreferenceUseCases
@@ -63,6 +66,7 @@ import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
 import com.qianyan.application.usecase.author.ObservationCollector
 import com.qianyan.storage.repository.AuthorCoreRepository
+import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorObservationRepository
 import com.qianyan.storage.repository.AuthorPreferenceRepository
 import com.qianyan.storage.repository.BackupStore
@@ -72,6 +76,7 @@ import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.SqliteAuthorCoreRepository
+import com.qianyan.storage.repository.SqliteAuthorDnaRepository
 import com.qianyan.storage.repository.SqliteAuthorObservationRepository
 import com.qianyan.storage.repository.SqliteAuthorPreferenceRepository
 import com.qianyan.storage.repository.SqliteBackupStore
@@ -126,6 +131,7 @@ class ApplicationContainer(
     val authorPreferenceRepository: AuthorPreferenceRepository,
     val authorCoreRepository: AuthorCoreRepository,
     val authorObservationRepository: AuthorObservationRepository,
+    val authorDnaRepository: AuthorDnaRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -262,9 +268,9 @@ class ApplicationContainer(
     val p15FoundationEvidenceSource: P15FoundationEvidenceSource
         get() = P15FoundationEvidenceSource(workflowRepository, taskRepository)
 
-    /** P16 AIL-1 · AuthorContext 最小只读投影（仅稳定且激活偏好；Planner/Writer 唯一 Author 入口）。P17 并入 Core Lite。 */
+    /** P16 AIL-1 · AuthorContext 最小只读投影（仅稳定且激活偏好；Planner/Writer 唯一 Author 入口）。P17 并入 Core Lite，P18-C 并入 DnaLite。 */
     val authorContextProjection: AuthorContextProjection
-        get() = AuthorContextProjection(authorPreferenceRepository, authorCoreRepository, errorMapper)
+        get() = AuthorContextProjection(authorPreferenceRepository, authorCoreRepository, authorDnaRepository, errorMapper)
 
     /** P16 AIL-1 · Author Preference Use Cases（Explicit/Inferred、Confirmation Gate、User Control）。 */
     val authorPreferenceUseCases: AuthorPreferenceUseCases
@@ -285,6 +291,14 @@ class ApplicationContainer(
     /** P18-A · Android/Desktop 共用的 Observation Collector（Application 层 Feedback Loop seam；DEC-P18-002）。 */
     val observationCollector: ObservationCollector
         get() = ObservationCollector(authorObservationRepository, authorCoreUseCases)
+
+    /** P18-C · Author DNA Use Cases（TXT → Analysis → AuthorDNA；Full Rebuild / Confirm / Reject）。 */
+    val authorDnaUseCases: AuthorDnaUseCases
+        get() = AuthorDnaUseCases(authorDnaRepository, txtRepository, AnalysisInputBuilder, analysisGateway, errorMapper = errorMapper, model = analysisModel)
+
+    /** P18-C · Android/Desktop 共用 Author DNA Application seam（极薄委托；DEC-P18C-014/015）。 */
+    val authorDnaGateway: AuthorDnaGateway
+        get() = AuthorDnaFacade(authorDnaUseCases)
 
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文；P14-F.4 接入已确认 Story Foundation）。 */
     val planningContextAssembly: PlanningContextAssembly
@@ -370,6 +384,7 @@ class ApplicationContainer(
                 authorPreferenceRepository = SqliteAuthorPreferenceRepository(db),
                 authorCoreRepository = SqliteAuthorCoreRepository(db),
                 authorObservationRepository = SqliteAuthorObservationRepository(db),
+                authorDnaRepository = SqliteAuthorDnaRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

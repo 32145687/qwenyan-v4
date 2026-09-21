@@ -7,25 +7,33 @@ import com.qianyan.model.author.AuthorContext
 import com.qianyan.model.author.AuthorCore
 import com.qianyan.model.author.AuthorCoreScope
 import com.qianyan.model.author.AuthorCoreStatus
+import com.qianyan.model.author.AuthorDnaFeatureStatus
+import com.qianyan.model.author.AuthorDnaLite
+import com.qianyan.model.author.AuthorDnaVersionStatus
 import com.qianyan.model.author.AuthorPreference
 import com.qianyan.model.author.PreferenceScope
 import com.qianyan.storage.repository.AuthorCoreRepository
+import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorPreferenceRepository
 import kotlinx.datetime.Clock
 
 /**
  * P16 AIL-1 · AuthorContext Projection —— 把 Author Intelligence 投影为**最小只读 [AuthorContext]**。
  *
- * 边界（P16 AIL-0 DEC-006/007/011）：
+ * 边界（P16 AIL-0 DEC-006/007/011；P17 DEC-P17-013/016；P18-C DEC-P18C-014）：
  *  - 只投影**稳定且激活**的偏好（`isStable`，且未暂停、未过期）；
  *  - **不暴露**未确认 Candidate、原始 Evidence、Repository、完整 Author 数据库；
  *  - 最小 Global/Novel Override：同一 [PreferenceDimension] 下，Novel 偏好覆盖 Global 偏好；
+ *  - P17：只投影 STABLE 且未暂停的 AuthorCore Lite；
+ *  - P18-C：只投影当前 ACTIVE DNA 的 ACTIVE Feature → [AuthorDnaLite]（不携带原文 / TextBlock /
+ *    AnalysisResult / LLM raw / DNA history / Storage ID / internal scoring）；
  *  - 供 Planner / Writer 消费（经 PlanningContext / WritingContext）。Planner / Writer / Agent **禁止直读 AuthorRepository**，
  *    统一经本项目投影得到的 [AuthorContext] 读取。
  */
 class AuthorContextProjection(
     private val repository: AuthorPreferenceRepository,
     private val coreRepository: AuthorCoreRepository? = null,
+    private val dnaRepository: AuthorDnaRepository? = null,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -60,7 +68,34 @@ class AuthorContextProjection(
         // P17：AuthorCore 最小只读 Core Lite 投影（DEC-P17-013/016：防泄漏、scope 解析、暂停不投影）。
         val cores = buildCoreLite(novelId)
 
-        return AuthorContext(preferences = preferences, cores = cores)
+        // P18-C：当前 ACTIVE DNA 的 ACTIVE Feature → 最小只读 AuthorDnaLite（DEC-P18C-014：防泄漏）。
+        val dna = buildDnaLite()
+
+        return AuthorContext(preferences = preferences, cores = cores, dna = dna)
+    }
+
+    /**
+     * P18-C · 当前 ACTIVE AuthorDNA 的 ACTIVE Feature 最小只读投影（DEC-P18C-014）。
+     * 只投影 featureKey/dimension/value/statement/confidence/sourceRef；
+     * 不投影未确认(CANDIDATE)/被拒(REJECTED)Feature、原文、AnalysisResult、LLM raw、DNA history、Storage ID、internal scoring。
+     */
+    private fun buildDnaLite(): List<AuthorDnaLite> {
+        val dnaRepo = dnaRepository ?: return emptyList()
+        val profile = guard { repository.getAuthorProfile() } ?: return emptyList()
+        val active = guard { dnaRepo.listAuthorDnaVersionsByStatus(profile.profileId, AuthorDnaVersionStatus.ACTIVE) }
+            .firstOrNull() ?: return emptyList()
+        return guard { dnaRepo.listAuthorDnaFeatures(active.versionId) }
+            .filter { it.status == AuthorDnaFeatureStatus.ACTIVE }
+            .map { f ->
+                AuthorDnaLite(
+                    featureKey = f.featureKey,
+                    dimension = f.dimension,
+                    value = f.value,
+                    statement = f.statement,
+                    confidence = f.confidence,
+                    sourceRef = f.sourceRefs.firstOrNull()?.let { "${it.sourceId.value}:${it.sourceStart}-${it.sourceEnd}" },
+                )
+            }
     }
 
     /**

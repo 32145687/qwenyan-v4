@@ -35,7 +35,7 @@ class AuthorPreferenceUseCasesTest {
     private fun setup(signals: List<AuthorEvidence>): Pair<AuthorPreferenceUseCases, com.qianyan.storage.repository.AuthorPreferenceRepository> {
         val db = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY).db
         val repo = SqliteAuthorPreferenceRepository(db)
-        val projection = AuthorContextProjection(repo, null, ErrorMapper)
+        val projection = AuthorContextProjection(repo, coreRepository = null, dnaRepository = null, errorMapper = ErrorMapper)
         val uc = AuthorPreferenceUseCases(repo, projection, FakeSource { signals }, ErrorMapper)
         return uc to repo
     }

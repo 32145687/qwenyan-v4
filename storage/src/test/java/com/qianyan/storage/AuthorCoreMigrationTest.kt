@@ -71,7 +71,7 @@ class AuthorCoreMigrationTest {
                 listOf("AuthorCore", "AuthorCorePattern", "AuthorCoreCandidate", "AuthorCoreEvidenceLink", "AuthorCoreLearning").forEach {
                     assertTrue(tableExists(driver, it), "migration 后应存在 $it（P17）")
                 }
-                assertEquals(14L, userVersion(driver), "migration 后 user_version 应为 13（P18-B Schema v14）")
+                assertEquals(15L, userVersion(driver), "migration 后 user_version 应为 14+1（P18-C Schema v15）")
                 assertTrue(tableExists(driver, "AuthorObservation"), "migration 后应存在 AuthorObservation（P18-A）")
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"))
                 assertEquals("偏好调查", scalar(driver, "SELECT statement FROM AuthorPreference WHERE preference_id='p-legacy'"))

@@ -1,0 +1,38 @@
+CREATE TABLE IF NOT EXISTS AuthorDnaVersion (
+    dna_id       TEXT NOT NULL PRIMARY KEY,
+    author_id    TEXT NOT NULL,
+    version      INTEGER NOT NULL,
+    status       TEXT NOT NULL,
+    rule_version TEXT NOT NULL DEFAULT '',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL,
+    UNIQUE (author_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_author_dna_version_author ON AuthorDnaVersion(author_id, version);
+
+CREATE TABLE IF NOT EXISTS AuthorDnaFeature (
+    feature_id   TEXT NOT NULL PRIMARY KEY,
+    dna_id       TEXT NOT NULL,
+    author_id    TEXT NOT NULL,
+    dimension    TEXT NOT NULL,
+    feature_key  TEXT NOT NULL,
+    value_text   TEXT NOT NULL DEFAULT '',
+    statement    TEXT NOT NULL DEFAULT '',
+    confidence   REAL NOT NULL,
+    status       TEXT NOT NULL,
+    source_refs  TEXT NOT NULL DEFAULT '[]',
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_author_dna_feature_dna ON AuthorDnaFeature(dna_id, dimension, feature_key);
+
+CREATE TABLE IF NOT EXISTS AuthorDnaSource (
+    source_id        TEXT NOT NULL PRIMARY KEY,
+    author_id        TEXT NOT NULL,
+    txt_document_id  TEXT NOT NULL,
+    source_novel_id  TEXT,
+    content_hash     TEXT NOT NULL DEFAULT '',
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_author_dna_source_author ON AuthorDnaSource(author_id);

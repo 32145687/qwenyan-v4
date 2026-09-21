@@ -35,7 +35,7 @@ class AuthorContextProjectionTest {
     private fun repoAndProjection(): Pair<AuthorPreferenceRepository, AuthorContextProjection> {
         val db = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY).db
         val repo = SqliteAuthorPreferenceRepository(db)
-        return repo to AuthorContextProjection(repo, null, ErrorMapper)
+        return repo to AuthorContextProjection(repo, coreRepository = null, dnaRepository = null, errorMapper = ErrorMapper)
     }
 
     private fun stable(dim: PreferenceDimension, stmt: String, id: String) = AuthorPreference(
@@ -119,7 +119,7 @@ class AuthorContextProjectionTest {
         val db = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY).db
         val coreRepo: AuthorCoreRepository = SqliteAuthorCoreRepository(db)
         val prefRepo = SqliteAuthorPreferenceRepository(db)
-        return coreRepo to AuthorContextProjection(prefRepo, coreRepo, ErrorMapper)
+        return coreRepo to AuthorContextProjection(prefRepo, coreRepo, dnaRepository = null, errorMapper = ErrorMapper)
     }
 
     private fun seedStableCore(repo: AuthorCoreRepository, coreId: String, scope: AuthorCoreScope, novelId: NovelId?, stmt: String) {
