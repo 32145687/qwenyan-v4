@@ -65,6 +65,9 @@ import com.qianyan.storage.db.QianyanDb
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
 import com.qianyan.application.usecase.author.ObservationCollector
+import com.qianyan.application.usecase.decision.DecisionModelFacade
+import com.qianyan.application.usecase.decision.DecisionModelGateway
+import com.qianyan.application.usecase.decision.DecisionModelUseCases
 import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorObservationRepository
@@ -299,6 +302,14 @@ class ApplicationContainer(
     /** P18-C · Android/Desktop 共用 Author DNA Application seam（极薄委托；DEC-P18C-014/015）。 */
     val authorDnaGateway: AuthorDnaGateway
         get() = AuthorDnaFacade(authorDnaUseCases)
+
+    /** P19 · Decision Model Use Cases（确定性转译：AuthorContext → DecisionPolicy；stateless）。 */
+    val decisionModelUseCases: DecisionModelUseCases
+        get() = DecisionModelUseCases()
+
+    /** P19 · Android/Desktop 共用 Decision Application seam（极薄委托；Orchestrator 不涉及）。 */
+    val decisionModelGateway: DecisionModelGateway
+        get() = DecisionModelFacade(decisionModelUseCases)
 
     /** P11.2 Planning 上下文组装（经确定性 Resolver，P11.6 接入世界上下文；P14-F.4 接入已确认 Story Foundation）。 */
     val planningContextAssembly: PlanningContextAssembly
