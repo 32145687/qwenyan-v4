@@ -41,6 +41,7 @@ fun ChapterListScreen(
     viewModel: ChapterViewModel,
     novelTitle: String,
     onOpen: (Chapter) -> Unit,
+    onRead: (Chapter) -> Unit,
     onBack: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -98,6 +99,7 @@ fun ChapterListScreen(
                 is ChapterListUiState.Success -> ChapterList(
                     chapters = s.chapters,
                     onOpen = onOpen,
+                    onRead = onRead,
                 )
             }
         }
@@ -154,7 +156,7 @@ private fun LoadingState() {
 }
 
 @Composable
-private fun ChapterList(chapters: List<Chapter>, onOpen: (Chapter) -> Unit) {
+private fun ChapterList(chapters: List<Chapter>, onOpen: (Chapter) -> Unit, onRead: (Chapter) -> Unit) {
     if (chapters.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(
@@ -171,13 +173,13 @@ private fun ChapterList(chapters: List<Chapter>, onOpen: (Chapter) -> Unit) {
         contentPadding = PaddingValues(bottom = 24.dp),
     ) {
         items(chapters, key = { it.chapterId.value }) { chapter ->
-            ChapterCard(chapter = chapter, onClick = { onOpen(chapter) })
+            ChapterCard(chapter = chapter, onClick = { onOpen(chapter) }, onRead = { onRead(chapter) })
         }
     }
 }
 
 @Composable
-private fun ChapterCard(chapter: Chapter, onClick: () -> Unit) {
+private fun ChapterCard(chapter: Chapter, onClick: () -> Unit, onRead: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = MaterialTheme.shapes.medium,
@@ -198,6 +200,14 @@ private fun ChapterCard(chapter: Chapter, onClick: () -> Unit) {
                 text = chapter.title,
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            // P20-P4：直达 Reader（阅读本章）
+            Text(
+                text = "阅读",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.clickable(onClick = onRead),
             )
         }
     }

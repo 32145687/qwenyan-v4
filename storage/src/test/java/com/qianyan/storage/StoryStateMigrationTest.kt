@@ -140,7 +140,7 @@ class StoryStateMigrationTest {
             listOf("Character", "CharacterState", "WorldRule", "Event", "TimelineEntry", "Foreshadow").forEach { tbl ->
                 assertTrue(tableExists(driver, tbl), "migration 后应存在 $tbl 表（P12.1.1 Story State）")
             }
-            assertEquals(16L, userVersion(driver), "migration 后 user_version 应为最新版本 15+1（P20-P2 Schema v16）")
+            assertEquals(17L, userVersion(driver), "migration 后 user_version 应为最新版本 16+1（P20-P4 Schema v17）")
 
             // 4) 重复执行初始化幂等安全（不报"表已存在"）
             DatabaseInitializer.initializeDatabase(driver)

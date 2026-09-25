@@ -126,6 +126,7 @@ import com.qianyan.model.story.ForeshadowLifecycleState
 import com.qianyan.model.story.Reveal as DomainReveal
 import com.qianyan.model.writing.Draft as DomainDraft
 import com.qianyan.model.writing.DraftStatus
+import com.qianyan.model.reading.ReadingProgress as DomainReadingProgress
 import com.qianyan.storage.db.Chapter as DbChapter
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
@@ -151,6 +152,7 @@ import com.qianyan.storage.db.AuthorObservation as DbAuthorObservation
 import com.qianyan.storage.db.AuthorDnaVersion as DbAuthorDnaVersion
 import com.qianyan.storage.db.AuthorDnaFeature as DbAuthorDnaFeature
 import com.qianyan.storage.db.AuthorDnaSource as DbAuthorDnaSource
+import com.qianyan.storage.db.ReadingProgress as DbReadingProgress
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
@@ -1174,6 +1176,22 @@ internal object StorageMappers {
         sourceNovelId = row.source_novel_id?.let { NovelId(it) },
         contentHash = row.content_hash,
         createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    /* ---------------- ReadingProgress（P20-P4 · FD-9） ---------------- */
+
+    fun domainReadingProgress(p: DomainReadingProgress): DbReadingProgress = DbReadingProgress(
+        chapter_id = p.chapterId.value,
+        novel_id = p.novelId.value,
+        position = p.position.toLong(),
+        updated_at = p.updatedAt.toEpochMillis(),
+    )
+
+    fun dbReadingProgress(row: DbReadingProgress): DomainReadingProgress = DomainReadingProgress(
+        novelId = NovelId(row.novel_id),
+        chapterId = com.qianyan.model.ChapterId(row.chapter_id),
+        position = row.position.toInt(),
         updatedAt = epochMillisToInstant(row.updated_at),
     )
 }

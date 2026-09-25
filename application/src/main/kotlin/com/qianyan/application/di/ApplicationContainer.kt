@@ -34,6 +34,7 @@ import com.qianyan.application.usecase.author.AuthorIntelligenceFacade
 import com.qianyan.application.usecase.author.AuthorIntelligenceGateway
 import com.qianyan.application.usecase.author.AuthorPreferenceUseCases
 import com.qianyan.application.usecase.author.P15FoundationEvidenceSource
+import com.qianyan.application.usecase.reading.ReadingUseCases
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
@@ -80,6 +81,7 @@ import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
+import com.qianyan.storage.repository.ReadingProgressRepository
 import com.qianyan.storage.repository.SqliteAuthorCoreRepository
 import com.qianyan.storage.repository.SqliteAuthorDnaRepository
 import com.qianyan.storage.repository.SqliteAuthorObservationRepository
@@ -90,6 +92,7 @@ import com.qianyan.storage.repository.SqliteDraftRepository
 import com.qianyan.storage.repository.SqliteMemoryRepository
 import com.qianyan.storage.repository.SqliteNarrativeStateRepository
 import com.qianyan.storage.repository.SqliteNovelRepository
+import com.qianyan.storage.repository.SqliteReadingProgressRepository
 import com.qianyan.storage.repository.SqliteTaskRepository
 import com.qianyan.storage.repository.SqliteTxtRepository
 import com.qianyan.storage.repository.SqliteStoryStateRepository
@@ -137,6 +140,8 @@ class ApplicationContainer(
     val authorCoreRepository: AuthorCoreRepository,
     val authorObservationRepository: AuthorObservationRepository,
     val authorDnaRepository: AuthorDnaRepository,
+    /** P20-P4 · Reader 阅读位置仓储（FD-9：只承担阅读位置 / 进度）。 */
+    val readingProgressRepository: ReadingProgressRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -157,6 +162,13 @@ class ApplicationContainer(
 
     /** P12.1.6 Chapter 读取/创建 Use Case：UI 只经此访问真实章节（禁止直触 ChapterRepository）。 */
     val chapters: ChapterUseCases get() = ChapterUseCases(chapterRepository, novelRepository, errorMapper)
+
+    /**
+     * P20-P4 · Reader 阅读 Use Case（FD-7）：既有 Chapter + Draft 正文（经 P2 Controlled Markdown 解析）
+     * + 阅读位置；只读 + 位置保存，不新建第二套章节正文模型。
+     */
+    val reading: ReadingUseCases
+        get() = ReadingUseCases(chapterRepository, draftRepository, readingProgressRepository, errorMapper)
 
     /** P12.1.7 Chapter 写作链编排（Planning→Writing→Critique→Revision→Finalize→Confirm→KnowledgeUpdate），复用既有 UseCases/Task。 */
     val chapterWriting: ChapterWritingUseCases
@@ -416,6 +428,7 @@ class ApplicationContainer(
                 authorCoreRepository = SqliteAuthorCoreRepository(db),
                 authorObservationRepository = SqliteAuthorObservationRepository(db),
                 authorDnaRepository = SqliteAuthorDnaRepository(db),
+                readingProgressRepository = SqliteReadingProgressRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

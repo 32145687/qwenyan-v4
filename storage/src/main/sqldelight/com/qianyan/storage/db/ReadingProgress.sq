@@ -1,0 +1,20 @@
+-- P20-P4 · ReadingProgress 持久化（Schema v17）
+-- FD-9：ReadingProgress 只承担**阅读位置/进度**职责；不含阅读统计 / 时长 / 用户行为 / 云同步 / 多设备同步 / 推荐。
+-- 主键 chapter_id（一章一条阅读位置；chapter 已唯一确定 Novel+Variant 作用域，无需第二套章节正文模型）。
+-- position = 正文块序号（0-based）；legacy 纯文本（Draft.format=null）为单块展示 → 0。
+-- 正文本身仍只存于 ChapterDraft（本表不存储任何正文内容）。
+
+CREATE TABLE ReadingProgress (
+    chapter_id  TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0,   -- 正文块序号（0-based）
+    updated_at  INTEGER NOT NULL,             -- epoch 毫秒
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+upsertReadingProgress:
+INSERT OR REPLACE INTO ReadingProgress(chapter_id, novel_id, position, updated_at)
+VALUES (:chapter_id, :novel_id, :position, :updated_at);
+
+getReadingProgress:
+SELECT * FROM ReadingProgress WHERE chapter_id = :chapter_id;

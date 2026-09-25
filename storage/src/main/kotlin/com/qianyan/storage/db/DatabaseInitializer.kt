@@ -72,6 +72,9 @@ object DatabaseInitializer {
     /** v15（P18-C）→ v16（P20-P2：ChapterDraft 加 format 列）迁移起点。 */
     private const val V15 = 15L
 
+    /** v16（P20-P2：ChapterDraft.format）→ v17（P20-P4：ReadingProgress 阅读位置表）迁移起点。 */
+    private const val V16 = 16L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -209,6 +212,12 @@ object DatabaseInitializer {
             !columnExists(driver, "ChapterDraft", "format") -> withTransaction(driver) {
                 // v15 → v16：ChapterDraft 加 format 列（P20-P2 FD-1：正文格式标识；旧行为 format=null 纯文本兼容）。
                 QianyanDb.Schema.migrate(driver, V15, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "ReadingProgress") -> withTransaction(driver) {
+                // v16 → v17：新增 ReadingProgress 表（P20-P4 FD-9：阅读位置 / 进度；additive，不动既有表）。
+                QianyanDb.Schema.migrate(driver, V16, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

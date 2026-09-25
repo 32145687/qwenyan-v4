@@ -30,6 +30,7 @@ fun ChapterDetailScreen(
     novelTitle: String,
     onStartWriting: () -> Unit,
     onOpenWriter: () -> Unit,
+    onOpenReader: () -> Unit,
     onBack: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -65,6 +66,7 @@ fun ChapterDetailScreen(
                     chapter = s.chapter,
                     onStartWriting = onStartWriting,
                     onOpenWriter = onOpenWriter,
+                    onOpenReader = onOpenReader,
                     onBack = onBack,
                 )
             }
@@ -73,7 +75,13 @@ fun ChapterDetailScreen(
 }
 
 @Composable
-private fun DetailContent(chapter: Chapter, onStartWriting: () -> Unit, onOpenWriter: () -> Unit, onBack: () -> Unit) {
+private fun DetailContent(
+    chapter: Chapter,
+    onStartWriting: () -> Unit,
+    onOpenWriter: () -> Unit,
+    onOpenReader: () -> Unit,
+    onBack: () -> Unit,
+) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "${chapter.order} · ${chapter.title}",
@@ -107,6 +115,15 @@ private fun DetailContent(chapter: Chapter, onStartWriting: () -> Unit, onOpenWr
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
         ) {
             Text("进入写作（编辑 / 保存 / AI 写作）")
+        }
+        Spacer(Modifier.height(12.dp))
+        // P20-P4：Reader 阅读入口（正文渲染 + 上一章 / 下一章 + 阅读位置恢复）。
+        Button(
+            onClick = onOpenReader,
+            enabled = true,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+        ) {
+            Text("阅读本章")
         }
         Spacer(Modifier.height(12.dp))
         // P12.1.7：工作流视图入口（Planning → Writing → Review → Confirmation → Knowledge Update）。

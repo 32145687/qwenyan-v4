@@ -1,0 +1,11 @@
+-- P20-P4 · Schema v17（16.sqm：v16 → v17）
+-- additive migration：仅新增 ReadingProgress 表（阅读位置），不修改任何既有表 / 列 / 语义。
+-- 幂等由 DatabaseInitializer 的 !tableExists("ReadingProgress") 分支包裹；无 backfill、无既有数据转换。
+
+CREATE TABLE IF NOT EXISTS ReadingProgress (
+    chapter_id  TEXT NOT NULL PRIMARY KEY,
+    novel_id    TEXT NOT NULL,
+    position    INTEGER NOT NULL DEFAULT 0,
+    updated_at  INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
