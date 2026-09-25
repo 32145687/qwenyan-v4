@@ -37,6 +37,8 @@ import com.qianyan.application.usecase.author.P15FoundationEvidenceSource
 import com.qianyan.application.usecase.writing.WritingUseCases
 import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
+import com.qianyan.application.usecase.writing.WriterFacade
+import com.qianyan.application.usecase.writing.WriterUseCases
 import com.qianyan.application.usecase.writing.critique.CritiqueAgent
 import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
@@ -323,13 +325,31 @@ class ApplicationContainer(
     val planner: PlannerAgent
         get() = PlannerAgent(analysisGateway, errorMapper, analysisModel)
 
-    /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan（P0-4 绑定/创建真实 Chapter）。 */
+    /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan（P0-4 绑定/创建真实 Chapter）。
+     *  P20-P5：经 [decisionModelGateway] 在 Application orchestration 决定 DecisionPolicy（Planner 只消费）。 */
     val planning: PlanningExecutionUseCase
-        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, chapterRepository, continuationResolver, errorMapper)
+        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, chapterRepository, continuationResolver, errorMapper, decisionModelGateway)
 
     /** P11.3 Writer Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
     val writer: WriterAgent
         get() = WriterAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** P20-P3 · Writer（章节正文编辑/保存）Use Case：只经 DraftRepository 读写正文，不 Decision。 */
+    val writerUseCases: WriterUseCases
+        get() = WriterUseCases(draftRepository, errorMapper)
+
+    /** P20-P3 · Android Writer 用户层 seam（极薄编排；AI 继续写 → 既有 Workflow，AI 改写 → 既有 Critique/Revision）。 */
+    val writerGateway: com.qianyan.application.usecase.writing.WriterGateway
+        get() = WriterFacade(
+            chapters = chapters,
+            novelRepository = novelRepository,
+            drafts = writerUseCases,
+            workflow = workflowFacade,
+            critique = critique,
+            revision = revision,
+            taskManager = tasks,
+            errorMapper = errorMapper,
+        )
 
     /** P11.3 Writing 执行 Use Case：Task 生命周期 + Draft 持久化 + WRITING Checkpoint。 */
     val writingExecution: WritingExecutionUseCase

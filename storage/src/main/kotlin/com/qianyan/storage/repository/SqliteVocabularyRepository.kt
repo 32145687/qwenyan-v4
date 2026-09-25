@@ -55,6 +55,17 @@ class SqliteVocabularyRepository(private val db: QianyanDb) : VocabularyReposito
         )
     }
 
+    override fun updateCandidateStatus(candidateId: com.qianyan.model.VocabularyCandidateId, status: com.qianyan.model.vocabulary.VocabularyCandidateStatus) {
+        db.vocabularyQueries.updateCandidateStatus(status.name, candidateId.value)
+    }
+
+    override fun updateCandidateSuggested(candidateId: com.qianyan.model.VocabularyCandidateId, entry: VocabularyEntry) {
+        db.vocabularyQueries.updateCandidateSuggested(
+            StorageMappers.suggestedJson(entry),
+            candidateId.value,
+        )
+    }
+
     override fun findCandidatesByNovel(novelId: NovelId): List<VocabularyCandidate> =
         db.vocabularyQueries.selectCandidatesByNovel(novelId.value)
             .executeAsList().map { StorageMappers.dbVocabularyCandidate(it) }

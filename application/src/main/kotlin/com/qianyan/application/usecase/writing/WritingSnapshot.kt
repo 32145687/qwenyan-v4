@@ -26,12 +26,28 @@ object WritingSnapshot {
     private const val KEY_PLAN_ID = "planId"
 
     /** 把 [Draft] 编码为 Checkpoint 可见的结构化引用 JsonObject（含 type 标签，**不含正文**）。 */
-    fun encode(draft: Draft): JsonObject = buildJsonObject {
+    fun encode(draft: Draft): JsonObject = encode(draft, emptyList())
+
+    /** P20-P5：额外写入本任务使用的 [DecisionPolicy] 快照（空列表则不写入该键；旧读取兼容）。 */
+    fun encode(draft: Draft, policies: List<com.qianyan.model.decision.DecisionPolicy>): JsonObject = buildJsonObject {
         put(KEY_TYPE, STAGE)
         put(KEY_DRAFT_ID, draft.draftId.value)
         draft.chapterId?.let { put(KEY_CHAPTER_ID, it.value) }
         draft.planId?.let { put(KEY_PLAN_ID, it.value) }
+        if (policies.isNotEmpty()) {
+            put(
+                com.qianyan.application.usecase.decision.DecisionPolicySnapshot.KEY_TYPE,
+                com.qianyan.application.usecase.decision.DecisionPolicySnapshot.encode(policies),
+            )
+        }
     }
+
+    /**
+     * P20-P5：从 WRITING Checkpoint 恢复 [DecisionPolicy] 快照。
+     * @return `null` = 该 Checkpoint 早于 P5；列表 = 显式政策。
+     */
+    fun decodePolicies(snapshot: JsonObject?): List<com.qianyan.model.decision.DecisionPolicy>? =
+        com.qianyan.application.usecase.decision.DecisionPolicySnapshot.decode(snapshot)
 
     /**
      * 从 [com.qianyan.model.task.Checkpoint.snapshot] 解码恢复索引 [DraftId]。

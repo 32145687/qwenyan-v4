@@ -24,6 +24,7 @@ import com.qianyan.model.VariantScope
 import com.qianyan.model.context.TargetKind
 import com.qianyan.model.context.TargetRef
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.spec.ValidationResult
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.story.ContinuationReference
@@ -116,6 +117,8 @@ class ChapterWritingSession internal constructor(
 
     private var planTaskId: TaskId? = null
     private var plan: ChapterPlan? = null
+    /** P20-P5-fix（FD-4）：本次 chain 的 Planning 决定的 DecisionPolicy（只解码捕获，供 write() 复用；Writer 不重算）。 */
+    private var planPolicies: List<DecisionPolicy>? = null
     private var writeTaskId: TaskId? = null
     private var draft: Draft? = null
     private var critiqueResult: ValidationResult? = null
@@ -131,6 +134,8 @@ class ChapterWritingSession internal constructor(
         val result = planning.execute(id, writingRequest(), continuation, targetChapterId = chapterId)
         planTaskId = id
         plan = result
+        // P20-P5-fix（FD-4）：捕获本次 Planning 决定的 DecisionPolicy（从 PLANNING Checkpoint 只解码，不重算）。
+        planPolicies = planning.decisionPoliciesFrom(taskManager.restoreCheckpoint(id))
         return result
     }
 
@@ -139,7 +144,8 @@ class ChapterWritingSession internal constructor(
         draft?.let { return it }
         val current = requirePlan()
         val id = taskManager.create(TaskType.WRITING)
-        val d = writing.execute(id, writingRequest(), current)
+        // P20-P5-fix（FD-4）：Writing 使用与 plan() **同一份** DecisionPolicy（WriterAgent 无 DecisionModel 能力）。
+        val d = writing.execute(id, writingRequest(), current, planPolicies.orEmpty())
         writeTaskId = id
         draft = d
         return d

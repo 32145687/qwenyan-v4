@@ -10,12 +10,14 @@ import com.qianyan.application.usecase.writing.confirmation.ConfirmationExecutio
 import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
+import com.qianyan.application.usecase.writing.planning.PlanningSnapshot
 import com.qianyan.application.usecase.writing.revision.RevisionExecutionUseCase
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.TaskId
 import com.qianyan.model.VariantId
+import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.spec.ValidationResult
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.story.ChapterPlan
@@ -48,6 +50,7 @@ import java.util.UUID
 import kotlinx.datetime.Clock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
 
 /**
  * Workflow Orchestrator（P12.2 · deterministic control plane）。
@@ -153,18 +156,24 @@ class WorkflowOrchestrator(
             ContinuationReference(sourceChapterId = it.sourceChapterId ?: step.chapterId, sourceDraftId = it.sourceDraftId)
         }
         val plan = planning.execute(taskId, buildRequest(wf.novelId, wf.variantId), continuationRef, targetChapterId = step.chapterId)
-        finishStep(wf, step, "PLANJSON:" + encodeJson(plan))
+        // P20-P5-fix（FD-4）：从本 PLANNING Task 的 Checkpoint 取**已决定的同一份** DecisionPolicy（只解码，不重算），
+        // 随 Plan 一并持久化到 step.resultReference，供 Writing 恢复（Resume 不重新 Decision）。
+        val policies = planning.decisionPoliciesFrom(taskManager.restoreCheckpoint(taskId)).orEmpty()
+        finishStep(wf, step, encodePlanRef(plan, policies))
     }
 
     private fun executeWriting(wf: Workflow, step: WorkflowStep): WorkflowRunResult {
         val attemptNo = (workflowRepository.listAttempts(step.stepId).size) + 1
         val attempt = createAttempt(step, attemptNo)
         val chapterId = step.chapterId
-        val plan = requirePlanFor(wf, step, chapterId)
+        val restored = requirePlanContextFor(wf, step, chapterId)
+        val plan = restored.plan
         val request = buildRequest(wf.novelId, wf.variantId)
         return try {
             val taskId = taskManager.create(TaskType.WRITING)
-            val draft = writing.execute(taskId, request, plan)
+            // P20-P5-fix（FD-4）：Writing 使用与 Planning **同一份** DecisionPolicy（旧 PLANJSON 无政策 → 空）；
+            // Writer 不拥有 DecisionModel，绝不重新 Decision。
+            val draft = writing.execute(taskId, request, plan, restored.policies.orEmpty())
             workflowRepository.inTransaction {
                 updateAttempt(attempt.copy(status = WorkflowAttemptStatus.COMPLETED, taskId = taskId.value, completedAt = Clock.System.now()))
                 updateStep(step.copy(status = WorkflowStepStatus.COMPLETED, resultReference = draft.draftId.value, currentAttemptNo = attemptNo, currentTaskId = taskId.value, completedAt = Clock.System.now()))
@@ -456,12 +465,38 @@ class WorkflowOrchestrator(
     private fun requireLatestDraft(ch: ChapterId): com.qianyan.model.writing.Draft =
         draftRepository.latestByChapter(ch) ?: throw ApplicationException(ApplicationError.InvalidOperation("chapter $ch 无 Draft"))
 
-    private fun requirePlanFor(wf: Workflow, step: WorkflowStep, chapterId: ChapterId): ChapterPlan {
+    /** P20-P5-fix：把 Plan + 本任务 DecisionPolicy 编码为新的 durable plan seam（复用 PlanningSnapshot codec）。 */
+    private fun encodePlanRef(plan: ChapterPlan, policies: List<DecisionPolicy>): String =
+        PLAN_REF_V2 + PlanningSnapshot.encode(plan, policies).toString()
+
+    /**
+     * P20-P5-fix（FD-4）：恢复 PLANNING 步骤持久化的 Plan + DecisionPolicy（**只解码，不重算**）。
+     *  - 新 seam `PLANJSON2:<PlanningSnapshot>`：plan + 可选 decisionPolicies 一并恢复（复用 PlanningSnapshot /
+     *    DecisionPolicySnapshot，不复制新 codec）；
+     *  - 旧 seam `PLANJSON:<ChapterPlan json>`（P12.2 起已落库的数据）：继续可读，policies = null
+     *    （该 Checkpoint 早于 P5，无政策快照）→ 调用方按空政策处理，**不得**偷偷重新 Decision；
+     *  - 两者都不是 → 既有 [ApplicationError.InvalidOperation]（缺 durable plan seam，语义不变）。
+     */
+    private fun requirePlanContextFor(wf: Workflow, step: WorkflowStep, chapterId: ChapterId): RestoredPlanContext {
         val planStep = workflowRepository.listSteps(wf.workflowId).firstOrNull { it.phase == WorkflowStepPhase.PLANNING && it.chapterId == chapterId }
         val ref = planStep?.resultReference ?: throw ApplicationException(ApplicationError.InvalidOperation("缺少已完成 PLANNING 步骤结果"))
-        if (!ref.startsWith("PLANJSON:")) throw ApplicationException(ApplicationError.InvalidOperation("PLANNING 缺 durable plan seam"))
-        return decodeJson(ref.removePrefix("PLANJSON:")) ?: throw ApplicationException(ApplicationError.RestoreFailure("无法解码 plan"))
+        if (ref.startsWith(PLAN_REF_V2)) {
+            val snapshot = try { Json.parseToJsonElement(ref.removePrefix(PLAN_REF_V2)).jsonObject } catch (e: Exception) { null }
+                ?: throw ApplicationException(ApplicationError.RestoreFailure("无法解码 plan payload"))
+            val plan = PlanningSnapshot.decode(snapshot)
+                ?: throw ApplicationException(ApplicationError.RestoreFailure("无法解码 plan"))
+            return RestoredPlanContext(plan, PlanningSnapshot.decodePolicies(snapshot))
+        }
+        if (ref.startsWith(PLAN_REF_LEGACY)) {
+            val legacyPlan = decodeJson(ref.removePrefix(PLAN_REF_LEGACY))
+                ?: throw ApplicationException(ApplicationError.RestoreFailure("无法解码 plan"))
+            return RestoredPlanContext(legacyPlan, null)
+        }
+        throw ApplicationException(ApplicationError.InvalidOperation("PLANNING 缺 durable plan seam"))
     }
+
+    /** PLANNING 步骤恢复出的 Plan 与其 DecisionPolicy 快照（policies = null 表示旧 seam 无政策）。 */
+    private data class RestoredPlanContext(val plan: ChapterPlan, val policies: List<DecisionPolicy>?)
 
     private fun completeStep(step: WorkflowStep, ref: String) {
         if (step.status != WorkflowStepStatus.COMPLETED) {
@@ -608,6 +643,12 @@ class WorkflowOrchestrator(
         )
 
     private companion object {
+        /** 旧 durable plan seam（P12.2）：`PLANJSON:<裸 ChapterPlan json>`；仅保留读取兼容，不再写入。 */
+        const val PLAN_REF_LEGACY = "PLANJSON:"
+
+        /** 新 durable plan seam（P20-P5-fix）：`PLANJSON2:<PlanningSnapshot json>`（plan + 可选 decisionPolicies）。 */
+        const val PLAN_REF_V2 = "PLANJSON2:"
+
         /** 与 RevisionGate.MAX_REVISIONS 对齐：修订上限 3。 */
         const val MAX_REVISIONS = 3
 

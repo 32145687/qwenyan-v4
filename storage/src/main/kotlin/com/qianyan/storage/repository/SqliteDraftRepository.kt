@@ -22,6 +22,7 @@ class SqliteDraftRepository(
             chapter_plan_id = row.chapter_plan_id,
             previous_draft_id = row.previous_draft_id,
             content = row.content,
+            format = row.format,
             status = row.status,
             source_model = row.source_model,
             created_at = row.created_at,

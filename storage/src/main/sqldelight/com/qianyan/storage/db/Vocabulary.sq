@@ -26,6 +26,12 @@ VALUES (:candidate_id, :vocabulary_id, :novel_id, :variant_id, :scope_level, :su
 selectCandidatesByNovel:
 SELECT * FROM VocabularyCandidate WHERE novel_id IS :novel_id;
 
+updateCandidateStatus:
+UPDATE VocabularyCandidate SET status = :status WHERE candidate_id = :candidate_id;
+
+updateCandidateSuggested:
+UPDATE VocabularyCandidate SET suggested = :suggested WHERE candidate_id = :candidate_id;
+
 getAll:
 SELECT * FROM Vocabulary;
 

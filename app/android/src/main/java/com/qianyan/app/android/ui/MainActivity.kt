@@ -27,6 +27,8 @@ import com.qianyan.app.android.ui.novel.NovelListScreen
 import com.qianyan.app.android.ui.novel.NovelListViewModel
 import com.qianyan.app.android.ui.provider.ProviderSettingsScreen
 import com.qianyan.app.android.ui.provider.ProviderSettingsViewModel
+import com.qianyan.app.android.ui.writer.WriterScreen
+import com.qianyan.app.android.ui.writer.WriterViewModel
 import com.qianyan.app.android.ui.theme.QianyanTheme
 import com.qianyan.model.ChapterId
 import com.qianyan.model.VariantId
@@ -51,6 +53,9 @@ private sealed interface Screen {
     data class ChapterList(val novel: Novel, val variantId: VariantId?) : Screen
     data class ChapterDetail(val novel: Novel, val variantId: VariantId?, val chapterId: ChapterId) : Screen
     data class ChapterWriting(val novel: Novel, val variantId: VariantId?, val chapterId: ChapterId) : Screen
+
+    /** P20-P3：Writer 编辑器（加载/编辑/保存 Draft + AI 继续写/改写）。 */
+    data class Writer(val novel: Novel, val variantId: VariantId?, val chapterId: ChapterId) : Screen
 }
 
 /** 主入口 Activity（P7.4 + P7.5 + P12.1.6）：UI Host + SAF TXT 文件选择 + 章节导航。 */
@@ -182,6 +187,7 @@ class MainActivity : ComponentActivity() {
                     viewModel = detailViewModel,
                     novelTitle = screen.novel.title,
                     onStartWriting = { push(Screen.ChapterWriting(screen.novel, screen.variantId, screen.chapterId)) },
+                    onOpenWriter = { push(Screen.Writer(screen.novel, screen.variantId, screen.chapterId)) },
                     onBack = pop,
                 )
             }
@@ -202,6 +208,23 @@ class MainActivity : ComponentActivity() {
                     onContinueToNext = { nextChapterId ->
                         push(Screen.ChapterWriting(screen.novel, screen.variantId, nextChapterId))
                     },
+                )
+            }
+
+            is Screen.Writer -> {
+                val writerViewModel: WriterViewModel = viewModel(
+                    key = "writer-${screen.chapterId.value}",
+                    factory = WriterViewModel.factory(
+                        novelId = screen.novel.novelId,
+                        variantId = screen.variantId,
+                        chapterId = screen.chapterId,
+                        gateway = container.writerGateway,
+                    ),
+                )
+                WriterScreen(
+                    novelTitle = screen.novel.title,
+                    viewModel = writerViewModel,
+                    onBack = pop,
                 )
             }
         }

@@ -86,6 +86,44 @@ class AnalysisViewModel(
         }
     }
 
+    /**
+     * P20-P1：确认候选（PENDING → APPROVED，落正式词条）。成功后重载候选列表。
+     */
+    fun confirmCandidate(candidateId: com.qianyan.model.VocabularyCandidateId) {
+        actionOnCandidate(candidateId) { vocabularies.confirmCandidate(it, novel.novelId) }
+    }
+
+    /**
+     * P20-P1：拒绝候选（PENDING → REJECTED）。成功后重载候选列表。
+     */
+    fun rejectCandidate(candidateId: com.qianyan.model.VocabularyCandidateId) {
+        actionOnCandidate(candidateId) { vocabularies.rejectCandidate(it, novel.novelId) }
+    }
+
+    /**
+     * P20-P1：编辑候选 suggested 内容（canonical；身份不变，状态保持 PENDING）。成功后重载候选列表。
+     */
+    fun editCandidate(candidateId: com.qianyan.model.VocabularyCandidateId, canonical: String) {
+        actionOnCandidate(candidateId) { vocabularies.editCandidate(it, novel.novelId, canonical = canonical) }
+    }
+
+    /** P20-P1：在 ioDispatcher 执行候选操作，成功后重载候选列表；失败落用户可读错误（不崩溃）。 */
+    private fun actionOnCandidate(candidateId: com.qianyan.model.VocabularyCandidateId, action: (com.qianyan.model.VocabularyCandidateId) -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = try {
+                withContext(ioDispatcher) {
+                    action(candidateId)
+                    _candidates.value = vocabularies.findCandidatesByNovel(novel.novelId)
+                }
+                _uiState.value // 保留当前状态（Idle/Success/...）
+            } catch (e: ApplicationException) {
+                AnalysisUiState.Error(messageFor(e.error))
+            } catch (e: Exception) {
+                AnalysisUiState.Error("操作失败：${e.message ?: "未知错误"}")
+            }
+        }
+    }
+
     /** 把 Analysis 结构化输出映射为 UI 状态（状态字段来自真实 AnalysisOutput / AnalysisResult）。 */
     private fun AnalysisUseCases.AnalysisOutput.toUiState(): AnalysisUiState = when (analysisResult.status) {
         AnalysisStatus.SUCCESS -> AnalysisUiState.Success(

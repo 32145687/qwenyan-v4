@@ -45,8 +45,16 @@ class WritingExecutionUseCase(
     /**
      * 执行一个 WRITING Task 到 COMPLETED / FAILED，并返回产出 [Draft]。
      * Task 类型非 WRITING → [ApplicationError.InvalidOperation]；不存在 → TaskNotFound。
+     *
+     * P20-P5（FD-4）：[decisionPolicies] 必须是 **Planning 阶段同一份** [com.qianyan.model.decision.DecisionPolicy]
+     * （由 Application orchestration 传入）。**Writer 绝不重新 decide**；null → 按空政策处理（不决定）。
      */
-    fun execute(taskId: TaskId, request: UserWritingRequest, plan: ChapterPlan): Draft {
+    fun execute(
+        taskId: TaskId,
+        request: UserWritingRequest,
+        plan: ChapterPlan,
+        decisionPolicies: List<com.qianyan.model.decision.DecisionPolicy> = emptyList(),
+    ): Draft {
         val task = taskManager.findById(taskId)
         if (task.type != TaskType.WRITING) {
             throw ApplicationException(
@@ -59,9 +67,9 @@ class WritingExecutionUseCase(
         taskManager.start(taskId)
         try {
             val context = contextAssembly.assemble(request)
-            val draft = writer.write(context, plan)
+            val draft = writer.write(context, plan, decisionPolicies)
             guard { draftRepository.save(draft) }
-            taskManager.saveCheckpoint(taskId, WritingSnapshot.STAGE, WritingSnapshot.encode(draft))
+            taskManager.saveCheckpoint(taskId, WritingSnapshot.STAGE, WritingSnapshot.encode(draft, decisionPolicies))
             taskManager.complete(taskId)
             return draft
         } catch (e: ApplicationException) {
@@ -96,6 +104,13 @@ class WritingExecutionUseCase(
         val id = WritingSnapshot.decodeReference(checkpoint.snapshot) ?: return null
         return guard { draftRepository.getById(id) }
     }
+
+    /**
+     * P20-P5：从 WRITING Checkpoint 恢复 [com.qianyan.model.decision.DecisionPolicy] 快照。
+     * @return `null` = 该 Checkpoint 无政策快照（早于 P5）。
+     */
+    fun decisionPoliciesFrom(checkpoint: Checkpoint): List<com.qianyan.model.decision.DecisionPolicy>? =
+        WritingSnapshot.decodePolicies(checkpoint.snapshot)
 
     private fun describe(error: ApplicationError): String = when (error) {
         is ApplicationError.UnknownStorage -> "UnknownStorage: ${error.cause.message ?: error.cause::class.simpleName}"

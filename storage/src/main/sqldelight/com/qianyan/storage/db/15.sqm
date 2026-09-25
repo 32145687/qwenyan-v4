@@ -1,0 +1,1 @@
+ALTER TABLE ChapterDraft ADD COLUMN format TEXT;

@@ -42,6 +42,8 @@ class PlanningExecutionUseCase(
     private val chapterRepository: ChapterRepository,
     private val continuationResolver: ContinuationResolver,
     errorMapper: ErrorMapper,
+    /** P20-P5：Decision 政策入口（Application orchestration 调用；Planner 只消费，不重算）。 */
+    private val decisionModel: com.qianyan.application.usecase.decision.DecisionModelGateway? = null,
 ) : UseCase(errorMapper) {
 
     /**
@@ -62,6 +64,12 @@ class PlanningExecutionUseCase(
         request: UserWritingRequest,
         continuationReference: ContinuationReference? = null,
         targetChapterId: ChapterId? = null,
+        /**
+         * P20-P5（FD-4）：本任务使用的 [com.qianyan.model.decision.DecisionPolicy]。
+         *  - null → 新 Task/Attempt：经 [decisionModel] 决定一次并快照（无 gateway 时为空政策）；
+         *  - 非 null → **恢复/复用**（Resume）：绝不重新 decide。
+         */
+        decisionPolicies: List<com.qianyan.model.decision.DecisionPolicy>? = null,
     ): ChapterPlan {
         val task = taskManager.findById(taskId)
         if (task.type != TaskType.PLANNING) {
@@ -74,9 +82,11 @@ class PlanningExecutionUseCase(
         try {
             val resolved = continuationReference?.let { continuationResolver.resolve(request, it) }
             val context = assembly.assemble(request, continuationReference, resolved)
-            val plan = planner.plan(context)
+            // P20-P5：Resume → 复用传入政策；新 Task → decide 一次（不重复决定）。
+            val policies = decisionPolicies ?: decidePolicy(context)
+            val plan = planner.plan(context, policies)
             val planWithChapter = bindChapter(plan, targetChapterId)
-            taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(planWithChapter))
+            taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(planWithChapter, policies))
             taskManager.complete(taskId)
             return planWithChapter
         } catch (e: ApplicationException) {
@@ -87,6 +97,20 @@ class PlanningExecutionUseCase(
             taskManager.fail(taskId, describe(mapped.error))
             throw mapped
         }
+    }
+
+    /**
+     * P20-P5：为本次规划决定政策（仅在新 Task/新 Attempt 调用）。输入来自 [PlanningContext.authorContext]
+     * （唯一 Author 入口）；未装配 gateway 或缺 AuthorContext → 空政策（Planner 自行渲染为空）。
+     */
+    private fun decidePolicy(context: PlanningContext): List<com.qianyan.model.decision.DecisionPolicy> {
+        val gateway = decisionModel ?: return emptyList()
+        val authorContext = context.authorContext ?: return gateway.decide(com.qianyan.model.author.AuthorContext())
+        return gateway.decide(
+            authorContext,
+            com.qianyan.model.decision.DecisionType.STORY_DIRECTION,
+            com.qianyan.model.decision.DecisionType.WRITING_STYLE,
+        )
     }
 
     /**
@@ -135,6 +159,13 @@ class PlanningExecutionUseCase(
 
     /** 从 PLANNING Checkpoint 恢复 [ChapterPlan]（只读恢复上下文，不重新执行）。 */
     fun chapterPlanFrom(checkpoint: Checkpoint): ChapterPlan? = PlanningSnapshot.decode(checkpoint.snapshot)
+
+    /**
+     * P20-P5：从 PLANNING Checkpoint 恢复 [com.qianyan.model.decision.DecisionPolicy] 快照。
+     * @return `null` = 该 Checkpoint 无政策快照（早于 P5）→ Resume 调用方**不得静默重新 decide**。
+     */
+    fun decisionPoliciesFrom(checkpoint: Checkpoint): List<com.qianyan.model.decision.DecisionPolicy>? =
+        PlanningSnapshot.decodePolicies(checkpoint.snapshot)
 
     private fun describe(error: ApplicationError): String = when (error) {
         is ApplicationError.UnknownStorage -> "UnknownStorage: ${error.cause.message ?: error.cause::class.simpleName}"

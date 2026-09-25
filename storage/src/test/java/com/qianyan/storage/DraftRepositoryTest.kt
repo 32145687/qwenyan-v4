@@ -193,4 +193,68 @@ class DraftRepositoryTest {
             java.nio.file.Files.deleteIfExists(tmp)
         }
     }
+
+    /* 7. P20-P2：legacy format=null（默认）可保存读回，content 不变 */
+    @Test
+    fun `legacy draft format is null by default`() {
+        val h = handle()
+        seedNovel(h.db, "novel-1")
+        val repo = SqliteDraftRepository(h.db)
+        val draft = makeDraft(draftId = "legacy-1", content = "纯文本正文")
+        repo.save(draft)
+        val read = repo.getById(draft.draftId)
+        assertNotNull(read)
+        assertNull(read.format, "legacy Draft.format 应为 null")
+        assertEquals("纯文本正文", read.content)
+    }
+
+    /* 8. P20-P2：controlled markdown format 可保存读回 */
+    @Test
+    fun `controlled markdown format roundtrip`() {
+        val h = handle()
+        seedNovel(h.db, "novel-1")
+        val repo = SqliteDraftRepository(h.db)
+        val draft = makeDraft(
+            draftId = "md-1",
+            content = "# 标题\n\n正文段落。",
+            status = DraftStatus.WRITTEN,
+        ).copy(format = com.qianyan.model.writing.DraftFormat.CONTROLLED_MARKDOWN)
+        repo.save(draft)
+        val read = repo.getById(draft.draftId)
+        assertNotNull(read)
+        assertEquals("markdown:controlled:v1", read.format)
+        assertEquals(draft.content, read.content)
+    }
+
+    /* 9. P20-P2：controlled markdown 格式随文件重开仍保持 */
+    @Test
+    fun `controlled markdown format survives reopen`() {
+        val tmp = java.nio.file.Files.createTempFile("qianyan_p20p2_draft_fmt", ".db").toAbsolutePath()
+        var h0: app.cash.sqldelight.db.SqlDriver? = null
+        var h1: app.cash.sqldelight.db.SqlDriver? = null
+        try {
+            val url = "jdbc:sqlite:$tmp"
+            val c0 = handle(url)
+            h0 = c0.driver
+            seedNovel(c0.db, "novel-f")
+            val repo = SqliteDraftRepository(c0.db)
+            val draft = makeDraft(
+                novelId = "novel-f",
+                draftId = "md-f",
+                content = "- 项一\n- 项二",
+            ).copy(format = com.qianyan.model.writing.DraftFormat.CONTROLLED_MARKDOWN)
+            repo.save(draft)
+
+            val c1 = handle(url)
+            h1 = c1.driver
+            val reopened = SqliteDraftRepository(c1.db)
+            val read = reopened.getById(draft.draftId)
+            assertNotNull(read)
+            assertEquals("markdown:controlled:v1", read.format)
+        } finally {
+            (h1 as? JdbcSqliteDriver?)?.getConnection()?.close()
+            (h0 as? JdbcSqliteDriver?)?.getConnection()?.close()
+            java.nio.file.Files.deleteIfExists(tmp)
+        }
+    }
 }

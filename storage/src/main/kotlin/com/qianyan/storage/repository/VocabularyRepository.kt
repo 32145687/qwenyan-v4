@@ -36,6 +36,12 @@ interface VocabularyRepository {
     /** 保存候选词条。 */
     fun saveCandidate(candidate: VocabularyCandidate)
 
+    /** 更新候选状态（P20-P1：confirm/reject 持久化；不改其余字段）。 */
+    fun updateCandidateStatus(candidateId: com.qianyan.model.VocabularyCandidateId, status: com.qianyan.model.vocabulary.VocabularyCandidateStatus)
+
+    /** 更新候选词条内容（P20-P1：edit 持久化 suggested 词条；不改身份/状态）。 */
+    fun updateCandidateSuggested(candidateId: com.qianyan.model.VocabularyCandidateId, entry: VocabularyEntry)
+
     /** 查询某 Novel（variant 除外）的全部候选词条（P6：AI 提取候选回读校验入库与状态）。 */
     fun findCandidatesByNovel(novelId: NovelId): List<VocabularyCandidate>
 }

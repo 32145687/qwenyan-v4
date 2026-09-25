@@ -36,6 +36,11 @@ data class Draft(
     /** P12.0(P1-1)：前一版本 Draft（修订版本链 A.previous=null, B.previous=A, C.previous=B）。 */
     val previousDraftId: DraftId? = null,
     val content: String = "",
+    /**
+     * 正文格式标识（P20-P2 · FD-1）：null = legacy plain text；
+     * [DraftFormat.CONTROLLED_MARKDOWN] = markdown:controlled:v1。
+     */
+    val format: String? = null,
     val status: DraftStatus = DraftStatus.DRAFTING,
     /** 产出模型标识（ModelProfile.id），领域层以字符串承载，不依赖 :provider。 */
     val sourceModel: String = "",
@@ -49,4 +54,13 @@ data class Draft(
 @Serializable
 enum class DraftStatus {
     DRAFTING, WRITTEN, REVISED, FINAL, PENDING_CONFIRMATION, CONFIRMED,
+}
+
+/** 正文格式标识（P20-P2 · FD-1）。 */
+object DraftFormat {
+    /** Legacy 纯文本（Draft.format = null）。 */
+    val PLAIN_TEXT: String? = null
+
+    /** 受控 Markdown v1（P20 Frozen FD-1）。 */
+    const val CONTROLLED_MARKDOWN: String = "markdown:controlled:v1"
 }

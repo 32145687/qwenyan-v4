@@ -14,15 +14,20 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -85,7 +90,12 @@ fun AnalysisScreen(
         Spacer(Modifier.height(16.dp))
 
         if (candidatesLoaded) {
-            CandidateSection(candidates = candidates)
+            CandidateSection(
+                candidates = candidates,
+                onConfirm = viewModel::confirmCandidate,
+                onReject = viewModel::rejectCandidate,
+                onEdit = viewModel::editCandidate,
+            )
         }
 
         Spacer(Modifier.weight(1f))
@@ -221,7 +231,12 @@ private fun SuggestionRow(suggestion: VocabularySuggestion) {
 
 /** 候选区：Analysis 完成后展示 findCandidatesByNovel 的结果；空候选显示"暂无候选"而非错误。 */
 @Composable
-private fun CandidateSection(candidates: List<VocabularyCandidate>) {
+private fun CandidateSection(
+    candidates: List<VocabularyCandidate>,
+    onConfirm: (com.qianyan.model.VocabularyCandidateId) -> Unit,
+    onReject: (com.qianyan.model.VocabularyCandidateId) -> Unit,
+    onEdit: (com.qianyan.model.VocabularyCandidateId, String) -> Unit,
+) {
     Text(
         text = "候选词汇",
         style = MaterialTheme.typography.titleMedium,
@@ -241,14 +256,26 @@ private fun CandidateSection(candidates: List<VocabularyCandidate>) {
             contentPadding = PaddingValues(bottom = 24.dp),
         ) {
             items(candidates, key = { it.candidateId.value }) { candidate ->
-                CandidateRow(candidate = candidate)
+                CandidateRow(
+                    candidate = candidate,
+                    onConfirm = onConfirm,
+                    onReject = onReject,
+                    onEdit = onEdit,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun CandidateRow(candidate: VocabularyCandidate) {
+private fun CandidateRow(
+    candidate: VocabularyCandidate,
+    onConfirm: (com.qianyan.model.VocabularyCandidateId) -> Unit,
+    onReject: (com.qianyan.model.VocabularyCandidateId) -> Unit,
+    onEdit: (com.qianyan.model.VocabularyCandidateId, String) -> Unit,
+) {
+    var editing by remember { mutableStateOf(false) }
+    var editText by remember { mutableStateOf(candidate.suggested.canonical) }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.medium,
@@ -293,6 +320,46 @@ private fun CandidateRow(candidate: VocabularyCandidate) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            // P20-P1：候选操作（仅 PENDING 可操作；确认/拒绝/编辑）
+            if (candidate.status == com.qianyan.model.vocabulary.VocabularyCandidateStatus.PENDING) {
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { onConfirm(candidate.candidateId) },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    ) { Text("确认") }
+                    TextButton(onClick = { onReject(candidate.candidateId) }) { Text("拒绝") }
+                    TextButton(onClick = { editing = true }) { Text("编辑") }
+                }
+            }
         }
+    }
+
+    // P20-P1：编辑对话框（修改候选词内容；保存后仍为 PENDING，由用户确认/拒绝）
+    if (editing) {
+        AlertDialog(
+            onDismissRequest = { editing = false },
+            title = { Text("编辑候选词") },
+            text = {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { editText = it },
+                    label = { Text("规范词") },
+                    singleLine = true,
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onEdit(candidate.candidateId, editText.trim())
+                        editing = false
+                    },
+                    enabled = editText.isNotBlank(),
+                ) { Text("保存") }
+            },
+            dismissButton = {
+                TextButton(onClick = { editing = false }) { Text("取消") }
+            },
+        )
     }
 }

@@ -378,6 +378,10 @@ internal object StorageMappers {
         created_at = c.createdAt.toEpochMillis(),
     )
 
+    /** P20-P1：把候选的 suggested 词条编码为 JSON（与 domainVocabularyCandidate 一致）。 */
+    fun suggestedJson(entry: DomainVocabularyEntry): String =
+        json.encodeToString(DomainVocabularyEntry.serializer(), entry)
+
     fun dbVocabularyCandidate(row: DbVocabularyCandidate): DomainVocabularyCandidate = DomainVocabularyCandidate(
         candidateId = VocabularyCandidateId(row.candidate_id),
         vocabularyId = VocabularyId(row.vocabulary_id),
@@ -528,6 +532,7 @@ internal object StorageMappers {
         chapter_plan_id = d.planId?.value,
         previous_draft_id = d.previousDraftId?.value,
         content = d.content,
+        format = d.format,
         status = d.status.name,
         source_model = d.sourceModel,
         created_at = d.createdAt.toEpochMillis(),
@@ -543,6 +548,7 @@ internal object StorageMappers {
         planId = row.chapter_plan_id?.let { com.qianyan.model.ChapterPlanId(it) },
         previousDraftId = row.previous_draft_id?.let { DraftId(it) },
         content = row.content,
+        format = row.format,
         status = DraftStatus.valueOf(row.status),
         sourceModel = row.source_model,
         createdAt = epochMillisToInstant(row.created_at),

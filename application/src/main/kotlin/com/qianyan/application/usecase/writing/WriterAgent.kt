@@ -11,6 +11,7 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.writing.planning.PlanningContext
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
+import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.writing.Draft
 import com.qianyan.provider.LLMGateway
@@ -43,7 +44,12 @@ class WriterAgent(
      * 执行一次 Writer 运行（同步，无网络除非装配方注入真实 Provider）。
      * 返回按 [ChapterPlan] 结构装配的 [Draft]；失败抛类型化 [ApplicationException]。
      */
-    fun write(context: PlanningContext, plan: ChapterPlan): Draft {
+    fun write(context: PlanningContext, plan: ChapterPlan): Draft = write(context, plan, emptyList())
+
+    /**
+     * P20-P5：带上**与 Planning 相同**的 [DecisionPolicy]（只读消费；Writer **不重新计算** Decision）。
+     */
+    fun write(context: PlanningContext, plan: ChapterPlan, policies: List<DecisionPolicy>): Draft {
         val structure = DraftStructure(
             draftId = java.util.UUID.randomUUID().toString(),
             novelId = plan.novelId,
@@ -55,7 +61,7 @@ class WriterAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(WRITER_AGENT, renderInput(context, plan))
+            val result = runtime.run(WRITER_AGENT, renderInput(context, plan, policies))
             val raw = result.answer
                 ?: throw WritingException.InvalidOutput("writer returned no answer")
             DraftParser.parse(raw, structure)
@@ -78,7 +84,7 @@ class WriterAgent(
     }
 
     /** 构造供 Writer LLM 使用的输入文本（复用 PlanningContext 投影 + ChapterPlan 创作意图）。 */
-    private fun renderInput(context: PlanningContext, plan: ChapterPlan): String = buildString {
+    private fun renderInput(context: PlanningContext, plan: ChapterPlan, policies: List<DecisionPolicy>): String = buildString {
         appendLine("【创作请求】")
         appendLine("intent: ${context.request.intentType}")
         appendLine("target: ${context.request.target.kind}${context.request.target.id?.let { "(${it.value})" } ?: ""}")
@@ -135,6 +141,14 @@ class WriterAgent(
             context.vocabulary.forEach { v ->
                 val repl = if (v.replacement != null) " -> ${v.replacement}" else ""
                 appendLine("- ${v.canonical}$repl")
+            }
+        }
+
+        // P20-P5（FD-4）：与 Planning 同一份创作决策政策（只读消费；Writer 不重算 Decision）
+        if (policies.isNotEmpty()) {
+            appendLine("【创作决策 Decision Policy】")
+            policies.forEach { p ->
+                appendLine("- ${p.decisionType} → ${p.outcome} (source=${p.source})")
             }
         }
     }.trimEnd()

@@ -29,6 +29,7 @@ fun ChapterDetailScreen(
     viewModel: ChapterDetailViewModel,
     novelTitle: String,
     onStartWriting: () -> Unit,
+    onOpenWriter: () -> Unit,
     onBack: () -> Unit,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -63,6 +64,7 @@ fun ChapterDetailScreen(
                 is ChapterDetailUiState.Content -> DetailContent(
                     chapter = s.chapter,
                     onStartWriting = onStartWriting,
+                    onOpenWriter = onOpenWriter,
                     onBack = onBack,
                 )
             }
@@ -71,7 +73,7 @@ fun ChapterDetailScreen(
 }
 
 @Composable
-private fun DetailContent(chapter: Chapter, onStartWriting: () -> Unit, onBack: () -> Unit) {
+private fun DetailContent(chapter: Chapter, onStartWriting: () -> Unit, onOpenWriter: () -> Unit, onBack: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "${chapter.order} · ${chapter.title}",
@@ -98,13 +100,22 @@ private fun DetailContent(chapter: Chapter, onStartWriting: () -> Unit, onBack: 
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(28.dp))
-        // P12.1.7：真实创作链入口（Planning → Writing → Review → Confirmation → Knowledge Update）。
+        // P20-P3：Writer 编辑器（加载/编辑/保存 Draft + AI 继续写 / AI 改写）——产品主入口。
+        Button(
+            onClick = onOpenWriter,
+            enabled = true,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+        ) {
+            Text("进入写作（编辑 / 保存 / AI 写作）")
+        }
+        Spacer(Modifier.height(12.dp))
+        // P12.1.7：工作流视图入口（Planning → Writing → Review → Confirmation → Knowledge Update）。
         Button(
             onClick = onStartWriting,
             enabled = true,
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
         ) {
-            Text("开始创作（Planning → Writing → Review）")
+            Text("工作流视图（Planning → Writing → Review）")
         }
         Spacer(Modifier.height(16.dp))
         Text(

@@ -150,6 +150,11 @@ class AnalysisViewModelTest {
             if (candidates.none { it.candidateId == candidate.candidateId }) candidates += candidate
         }
 
+        // P20-P1 新增的候选状态/内容写接口：本测试不覆盖 confirm/reject/edit 路径，保持桩。
+        override fun updateCandidateStatus(candidateId: com.qianyan.model.VocabularyCandidateId, status: com.qianyan.model.vocabulary.VocabularyCandidateStatus) = TODO()
+
+        override fun updateCandidateSuggested(candidateId: com.qianyan.model.VocabularyCandidateId, entry: VocabularyEntry) = TODO()
+
         override fun findCandidatesByNovel(novelId: NovelId): List<VocabularyCandidate> =
             candidates.filter { it.novelId == novelId }
 

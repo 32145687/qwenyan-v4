@@ -10,6 +10,7 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
+import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.provider.LLMGateway
 import com.qianyan.provider.ModelProfile
@@ -34,7 +35,12 @@ class PlannerAgent(
 ) {
 
     /** 执行了一次 Planner 运行（同步，无网络除非装配方注入真实 Provider）。 */
-    fun plan(context: PlanningContext): ChapterPlan {
+    fun plan(context: PlanningContext): ChapterPlan = plan(context, emptyList())
+
+    /**
+     * P20-P5：带上本任务使用的 [DecisionPolicy]（只读消费；Planner **不重新计算** Decision）。
+     */
+    fun plan(context: PlanningContext, policies: List<DecisionPolicy>): ChapterPlan {
         val structure = ChapterPlanStructure(
             novelId = context.novelId,
             arcId = DEFAULT_ARC,
@@ -44,7 +50,7 @@ class PlannerAgent(
             chapterPlanId = java.util.UUID.randomUUID().toString(),
         )
         return try {
-            val result = runtime.run(PLANNER_AGENT, renderInput(context))
+            val result = runtime.run(PLANNER_AGENT, renderInput(context, policies))
             val raw = result.answer
                 ?: throw PlanningException.InvalidOutput("planner returned no answer")
             ChapterPlanParser.parse(raw, structure)
@@ -67,7 +73,7 @@ class PlannerAgent(
     }
 
     /** 构造供 Planner LLM 使用的输入文本。 */
-    private fun renderInput(context: PlanningContext): String = buildString {
+    private fun renderInput(context: PlanningContext, policies: List<DecisionPolicy>): String = buildString {
         appendLine("【创作请求】")
         appendLine("intent: ${context.request.intentType}")
         appendLine("target: ${context.request.target.kind}${context.request.target.id?.let { "(${it.value})" } ?: ""}")
@@ -135,6 +141,14 @@ class PlannerAgent(
             appendLine("sourceChapterTitle: ${src.title}")
             appendLine("sourceDraftId: ${context.sourceFinalDraft?.draftId?.value ?: "?"}")
             appendLine("sourceDraftStatus: ${context.sourceFinalDraft?.status ?: "?"}")
+        }
+
+        // P20-P5（FD-4）：本任务已决定的创作决策政策（只读消费；Planner 不重算 Decision）
+        if (policies.isNotEmpty()) {
+            appendLine("【创作决策 Decision Policy】")
+            policies.forEach { p ->
+                appendLine("- ${p.decisionType} → ${p.outcome} (source=${p.source})")
+            }
         }
     }.trimEnd()
 

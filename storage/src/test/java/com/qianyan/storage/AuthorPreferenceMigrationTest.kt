@@ -65,7 +65,7 @@ class AuthorPreferenceMigrationTest {
                 assertTrue(tableExists(driver, "AuthorProfile"), "migration 后应存在 AuthorProfile（P16 AIL-1）")
                 assertTrue(tableExists(driver, "AuthorPreference"), "migration 后应存在 AuthorPreference（P16 AIL-1）")
                 assertTrue(tableExists(driver, "AuthorEvidence"), "migration 后应存在 AuthorEvidence（P16 AIL-1）")
-                assertEquals(15L, userVersion(driver), "migration 后 user_version 应为最新版本 14+1（P18-C Schema v15）")
+                assertEquals(16L, userVersion(driver), "migration 后 user_version 应为最新版本 15+1（P20-P2 Schema v16）")
 
                 // 既有 v10 数据仍可读取
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"))

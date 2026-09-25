@@ -129,7 +129,8 @@ class WorkflowContinuationE2ETest {
         // Ch2 Planning 真实执行（PLANNING step COMPLETED + resultReference）
         val planStep = app.workflowRepository.listSteps(wf2).first { it.phase == com.qianyan.model.workflow.WorkflowStepPhase.PLANNING }
         assertEquals(com.qianyan.model.workflow.WorkflowStepStatus.COMPLETED, planStep.status)
-        assertTrue(planStep.resultReference!!.startsWith("PLANJSON:"))
+        // P20-P5-fix：durable plan seam 升级为 PLANJSON2:<PlanningSnapshot>（携带 DecisionPolicy 快照）；旧 PLANJSON: 仅读取兼容。
+        assertTrue(planStep.resultReference!!.startsWith("PLANJSON2:"))
         // Ch2 Writing 真实执行 → Draft 绑定 Ch2
         val ch2Draft = app.draftRepository.latestByChapter(ch2)!!
         assertEquals(ch2, ch2Draft.chapterId)

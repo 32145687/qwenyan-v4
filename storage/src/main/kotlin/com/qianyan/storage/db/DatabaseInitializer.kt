@@ -69,6 +69,9 @@ object DatabaseInitializer {
     /** v14（P18-B）→ v15（P18-C：AuthorDnaVersion + AuthorDnaFeature + AuthorDnaSource 独立表族）迁移起点。 */
     private const val V14 = 14L
 
+    /** v15（P18-C）→ v16（P20-P2：ChapterDraft 加 format 列）迁移起点。 */
+    private const val V15 = 15L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -200,6 +203,12 @@ object DatabaseInitializer {
             !tableExists(driver, "AuthorDnaVersion") -> withTransaction(driver) {
                 // v14 → v15：新增 Author DNA 独立表族（AuthorDnaVersion / AuthorDnaFeature / AuthorDnaSource）（P18-C）。
                 QianyanDb.Schema.migrate(driver, V14, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !columnExists(driver, "ChapterDraft", "format") -> withTransaction(driver) {
+                // v15 → v16：ChapterDraft 加 format 列（P20-P2 FD-1：正文格式标识；旧行为 format=null 纯文本兼容）。
+                QianyanDb.Schema.migrate(driver, V15, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }
