@@ -69,12 +69,17 @@ class WriterFacade(
      * 尚无 Workflow 时先创建骨架（与既有 ChapterWorkflowGateway 语义一致），不由 UI 决定步骤。
      */
     override fun continueWriting(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress {
+        // P2/FD-1：只有**本次推进真正新产生**的 Draft 才打受控 Markdown 标记。
+        // 先记录推进前的 Draft 身份，避免把章节上已有的 legacy Draft（format=null）当成"新 AI Draft"回溯迁移
+        // ——例如章节 Workflow 已 COMPLETED、本次 advance 不产生新 Draft 的情况。
+        val draftBefore = drafts.latestDraft(chapterId)?.draftId
         if (workflow.getChapterProgress(chapterId).phase == ChapterPhase.NOT_STARTED) {
             workflow.startChapter(novelId, variantId, chapterId)
         }
         val progress = workflow.advance(chapterId)
-        // P2/FD-1：本次新产生的 Draft 标记为受控 Markdown v1（已有 format 的 Draft 不动）。
-        drafts.latestDraft(chapterId)?.let { drafts.stampControlledMarkdown(it) }
+        drafts.latestDraft(chapterId)
+            ?.takeIf { it.draftId != draftBefore }
+            ?.let { drafts.stampControlledMarkdown(it) }
         return progress
     }
 

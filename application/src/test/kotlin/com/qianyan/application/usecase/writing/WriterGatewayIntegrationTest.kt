@@ -1,6 +1,7 @@
 package com.qianyan.application.usecase.writing
 
 import com.qianyan.application.di.ApplicationContainer
+import com.qianyan.application.usecase.workflow.ChapterPhase
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
@@ -22,6 +23,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * P20-P3 · Writer 用户层 seam（[WriterFacade] / [WriterUseCases]）集成测试。
@@ -42,6 +44,9 @@ class WriterGatewayIntegrationTest {
             "StoryWriterAgent" in system -> """{"content":"AI 生成的正文"}"""
             "StoryRevisionAgent" in system -> """{"content":"修订后的正文"}"""
             "StoryCriticAgent" in system -> """{"passed":true}"""
+            // 经人工门后 Workflow 会执行 Knowledge Update（无变更 → 空 changes），
+            // 使流程能走到 COMPLETED（本文件 7 号用例需要该终态）。
+            "KnowledgeUpdateAgent" in system -> """{"changes":[]}"""
             else -> """{"chapterGoal":"g"}"""
         }
         ProviderResponse(
@@ -168,5 +173,38 @@ class WriterGatewayIntegrationTest {
         }
         assertTrue(ex.error is com.qianyan.application.error.ApplicationError.EntityNotFound)
         assertNull(app.draftRepository.latestByChapter(chapter.chapterId))
+    }
+
+    /* 7. 继续写在**没有产生新 Draft** 时不得把既有 legacy Draft 回溯迁移为受控 Markdown（FD-1） */
+    @Test
+    fun `continue writing does not restamp an existing legacy draft when no new draft is produced`() {
+        val app = ApplicationContainer.open(analysisGateway = gateway())
+        val novelId = app.novels.createOriginal(title = "测试仙侠")
+        val chapter = app.chapters.createNextChapter(title = "第一章", novelId = novelId)
+
+        // 驱动既有 Workflow 到 COMPLETED（人工门只**人工通过**，不自动批准）
+        var guard = 0
+        while (guard++ < 20 && app.workflowFacade.getChapterProgress(chapter.chapterId).phase != ChapterPhase.COMPLETED) {
+            if (app.workflowFacade.getChapterProgress(chapter.chapterId).waitingForUser) {
+                app.workflowFacade.approve(chapter.chapterId)
+            } else {
+                app.writerGateway.continueWriting(novelId, null, chapter.chapterId)
+            }
+        }
+        val phase = app.workflowFacade.getChapterProgress(chapter.chapterId).phase
+        assertEquals(ChapterPhase.COMPLETED, phase, "应能驱动到 COMPLETED，实际=$phase")
+
+        // fixture：模拟 P20-P2 之前的库状态 —— 章节**最新** Draft 仍是 legacy（format=null）
+        val legacy = draft(novelId, chapter.chapterId, "d-legacy-done", "旧正文（P14 legacy）", format = null)
+            .copy(createdAt = Clock.System.now().plus(1.seconds))
+        app.draftRepository.save(legacy)
+        assertEquals(legacy.draftId, app.draftRepository.latestByChapter(chapter.chapterId)?.draftId)
+
+        // COMPLETED 章节再次「继续写」：本次推进不产生新 Draft
+        app.writerGateway.continueWriting(novelId, null, chapter.chapterId)
+
+        val after = app.draftRepository.latestByChapter(chapter.chapterId)
+        assertEquals(legacy.draftId, after?.draftId, "COMPLETED 章节继续写不得产生新 Draft")
+        assertNull(after?.format, "无新 Draft 时不得把既有 legacy Draft 回溯迁移为受控 Markdown")
     }
 }

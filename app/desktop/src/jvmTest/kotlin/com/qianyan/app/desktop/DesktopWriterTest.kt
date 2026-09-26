@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.datetime.Clock
 import kotlin.test.Test
+import kotlin.time.Duration.Companion.seconds
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
@@ -280,6 +281,61 @@ class DesktopWriterTest {
         assertEquals("旧正文（legacy 纯文本）—— 改了一行", reread.content)
         assertNull(reread.format, "普通保存**不得**把 legacy Draft 静默迁移为受控 Markdown")
         assertEquals(DraftStatus.DRAFTING, reread.status)
+    }
+
+    @Test
+    fun `continue writing on a finished chapter keeps an existing legacy draft legacy`() {
+        val (c, _) = openContainer()
+        val (novelId, chapterId) = seedChapter(c)
+
+        // 驱动既有 Workflow 到 COMPLETED（人工门只**人工通过**，不自动批准）
+        var guard = 0
+        while (guard++ < 20 && c.workflowFacade.getChapterProgress(chapterId).phase != ChapterPhase.COMPLETED) {
+            if (c.workflowFacade.getChapterProgress(chapterId).waitingForUser) c.workflowFacade.approve(chapterId)
+            else c.writerGateway.continueWriting(novelId, null, chapterId)
+        }
+        assertEquals(
+            ChapterPhase.COMPLETED,
+            c.workflowFacade.getChapterProgress(chapterId).phase,
+            "应能驱动到 COMPLETED",
+        )
+
+        // fixture：构造「P20-P2 之前的库」状态 —— COMPLETED 章节上最新 Draft 仍是 legacy（format=null）
+        val now = Clock.System.now()
+        val legacyId = DraftId("legacy-completed-pc21")
+        c.draftRepository.save(
+            Draft(
+                draftId = legacyId,
+                novelId = novelId,
+                variantId = null,
+                scope = VariantScope.ORIGINAL,
+                chapterId = chapterId,
+                previousDraftId = null,
+                content = "旧正文（P14 legacy，已定稿）",
+                format = null,
+                status = DraftStatus.CONFIRMED,
+                createdAt = now.plus(1.seconds),
+                updatedAt = now.plus(1.seconds),
+            ),
+        )
+
+        val controller = controllerFor(c, novelId, chapterId)
+        controller.load()
+        assertEquals(legacyId, controller.uiState.value.draftId)
+        assertTrue(controller.uiState.value.isLegacyFormat)
+
+        // COMPLETED 章节再次「继续写作」：本次推进不产生新 Draft
+        controller.continueWriting()
+
+        val state = controller.uiState.value
+        assertNull(state.error, "COMPLETED 章节继续写作不应失败")
+        assertEquals(legacyId, state.draftId, "不得产生新 Draft")
+        assertEquals(null, state.draftFormat, "无新 Draft 时不得把既有 legacy Draft 回溯迁移为受控 Markdown")
+        assertEquals(
+            null,
+            c.writerGateway.loadContext(novelId, null, chapterId).draft?.format,
+            "Repository 回读：legacy 必须保持 legacy",
+        )
     }
 
     // ---------- 7. 架构守卫 ----------
