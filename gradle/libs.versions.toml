@@ -24,6 +24,8 @@ mockk = "1.13.13"
 androidx-core-ktx = "1.15.0"
 compose = "1.7.5"
 # --- Compose 生态（P7.2 引入）---
+# P20-PC1：Compose Multiplatform（Desktop）插件版本，与 kotlin 2.0.21 配套。
+composeDesktop = "1.7.3"
 material3 = "1.3.1"
 activityCompose = "1.9.0"
 lifecycle = "2.8.4"
@@ -58,6 +60,9 @@ sqldelight-sqlite-driver = { group = "app.cash.sqldelight", name = "sqlite-drive
 # P7.3：Android DI 装配所需（AndroidSqliteDriver）
 sqldelight-android-driver = { group = "app.cash.sqldelight", name = "android-driver", version.ref = "sqldelight" }
 
+# --- P20-PC1：Compose Desktop 运行时（Swing 协程调度；桌面 UI 线程 = AWT EDT）---
+kotlinx-coroutines-swing = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-swing", version.ref = "kotlinx-coroutines" }
+
 # --- Android ViewModel / 协程（P7.4 引入）---
 lifecycle-viewmodel-ktx = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-ktx", version.ref = "lifecycle" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "kotlinx-coroutines" }
@@ -70,6 +75,9 @@ kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+# P20-PC1：Compose Desktop 模块所需的 KMP + Compose Multiplatform 插件。
+kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
+compose-desktop = { id = "org.jetbrains.compose", version.ref = "composeDesktop" }
 sqldelight = { id = "app.cash.sqldelight", version.ref = "sqldelight" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
