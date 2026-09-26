@@ -3,11 +3,14 @@
 > 依据：qwenyan-v4 真实源码（目录 `d:\qwenyan-v4\qwenyan-v4`）。本文档所有类名/方法名/参数/返回值均来自源码，未猜测。
 > 说明：后端契约以 `application/di/ApplicationContainer` 暴露的能力为核心。PC 侧编排由 `app/desktop` 的
 > Desktop Adapter 完成，**不修改任何现有模块**。
-> 版本基线：**P20-PC1（`feature/p14-f`）**；schema **v17**；本文件同步至 PC Foundation 落地后的真实状态。
+> 版本基线：**P20-PC2（`feature/p14-f`）**；schema **v17**；本文件同步至 PC Foundation + Desktop Writer 落地后的真实状态。
 >
 > **P20-PC1 同步记录**：本文档已从 P14 基线（`7d7736b`）同步至当前主线，更新内容仅限
 > ① 当前已存在的真实能力 ② P19 Decision Model ③ P20-P2 Controlled Markdown v1
 > ④ P20-P3 Writer seam ⑤ P20-P4 Reader seam ⑥ 已完成/未完成状态。未据此设计任何新功能。
+>
+> **P20-PC2 同步记录**：仅更新状态 —— 「04 正文创作」已由骨架变为**真实接线**
+> （`writerGateway` + `workflowFacade`）；`WriterGateway.rewrite` 无「修改方向」参数（未改契约）。
 
 ---
 
@@ -94,10 +97,13 @@
 - 正文格式：`ChapterDraft.format`（`null` = legacy 纯文本；`markdown:controlled:v1`）
 - 约束（FD-1）：新产生的 Draft 打标；已有 format 不回溯改写；legacy 不做 Markdown 解析
 
-### 15. P20-P3 Writer seam（已实现 · PC 侧接线属 PC-2）
+### 15. P20-P3 Writer seam（已实现 · **PC 已于 PC-2 接线**）
 - `container.writerGateway`（`WriterGateway`）：`loadContext` / `saveContent` / `continueWriting` / `rewrite`
-- `container.writerUseCases`（`WriterUseCases`）：Draft 读写 + `stampControlledMarkdown`
+- `container.writerUseCases`（`WriterUseCases`）：Draft 读写 + `stampControlledMarkdown`（由 `WriterFacade` 内部复用）
 - 约束：正文读写经该 seam，**不得 UI → DraftRepository 直连**
+- PC-2 状态：Desktop `WriteScreen → WriterController → WriterGateway`；HITL 与阶段投影经 `workflowFacade`
+  （`getChapterProgress.waitingForUser` / `approve`）；保存只改 `content`+`updatedAt`；
+  `rewrite` **无修改方向参数**（未改契约，UI 不提供无效输入）；单步推进 `continueWriting` 语义未改
 
 ### 16. P20-P4 Reader seam（已实现 · PC 侧接线属 PC-3）
 - `container.reading`（`ReadingUseCases`）：`openChapter` / `savePosition` / `position`，返回 `ReaderChapter` DTO
@@ -308,20 +314,24 @@ Service：container.workflowService（WorkflowService）
 - Story State 六类实体管理：无 UI（需先补 Application 层只读 UseCase）。
 - Backup / 库管理（`container` 有 `BackupStore` 能力）无 UI。
 - Provider 设置：Android 有；**PC 已交付**（P20-PC1：`ProviderSettingsDialog` + Desktop Adapter）。
+- 正文写作（读 / 存 / 继续写作 / 改写 / 人工门）：Android 有（P20-P3）；**PC 已交付**（P20-PC2）。
+- 定稿确认（`confirmations.confirmFinalDraft`）与知识更新结果展示：两平台 UI 均未接线（后续阶段）。
 - Reader 阅读位置续读：Android 已交付（P20-P4）；PC 待接（PC-3）。
 
-## 第六部分：阶段状态（P20-PC1 同步后的真实状态）
+## 第六部分：阶段状态（P20-PC2 同步后的真实状态）
 - **P14（Genre / Story Foundation / Idea Intelligence）**：后端**已交付**（`genres`、`storyIntentUseCases`、`foundationDecisions`、`ideaFirstGateway`）。PC UI 接线属 PC-4。
 - **P15（User Creative Decision Loop）**：后端**已交付**（`foundationDecisions` / `ideaFirstGateway`）。PC UI 接线属 PC-4。
 - **P16–P19（Author Intelligence / Decision Model）**：后端**已交付**（`authorPreferenceUseCases` / `authorCoreUseCases` / `authorDnaUseCases` / `decisionModelUseCases` / `decisionModelGateway`）。PC UI 接线属 PC-6。
 - **P20-P2（Controlled Markdown v1）**：**已交付**（FD-1）；PC 展示接线属 PC-2 / PC-3。
-- **P20-P3（Writer seam）**：**已交付**（`writerGateway` / `writerUseCases`）；PC 接线属 PC-2。
+- **P20-P3（Writer seam）**：**已交付**（`writerGateway` / `writerUseCases`）；**PC 已接线（PC-2）**。
 - **P20-P4（Reader seam）**：**已交付**（`reading` / `ReadingProgress`，schema v17）；Android 已接线，PC 接线属 PC-3。
-- **P20-PC1（PC Foundation）**：**已落地**——桌面应用可运行、真实 SQLite v17、Provider 设置可用；页面按 PC-2…PC-7 分阶段接线。
+- **P20-PC1（PC Foundation）**：**已落地**——桌面应用可运行、真实 SQLite v17、Provider 设置可用。
+- **P20-PC2（Desktop Writer）**：**已落地**——「04 正文创作」真实接线（`writerGateway` + `workflowFacade`：
+  读 / 存 / 继续写作 / 改写 / 人工门）；未引入第二套 Writer、未改 Writer 契约、未做 Decision。
 - **尚未实现（不得作为 UI 可调后端）**：富文本编辑器、全文搜索、章节重排 / 批量管理、后台调度器、面向用户的 Error Recovery UX、凭证加密、RAG / Vector / Embedding、MCP、Cloud、Multi-Agent、自动学习。
-> 原则：**已交付 ≠ PC 已接线**。PC-1 只交付 Foundation，骨架页不得被当作已接入能力。
+> 原则：**已交付 ≠ PC 已接线**。PC-1/PC-2 只交付已完成的部分，其余骨架页不得被当作已接入能力。
 
-## 第七部分：《PC UI 功能说明》（简版 · P20-PC1 同步）
+## 第七部分：《PC UI 功能说明》（简版 · P20-PC2 同步）
 
 ```text
 功能：新建小说
@@ -345,9 +355,9 @@ Service：container.workflowService（WorkflowService）
 状态：PC 未接线（后续阶段）
 
 功能：正文写作（规划→写作→审校→修订→定稿→确认→知识更新）
-用户可：查看/编辑正文、AI 续写与重写、审批闸门
-后端：已实现（writerGateway / writerUseCases + workflowFacade）；【AI 内容当前 Mock】
-状态：PC 未接线（PC-2）
+用户可：查看/编辑正文、保存、AI 继续写作（逐步推进）、AI 改写、通过人工门
+后端：已实现（writerGateway = WriterFacade + workflowFacade）；【AI 内容当前 Mock】
+状态：PC 已接线（P20-PC2）；定稿确认（confirmFinalDraft）与知识更新入口属后续阶段
 
 功能：阅读（章节正文 + 阅读位置续读）
 后端：已实现（reading = ReadingUseCases + ReadingProgress，schema v17）
@@ -382,4 +392,4 @@ Service：container.workflowService（WorkflowService）
 
 ---
 
-*本文件于 P20-PC1 同步至当前主线真实状态（`feature/p14-f`，schema v17）。*
+*本文件于 P20-PC2 同步至当前主线真实状态（`feature/p14-f`，schema v17）。*
