@@ -614,6 +614,8 @@ TXT 文件 → TxtImporter（编码/BOM）→ TextNormalizer（确定性规范�
 
 - [**产品方向（现行上位）**：Novel IDE / PC FIRST](docs/architecture/qianyan-novel-ide-direction.md)
 
+- [**Novel IDE 总架构设计**（含迁移矩阵与重写范围结论）](docs/architecture/qianyan-novel-ide-architecture.md)
+
 - [架构冻结：P20 FD-1…FD-10](docs/architecture/p20-architecture-freeze.md)
 
 - [PC UI 契约（真实接线状态）](docs/planning/qianyan-pc-ui-contract.md)

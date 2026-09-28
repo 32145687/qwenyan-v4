@@ -511,6 +511,7 @@ D8  PC Novel IDE UI 结构（Project / Workspace / AI Agent 三栏）
 | 文档 | 作用 | 状态 |
 |---|---|---|
 | **本文档** `docs/architecture/qianyan-novel-ide-direction.md` | 产品方向与架构基线（上位方向文档） | `DESIGN PHASE` |
+| `docs/architecture/qianyan-novel-ide-architecture.md` | **Novel IDE 总架构设计**（Project / Workspace / Index / Context / Agent / Skill / Tool / Session / Working Draft / Validation / Diff / Canonical / Commit / History + 迁移矩阵 + 重写范围结论） | `DESIGN COMPLETE / NEEDS REVIEW` |
 | `docs/architecture/p20-architecture-freeze.md` | FD-1…FD-10 冻结规则 | `FROZEN`（继续有效） |
 | `docs/planning/qianyan-pc-ui-contract.md` | PC UI ↔ 后端能力契约（真实接线状态） | 现行（PC-3 起阶段已 `PAUSED`） |
 | `docs/planning/qianyan-master-plan.md` | 总体架构设计（历史规划） | 参考（见文首状态横幅） |
