@@ -3,6 +3,7 @@ package com.qianyan.application.di
 import app.cash.sqldelight.db.SqlDriver
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.analysis.AnalysisUseCases
+import com.qianyan.application.usecase.action.ActionPolicyUseCases
 import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
@@ -164,6 +165,16 @@ class ApplicationContainer(
      */
     val projects: ProjectUseCases
         get() = ProjectUseCases(novels, novelRepository, chapterRepository, projectStateRepository, errorMapper)
+
+    /**
+     * I2 · Action Policy（Agent 行动权限）+ 既有 Human Gate 复用。
+     *
+     * 只做"动作是否允许"的确定性判断，并把需要人工确认的动作接到**既有** Workflow Human Gate；
+     * 不改 Workflow 生命周期语义、不新建权限状态机、与 P19 创作决策无关
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §16 / §27）。
+     */
+    val actionPolicy: ActionPolicyUseCases
+        get() = ActionPolicyUseCases(workflowRepository, workflowService, errorMapper)
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
