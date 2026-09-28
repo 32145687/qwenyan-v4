@@ -1,0 +1,41 @@
+-- I3 · AgentSession 持久化（Schema v19）
+-- FD-9：仅新增 AgentSession 表（一次 Agent 工作会话身份），不修改任何既有表 / 列 / 语义。
+--
+-- 职责边界（architecture §13）：
+--   AgentSession = 会话身份 + Project 归属 + Workflow/Task 关联 + 会话自身生命周期
+--   不承载：正文 / World Model / Project State / Activity Log / Context 内容 / Permission / Human Gate
+--
+-- 约束：
+--   · status 只描述**会话身份**生命周期，与 Workflow / Task 状态互不写入（不复制其事实，FD-2）；
+--   · workflow_id / task_id 为**引用**（可空，不做级联），不复制其状态字段；
+--   · 不复制 Novel 元数据（title / genre / synopsis 等）；novel_id 仅为身份锚（与 ProjectState 同一聚合键对）。
+
+CREATE TABLE AgentSession (
+    session_id       TEXT NOT NULL PRIMARY KEY,
+    project_id       TEXT NOT NULL,               -- 项目身份（= Novel.project_id）
+    novel_id         TEXT NOT NULL,               -- 身份锚（= 该 project 的 Original Novel）
+    workflow_id      TEXT,                        -- 关联既有 Workflow（可空）
+    task_id          TEXT,                        -- 关联既有 Task（可空）
+    status           TEXT NOT NULL,               -- AgentSessionStatus 枚举名
+    created_at       INTEGER NOT NULL,            -- epoch 毫秒
+    updated_at       INTEGER NOT NULL,
+    last_activity_at INTEGER,                     -- 最近活动时间（可空）
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+upsertAgentSession:
+INSERT OR REPLACE INTO AgentSession(session_id, project_id, novel_id, workflow_id, task_id, status, created_at, updated_at, last_activity_at)
+VALUES (:session_id, :project_id, :novel_id, :workflow_id, :task_id, :status, :created_at, :updated_at, :last_activity_at);
+
+getAgentSession:
+SELECT * FROM AgentSession WHERE session_id = :session_id;
+
+listAgentSessionsByProject:
+SELECT * FROM AgentSession WHERE project_id = :project_id ORDER BY created_at DESC, session_id DESC;
+
+-- 最近的未完成（可恢复）会话：CREATED / ACTIVE / PAUSED；无则返回空。
+findResumableSessionByProject:
+SELECT * FROM AgentSession
+WHERE project_id = :project_id AND status IN ('CREATED', 'ACTIVE', 'PAUSED')
+ORDER BY created_at DESC, session_id DESC
+LIMIT 1;

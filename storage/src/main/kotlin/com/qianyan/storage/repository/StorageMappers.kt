@@ -129,6 +129,9 @@ import com.qianyan.model.writing.DraftStatus
 import com.qianyan.model.reading.ReadingProgress as DomainReadingProgress
 import com.qianyan.model.project.ProjectState as DomainProjectState
 import com.qianyan.storage.db.ProjectState as DbProjectState
+import com.qianyan.model.session.AgentSession as DomainAgentSession
+import com.qianyan.model.session.AgentSessionStatus
+import com.qianyan.storage.db.AgentSession as DbAgentSession
 import com.qianyan.storage.db.Chapter as DbChapter
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
@@ -1215,5 +1218,31 @@ internal object StorageMappers {
         activeChapterId = row.active_chapter_id?.let { com.qianyan.model.ChapterId(it) },
         activeTaskId = row.active_task_id?.let { com.qianyan.model.TaskId(it) },
         updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    /* ---- I3 · AgentSession（会话身份 + Project 归属 + Workflow/Task 引用；不含小说事实） ---- */
+
+    fun domainAgentSession(s: DomainAgentSession): DbAgentSession = DbAgentSession(
+        session_id = s.sessionId.value,
+        project_id = s.projectId.value,
+        novel_id = s.novelId.value,
+        workflow_id = s.workflowId?.value,
+        task_id = s.taskId?.value,
+        status = s.status.name,
+        created_at = s.createdAt.toEpochMillis(),
+        updated_at = s.updatedAt.toEpochMillis(),
+        last_activity_at = s.lastActivityAt?.toEpochMillis(),
+    )
+
+    fun dbAgentSession(row: DbAgentSession): DomainAgentSession = DomainAgentSession(
+        sessionId = com.qianyan.model.AgentSessionId(row.session_id),
+        projectId = com.qianyan.model.ProjectId(row.project_id),
+        novelId = NovelId(row.novel_id),
+        workflowId = row.workflow_id?.let { com.qianyan.model.workflow.WorkflowId(it) },
+        taskId = row.task_id?.let { com.qianyan.model.TaskId(it) },
+        status = AgentSessionStatus.valueOf(row.status),
+        createdAt = epochMillisToInstant(row.created_at),
+        updatedAt = epochMillisToInstant(row.updated_at),
+        lastActivityAt = row.last_activity_at?.let { epochMillisToInstant(it) },
     )
 }

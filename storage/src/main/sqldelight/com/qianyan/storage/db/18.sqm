@@ -1,0 +1,16 @@
+-- I3 · Schema v19（18.sqm：v18 → v19）
+-- additive migration：仅新增 AgentSession 表（Agent 工作会话身份），不修改任何既有表 / 列 / 语义。
+-- 幂等由 DatabaseInitializer 的 !tableExists("AgentSession") 分支包裹；无 backfill、无既有数据转换。
+
+CREATE TABLE IF NOT EXISTS AgentSession (
+    session_id       TEXT NOT NULL PRIMARY KEY,
+    project_id       TEXT NOT NULL,
+    novel_id         TEXT NOT NULL,
+    workflow_id      TEXT,
+    task_id          TEXT,
+    status           TEXT NOT NULL,
+    created_at       INTEGER NOT NULL,
+    updated_at       INTEGER NOT NULL,
+    last_activity_at INTEGER,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);

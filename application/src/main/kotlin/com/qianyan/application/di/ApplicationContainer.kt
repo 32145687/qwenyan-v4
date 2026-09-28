@@ -7,6 +7,7 @@ import com.qianyan.application.usecase.action.ActionPolicyUseCases
 import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
+import com.qianyan.application.usecase.session.AgentSessionUseCases
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -73,6 +74,7 @@ import com.qianyan.application.usecase.author.ObservationCollector
 import com.qianyan.application.usecase.decision.DecisionModelFacade
 import com.qianyan.application.usecase.decision.DecisionModelGateway
 import com.qianyan.application.usecase.decision.DecisionModelUseCases
+import com.qianyan.storage.repository.AgentSessionRepository
 import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorObservationRepository
@@ -85,6 +87,7 @@ import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.ProjectStateRepository
 import com.qianyan.storage.repository.ReadingProgressRepository
+import com.qianyan.storage.repository.SqliteAgentSessionRepository
 import com.qianyan.storage.repository.SqliteAuthorCoreRepository
 import com.qianyan.storage.repository.SqliteAuthorDnaRepository
 import com.qianyan.storage.repository.SqliteAuthorObservationRepository
@@ -148,6 +151,8 @@ class ApplicationContainer(
     val readingProgressRepository: ReadingProgressRepository,
     /** I1 · Project State 仓储（IDE/Agent 运行态引用；不承载小说事实与 Task/Workflow 生命周期）。 */
     private val projectStateRepository: ProjectStateRepository,
+    /** I3 · Agent Session 仓储（会话身份 + Project 归属 + Workflow/Task 引用；不承载其状态与小说事实）。 */
+    private val agentSessionRepository: AgentSessionRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -175,6 +180,16 @@ class ApplicationContainer(
      */
     val actionPolicy: ActionPolicyUseCases
         get() = ActionPolicyUseCases(workflowRepository, workflowService, errorMapper)
+
+    /**
+     * I3 · Agent Session（一次持续 Agent 工作的可持久化会话边界）。
+     *
+     * 只做会话身份 / Project 归属 / 既有 Workflow·Task 引用 / 会话自身生命周期 / 可恢复身份查询；
+     * 不建立第二套 Workflow·Task 状态机、不实现 Resume Engine、不改 AgentRuntime
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §13 / §41）。
+     */
+    val agentSessions: AgentSessionUseCases
+        get() = AgentSessionUseCases(novelRepository, agentSessionRepository, workflowRepository, taskRepository, errorMapper)
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
@@ -455,6 +470,7 @@ class ApplicationContainer(
                 authorDnaRepository = SqliteAuthorDnaRepository(db),
                 readingProgressRepository = SqliteReadingProgressRepository(db),
                 projectStateRepository = SqliteProjectStateRepository(db),
+                agentSessionRepository = SqliteAgentSessionRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

@@ -188,6 +188,11 @@ value class ConflictId(val value: String)
 @Serializable
 value class AgentId(val value: String)
 
+/** I3 · Agent 工作会话身份（一次持续 Agent 工作的可持久化边界）。 */
+@JvmInline
+@Serializable
+value class AgentSessionId(val value: String)
+
 @JvmInline
 @Serializable
 value class RequestId(val value: String)
