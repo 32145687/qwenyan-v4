@@ -9,6 +9,12 @@
 >
 > 本文档内容保留作为 **V4.1 历史规划档案**，不依据旧编号推导当前状态。
 
+> 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**。
+> 本文档中的**阶段路线**整体状态 = `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`（历史记录保留，不删除、不再机械续做）。
+> 已完成的工程基础（P0 Foundation、P19 Decision Model、P20 Freeze/P1/P2/P3/P4/P5-fix、PC-1/PC-2/PC-2.1）继续有效并作为新架构基础。
+> **Android = PAUSED**（保留，非删除）。现行上位方向以
+> [qianyan-novel-ide-direction.md](../architecture/qianyan-novel-ide-direction.md) 为准。
+
 > **For agentic workers:** 本计划以 **Codex 为执行对象**。请严格按照本文档 Phase 顺序与各 Phase 内任务执行；每完成一个任务执行一遍：编译 → 测试 → 架构检查 → 更新文档 → Commit。禁止一次修改数百个文件。
 >
 > **架构约束（不可违反）**：以 [qianyan-master-plan.md](qianyan-master-plan.md)（V4.1，冻结）为唯一依据。**不修改架构、不新增 Agent、不重新设计系统**。若实现中发现架构层冲突，禁止自行改架构，须标记 `[IMPLEMENTATION ISSUE]` 并上报。

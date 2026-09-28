@@ -4,6 +4,20 @@
 
 面向长篇网络小说 / 连载作者，把「大纲、世界观、人物、时间线、伏笔、词汇风格」等创作要素结构化沉淀，并借助 AI Agent 完成剧情重构、续写、风格统一等写作任务，同时通过 Human-in-the-loop（HITL）保证作者对创作过程的完全控制。
 
+> 🧭 **产品方向（2026-09-28 起）**：Qianyan 进入新方向 **AI Novel IDE（PC FIRST）** ——
+> 不再只是"让 AI 一次次生成小说"的工具，而是"像 Codex 一样，通过 **Project + Workspace + Agent + Tool + 大上下文**持续开发一部小说"的 AI 创作环境。
+>
+> | 项 | 状态 |
+> | --- | --- |
+> | PC | **PRIMARY**（`:app:desktop` = Compose Desktop；PC-1 Desktop Foundation · PC-2 Desktop Writer 已交付） |
+> | Android | **PAUSED**（**保留**，非删除；现有 `:app:android` 与全部功能保留，未来重新设计为 Companion） |
+> | 旧 PC 路线（PC-3 Reader … PC-9 E2E） | **PAUSED / SUPERSEDED BY NEW ARCHITECTURE**（历史记录保留，不机械续做） |
+> | Novel IDE 架构（Project / Workspace / Index / Agent / Tool / Context） | **DESIGN PHASE**（**未实现**） |
+>
+> 上位方向文档：**[docs/architecture/qianyan-novel-ide-direction.md](docs/architecture/qianyan-novel-ide-direction.md)**
+> （§13 说明新方向如何复用既有工程基础；§14 列出暂停/取代项；§15 为下一设计阶段）。
+> 已封存契约继续有效：[P20 Architecture Freeze FD-1…FD-10](docs/architecture/p20-architecture-freeze.md)、P19 Decision Model、受控 Markdown v1、schema v17（ReadingProgress）、Original 只读与写保护触发器、HITL。
+
 ## 要解决的问题
 
 1. **长文记忆与一致性**：几十万字连载中的人物状态、时间线、伏笔、设定不冲突。
@@ -111,6 +125,32 @@
 | **LATER** | RAG / Vector Memory / Multi-Agent Swarm / MCP / Cloud Backend / 大模型微调（保持 Local-first）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 🔮 FUTURE / DEFERRED |
 
 **Current Phase = P13 Long-form Continuity Layer = COMPLETE / SEALED**（Commit `f291853`）。P12.3 TD1 Variant 实体级 Merge/Override = COMPLETE / Final Acceptance ACCEPTED，Commit `b76986d`；P12.4 Limited Hardening = DELIVERED；P12.5 Android Real Provider Bridge = DELIVERED。**P13 Planning = DELIVERED（master-plan §32）**；**P13 LCL-A Narrative State = DELIVERED / SEALED，Commit `e8c0528`**；**P13 LCL-B Chapter Context Pack = DELIVERED / SEALED，Commit `ddd52f9`**；**P13 LCL-C Foreshadow Lifecycle = DELIVERED / SEALED，Commit `0d965ec`**；**P13 LCL-D Reveal / Rolling Horizon = DELIVERED / SEALED，Commit `f291853`**（RevealSubject=READER only、Reveal 不进 ChapterContextPack/NarrativeState、Rolling Horizon 有界 Workflow-local）。**下一阶段 = P14 Story Intent / Idea Intelligence Layer（PLANNED / NEXT，NOT IMPLEMENTED）**，见 master-plan §32。
+
+### 现行状态（2026-09-28 核实，取代上表后续阶段的旧标注）
+
+> 上表为**历史路线记录**（保留不删）。以下为**按当前仓库实际代码核实**的状态；与上表冲突时以本段为准。
+> 状态口径严格区分：`IMPLEMENTED`（已实现且有测试）/ `SEALED`（已封存）/ `PLANNED` / `PAUSED` / `SUPERSEDED`。
+
+| 项 | 状态 | 证据 / 说明 |
+| --- | --- | --- |
+| P0 Foundation（13 模块工程骨架） | `IMPLEMENTED` | — |
+| P19 Decision Model | `IMPLEMENTED` / `SEALED` | commit `6f1bc1b` |
+| P20 Architecture Freeze（FD-1…FD-10） | `IMPLEMENTED` | `docs/architecture/p20-architecture-freeze.md` |
+| P20 P1 Vocabulary Confirmation（FD-6） | `IMPLEMENTED` | `vocabularyUseCases.confirm/reject/editCandidate` |
+| P20 P2 Controlled Markdown v1（FD-1） | `IMPLEMENTED` | `ControlledMarkdown` + `ChapterDraft.format`（`15.sqm`） |
+| P20 P3 Android Writer | `IMPLEMENTED` / `SEALED` | commit `d84c608` |
+| P20 P4 Android Reader（ReadingProgress，schema **v17**） | `IMPLEMENTED` / `SEALED` | commit `fd243b5` |
+| P20 P5 / P5-fix DecisionPolicy Writing Integration（FD-4） | `IMPLEMENTED` | `DecisionPolicySnapshot`（Planning 决定一次，Resume 不 re-decide） |
+| PC-1 Desktop Foundation（`:app:desktop` = 真实 Compose Desktop + SQLite v17 + Provider 设置） | `IMPLEMENTED` | commit `ac70148` |
+| PC-2 Desktop Writer（`writerGateway` + `workflowFacade`：读/存/继续写作/改写/HITL） | `IMPLEMENTED` | commit `57fab38` |
+| PC-2.1 Writer 边界收口（无新 Draft 时不回溯迁移 legacy `format`） | `IMPLEMENTED` | commit `8db807e` |
+| Story State 六类 / NarrativeState / ChapterContextPack / Foreshadow / Reveal | `IMPLEMENTED` | P12.x / P13 LCL（SEALED `f291853`） |
+| Author（Preference / Core / DNA）+ Decision Model | `IMPLEMENTED`（后端） | P16–P19；PC 产品层编排见 direction §13 |
+| **PC FIRST 新方向：Project / Workspace / Project Index / 任务级 Context / Agent 编排升级 / 产品级 Tool** | **`DESIGN PHASE`（未实现）** | [qianyan-novel-ide-direction.md](docs/architecture/qianyan-novel-ide-direction.md) |
+| 旧 PC 路线（PC-3 Reader / PC-4 Story & Plan / PC-5 Knowledge / PC-6 Author / PC-7 Book / PC-8 Provider / PC-9 E2E） | `PAUSED / SUPERSEDED` | 历史记录保留；在新的 Novel IDE 架构下重新规划 |
+| Android 后续产品开发 | `PAUSED`（保留，非删除） | `:app:android` 与既有功能继续保留 |
+| `ui/desktop` 分支（P14 时期 Compose Desktop 原型，`27a8408`） | `PROTOTYPE`（保留参考） | PC-1 已按新架构迁移有效部分；未 merge / rebase / cherry-pick |
+| RAG / Vector / Multi-Agent / MCP / Cloud / 微调 | `DEFERRED`（保持 Local-first） | FD-10 边界不变 |
 
 **P11 Final Status**：P11.1–P11.7 全部 COMPLETE，已形成单章节创作闭环（目标→Planning→Writing→Critique→Revision→Knowledge Update→StoryWorldContext→Persistence/Reopen）。单章节 Writing Slice E2E 已通过；`./gradlew test` / `assembleDebug` / `--no-daemon test` / `git diff --check` 全部 PASS；Git 已 commit + push，HEAD == origin/main，Working Tree CLEAN。
 
@@ -572,11 +612,17 @@ TXT 文件 → TxtImporter（编码/BOM）→ TextNormalizer（确定性规范�
 
 ## 文档
 
-- [实现计划](docs/planning/qianyan-implementation-plan.md)
+- [**产品方向（现行上位）**：Novel IDE / PC FIRST](docs/architecture/qianyan-novel-ide-direction.md)
 
-- [总体设计](docs/planning/qianyan-master-plan.md)
+- [架构冻结：P20 FD-1…FD-10](docs/architecture/p20-architecture-freeze.md)
 
-- [架构评审](docs/planning/qianyan-v4.2-architecture-review.md)
+- [PC UI 契约（真实接线状态）](docs/planning/qianyan-pc-ui-contract.md)
 
-- [项目状态](docs/status/qianyan-project-status.md)
+- [实现计划（历史）](docs/planning/qianyan-implementation-plan.md)
+
+- [总体设计（历史，仍为领域模型依据）](docs/planning/qianyan-master-plan.md)
+
+- [架构评审（历史）](docs/planning/qianyan-v4.2-architecture-review.md)
+
+- [项目状态（历史快照）](docs/status/qianyan-project-status.md)
 

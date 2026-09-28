@@ -3,6 +3,11 @@
 > 状态：**FROZEN**（P20 Architecture Freeze 阶段冻结；P20-PC1 正式落库）。
 > 本文档忠实记录 P20 已经冻结的十条规则，**不引入任何新的架构决策**。
 > 落地位置一栏指向当前仓库中真实存在的代码/迁移；未在代码注释中出现的条目以「冻结于 P20 Freeze」标注。
+>
+> 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**，见
+> [qianyan-novel-ide-direction.md](qianyan-novel-ide-direction.md)。**本文档 FD-1…FD-10 全部继续有效**
+> （FD-5 Compose Desktop 与 PC FIRST 一致；FD-9 Storage additive-only、FD-10 Scope 边界在新的设计阶段同样适用；
+> 新方向带来的 Project / Workspace / Index / Agent / Tool 变化属**产品层与编排层**，不解除本文档任何一条冻结规则）。
 
 冻结顺序与编号保持原样，不得重排、合并或改写语义。
 

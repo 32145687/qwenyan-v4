@@ -10,6 +10,12 @@
 > - 统一为一份连贯的 V4.1 架构文档，按逻辑分层组织，而非三段式补充。
 > - 三版中重复的内容（写作示例、冲突处理、MVP/Future、一致性检查、决策状态）已合并去重。
 > - 不推翻任何既有决策；V3.1 Agent Architecture 视为冻结，V4.1 只增加写作智能层。
+>
+> 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**。
+> 本文档作为**底层架构与领域模型的设计依据继续有效**（Project / Workspace / Agent / Tool / Context / 规划 / 一致性等章节仍被引用）；
+> 但其**阶段路线（旧 P0–P18 编号）整体状态 = `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`**。
+> **Android = PAUSED**（保留，非删除）。现行上位方向以
+> [qianyan-novel-ide-direction.md](../architecture/qianyan-novel-ide-direction.md) 为准（该文档 §9 / §13 说明了新旧规划结构的关系与复用）。
 
 ---
 

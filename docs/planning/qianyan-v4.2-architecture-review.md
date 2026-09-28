@@ -5,6 +5,13 @@
 > **性质**: 架构审查（只读，不修改任何代码/Gradle/数据库/模块）
 > **图例**: [DECIDED] 已冻结的 V4.1 决策 | [RECOMMENDED] 本次建议（待你确认）| [TBD] 待定 | [FUTURE] 未来 | [CONFLICT] 冲突
 > **结论**: **KEEP 主体 + 针对 2 类新增需求做少量 MODIFY（加法式）** → 最终推荐 **B：先少量架构修正，再进入 P1**。
+>
+> ---
+>
+> 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**。
+> 本文档为**历史架构评审记录**（其 KEEP/MODIFY 结论仍被尊重），其**阶段路线**整体状态 =
+> `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`。**Android = PAUSED**（保留，非删除）。
+> 现行上位方向以 [qianyan-novel-ide-direction.md](../architecture/qianyan-novel-ide-direction.md) 为准。
 
 ---
 

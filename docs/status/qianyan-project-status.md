@@ -20,6 +20,11 @@
 > - 请勿把本文档的 P 编号当现行阶段；当前进度请以正文中的「Current Development Roadmap」与各 completion report 为准。
 >
 > 本文档内容保留作为 **历史状态档案**，不依据旧编号推导当前状态。
+>
+> 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**，
+> 现行上位方向以 [qianyan-novel-ide-direction.md](../architecture/qianyan-novel-ide-direction.md) 为准。
+> `Android = PAUSED`（保留，非删除）；旧 PC 路线（PC-3…PC-9）= `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`；
+> Novel IDE 架构 = `DESIGN PHASE`（未实现）。本文档正文中的阶段进度**仅作历史记录**。
 
 > 生成日期：2026-08-18
 > 性质：状态记录文档（非开发计划）

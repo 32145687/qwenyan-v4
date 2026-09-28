@@ -11,6 +11,13 @@
 >
 > **P20-PC2 同步记录**：仅更新状态 —— 「04 正文创作」已由骨架变为**真实接线**
 > （`writerGateway` + `workflowFacade`）；`WriterGateway.rewrite` 无「修改方向」参数（未改契约）。
+>
+> 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**。
+> - 本契约中「PC-1 / PC-2 / PC-2.1 已接线」的部分 = `IMPLEMENTED`，**继续有效**（PC 真实可用能力 / UseCase 名称 / UI 硬约束仍以此文件为准）。
+> - 「PC-3 Reader」及此后各 PC 阶段的**路线** = `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`（历史记录保留，不机械续做）。
+> - PC UI 的**形态**将在新架构下重新设计（Project / Workspace / AI Agent 三栏，见 direction §13），**本轮不改 UI**。
+> - **Android = PAUSED**（保留，非删除）。现行上位方向以
+>   [qianyan-novel-ide-direction.md](../architecture/qianyan-novel-ide-direction.md) 为准。
 
 ---
 
