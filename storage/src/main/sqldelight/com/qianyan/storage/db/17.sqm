@@ -1,0 +1,13 @@
+-- I1 · Schema v18（17.sqm：v17 → v18）
+-- additive migration：仅新增 ProjectState 表（IDE/Agent 运行态引用），不修改任何既有表 / 列 / 语义。
+-- 幂等由 DatabaseInitializer 的 !tableExists("ProjectState") 分支包裹；无 backfill、无既有数据转换。
+
+CREATE TABLE IF NOT EXISTS ProjectState (
+    project_id        TEXT NOT NULL PRIMARY KEY,
+    novel_id          TEXT NOT NULL,
+    active_variant_id TEXT,
+    active_chapter_id TEXT,
+    active_task_id    TEXT,
+    updated_at        INTEGER NOT NULL,
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);

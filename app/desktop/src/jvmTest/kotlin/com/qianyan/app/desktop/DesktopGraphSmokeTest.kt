@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 /**
  * 桌面装配冒烟测试（JVM，无 GUI）：
  *  1. ApplicationContainer + DefaultProviderAssembler + SQLite 在桌面模块中可完整工作；
- *  2. 全新库直接初始化到 **schema v17**（含 P20-P4 ReadingProgress），P2.4 守卫触发器仍在；
+ *  2. 全新库直接初始化到 **schema v18**（含 P20-P4 ReadingProgress + I1 ProjectState），P2.4 守卫触发器仍在；
  *  3. 旧 v16 库经同一入口自动迁移到 v17，旧数据保留。
  *
  * 说明：完整的 v1→v17 迁移矩阵由 `:storage` 的迁移测试覆盖（DraftMigrationTest /
@@ -64,13 +64,14 @@ class DesktopGraphSmokeTest {
     }
 
     @Test
-    fun `fresh database initializes to schema v17 with reading progress and guard triggers`() {
+    fun `fresh database initializes to schema v18 with reading progress project state and guard triggers`() {
         val handle = openFileDb("qianyan-desktop-schema")
 
-        assertEquals(17L, userVersion(handle.driver), "全新库应直接建到 schema v17（P20-P4）")
-        assertTrue(tableExists(handle.driver, "Novel"), "v17 必须含 Novel")
-        assertTrue(tableExists(handle.driver, "ChapterDraft"), "v17 必须含 ChapterDraft")
-        assertTrue(tableExists(handle.driver, "ReadingProgress"), "v17 必须含 ReadingProgress（P20-P4）")
+        assertEquals(18L, userVersion(handle.driver), "全新库应直接建到 schema v18（含 I1 ProjectState）")
+        assertTrue(tableExists(handle.driver, "Novel"), "v18 必须含 Novel")
+        assertTrue(tableExists(handle.driver, "ChapterDraft"), "v18 必须含 ChapterDraft")
+        assertTrue(tableExists(handle.driver, "ReadingProgress"), "v18 必须含 ReadingProgress（P20-P4）")
+        assertTrue(tableExists(handle.driver, "ProjectState"), "v18 必须含 ProjectState（I1）")
 
         // P2.4 物理写保护（PC-1 明确保留：R2 决策）
         assertTrue(triggerExists(handle.driver, "novel_original_update_protect"), "Original 改写保护必须存在")
@@ -83,14 +84,15 @@ class DesktopGraphSmokeTest {
         assertNotNull(c.readingProgressRepository, "阅读位置仓储必须可用")
         assertNotNull(c.writerGateway, "P20-P3 Writer seam 必须可用")
         assertNotNull(c.workflowFacade, "Chapter 工作流 seam 必须可用")
+        assertNotNull(c.projects, "I1 Project 聚合 seam 必须可用")
     }
 
     @Test
-    fun `legacy v16 database migrates to v17 without losing data`() {
+    fun `legacy v16 database migrates to v18 without losing data`() {
         val dir = Files.createTempDirectory("qianyan-desktop-legacy")
         val url = "jdbc:sqlite:${dir.resolve("qianyan.db").toAbsolutePath()}"
 
-        // 1) 造一个「旧库」：先建到 v17，再删掉 ReadingProgress 并把版本退回 16
+        // 1) 造一个「旧库」：先建到 v18，再删掉 ReadingProgress 并把版本退回 16（模拟更早版本的旧库）
         val first = QianyanDbFactory.open(url)
         val novelId = containerOf(first).novels.createOriginal(title = "旧库作品")
         first.driver.execute(null, "DROP TABLE ReadingProgress", 0)
@@ -101,7 +103,7 @@ class DesktopGraphSmokeTest {
         val handle = QianyanDbFactory.open(url)
         opened += handle.driver
 
-        assertEquals(17L, userVersion(handle.driver), "旧 v16 库应自动迁移到 v17")
+        assertEquals(18L, userVersion(handle.driver), "旧 v16 库应自动迁移到 v18")
         assertTrue(tableExists(handle.driver, "ReadingProgress"), "迁移后应重建 ReadingProgress")
         assertEquals("旧库作品", containerOf(handle).novels.getNovel(novelId)?.title, "迁移必须保留旧数据")
     }

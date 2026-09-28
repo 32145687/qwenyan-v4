@@ -5,6 +5,7 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.analysis.AnalysisUseCases
 import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
+import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -81,6 +82,7 @@ import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.MemoryRepository
 import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
+import com.qianyan.storage.repository.ProjectStateRepository
 import com.qianyan.storage.repository.ReadingProgressRepository
 import com.qianyan.storage.repository.SqliteAuthorCoreRepository
 import com.qianyan.storage.repository.SqliteAuthorDnaRepository
@@ -92,6 +94,7 @@ import com.qianyan.storage.repository.SqliteDraftRepository
 import com.qianyan.storage.repository.SqliteMemoryRepository
 import com.qianyan.storage.repository.SqliteNarrativeStateRepository
 import com.qianyan.storage.repository.SqliteNovelRepository
+import com.qianyan.storage.repository.SqliteProjectStateRepository
 import com.qianyan.storage.repository.SqliteReadingProgressRepository
 import com.qianyan.storage.repository.SqliteTaskRepository
 import com.qianyan.storage.repository.SqliteTxtRepository
@@ -142,6 +145,8 @@ class ApplicationContainer(
     val authorDnaRepository: AuthorDnaRepository,
     /** P20-P4 · Reader 阅读位置仓储（FD-9：只承担阅读位置 / 进度）。 */
     val readingProgressRepository: ReadingProgressRepository,
+    /** I1 · Project State 仓储（IDE/Agent 运行态引用；不承载小说事实与 Task/Workflow 生命周期）。 */
+    private val projectStateRepository: ProjectStateRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -150,6 +155,15 @@ class ApplicationContainer(
     val errorMapper: ErrorMapper = ErrorMapper
 
     val novels: NovelUseCases get() = NovelUseCases(novelRepository, errorMapper)
+
+    /**
+     * I1 · Project 聚合入口 + Project State（Novel IDE 第一阶段）。
+     *
+     * 只做聚合与运行态读写：Project 身份来自 `Novel.projectId`，运行态来自 `ProjectState` 表；
+     * 不复制 Novel 元数据、不建立第二套状态机、不承载小说世界事实（见 architecture §4 / §8）。
+     */
+    val projects: ProjectUseCases
+        get() = ProjectUseCases(novels, novelRepository, chapterRepository, projectStateRepository, errorMapper)
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
@@ -429,6 +443,7 @@ class ApplicationContainer(
                 authorObservationRepository = SqliteAuthorObservationRepository(db),
                 authorDnaRepository = SqliteAuthorDnaRepository(db),
                 readingProgressRepository = SqliteReadingProgressRepository(db),
+                projectStateRepository = SqliteProjectStateRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

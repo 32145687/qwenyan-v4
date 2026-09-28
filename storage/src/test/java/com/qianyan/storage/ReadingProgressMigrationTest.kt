@@ -159,7 +159,7 @@ class ReadingProgressMigrationTest {
             val driver = h.driver as JdbcSqliteDriver
             try {
                 assertTrue(tableExists(driver, "ReadingProgress"), "migration 后应存在 ReadingProgress 表")
-                assertEquals(17L, userVersion(driver), "migration 后 user_version 应为 17")
+                assertEquals(18L, userVersion(driver), "migration 后 user_version 应为 18")
 
                 // 3) 旧数据原样保留（经既有 Repository 读回）
                 val novels = SqliteNovelRepository(h.db)
@@ -190,7 +190,7 @@ class ReadingProgressMigrationTest {
                 // 5) 重复初始化幂等安全
                 DatabaseInitializer.initializeDatabase(driver)
                 DatabaseInitializer.initializeDatabase(driver)
-                assertEquals(17L, userVersion(driver))
+                assertEquals(18L, userVersion(driver))
                 assertTrue(tableExists(driver, "ReadingProgress"))
             } finally {
                 driver.getConnection().close()
@@ -205,7 +205,7 @@ class ReadingProgressMigrationTest {
         val h = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY)
         val driver = h.driver as JdbcSqliteDriver
         assertTrue(tableExists(driver, "ReadingProgress"), "全新库应直接建出 ReadingProgress 表")
-        assertEquals(17L, userVersion(driver), "全新库 user_version 应为 17")
+        assertEquals(18L, userVersion(driver), "全新库 user_version 应为 18")
         driver.getConnection().close()
     }
 }

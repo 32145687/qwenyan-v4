@@ -75,6 +75,9 @@ object DatabaseInitializer {
     /** v16（P20-P2：ChapterDraft.format）→ v17（P20-P4：ReadingProgress 阅读位置表）迁移起点。 */
     private const val V16 = 16L
 
+    /** v17（P20-P4：ReadingProgress）→ v18（I1：ProjectState IDE/Agent 运行态）迁移起点。 */
+    private const val V17 = 17L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -218,6 +221,12 @@ object DatabaseInitializer {
             !tableExists(driver, "ReadingProgress") -> withTransaction(driver) {
                 // v16 → v17：新增 ReadingProgress 表（P20-P4 FD-9：阅读位置 / 进度；additive，不动既有表）。
                 QianyanDb.Schema.migrate(driver, V16, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "ProjectState") -> withTransaction(driver) {
+                // v17 → v18：新增 ProjectState 表（I1：IDE/Agent 运行态引用；additive，不动既有表）。
+                QianyanDb.Schema.migrate(driver, V17, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

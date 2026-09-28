@@ -1,0 +1,31 @@
+-- I1 · ProjectState 持久化（Schema v18）
+-- FD-9：仅新增 ProjectState 表（IDE/Agent 运行态），不修改任何既有表 / 列 / 语义。
+--
+-- 职责边界（与 Novel World Model 严格分离，见 docs/architecture/qianyan-novel-ide-architecture.md §8）：
+--   ProjectState = IDE 运行态（当前工作 Variant / Chapter / Task 的引用）
+--   Novel World Model = 小说事实（人物 / 事件 / 时间线 / 伏笔等，存于既有 Story State 表族）
+--
+-- 约束：
+--   · 不复制任何 Novel 元数据（title / genre / synopsis / status）；
+--   · 不承载 Workflow / Task 生命周期状态（PAUSED / CANCELLED / WAITING_HUMAN / COMPLETED 仍在 Task/Workflow 表）；
+--   · active_* 为**引用**（可空），不做跨表级联，不引入第二套状态机。
+
+CREATE TABLE ProjectState (
+    project_id        TEXT NOT NULL PRIMARY KEY,   -- 项目身份（= Novel.project_id）
+    novel_id          TEXT NOT NULL,               -- 身份锚（= 该 project 的 Original Novel）
+    active_variant_id TEXT,                        -- IDE 当前工作 Variant；NULL = Original 作用域
+    active_chapter_id TEXT,                        -- IDE 当前工作章节；NULL = 未选定
+    active_task_id    TEXT,                        -- 当前任务引用；NULL = 无
+    updated_at        INTEGER NOT NULL,            -- epoch 毫秒
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+upsertProjectState:
+INSERT OR REPLACE INTO ProjectState(project_id, novel_id, active_variant_id, active_chapter_id, active_task_id, updated_at)
+VALUES (:project_id, :novel_id, :active_variant_id, :active_chapter_id, :active_task_id, :updated_at);
+
+getProjectState:
+SELECT * FROM ProjectState WHERE project_id = :project_id;
+
+getProjectStateByNovel:
+SELECT * FROM ProjectState WHERE novel_id = :novel_id;

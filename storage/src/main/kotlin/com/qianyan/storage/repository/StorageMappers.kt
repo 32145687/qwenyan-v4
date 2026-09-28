@@ -127,6 +127,8 @@ import com.qianyan.model.story.Reveal as DomainReveal
 import com.qianyan.model.writing.Draft as DomainDraft
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.model.reading.ReadingProgress as DomainReadingProgress
+import com.qianyan.model.project.ProjectState as DomainProjectState
+import com.qianyan.storage.db.ProjectState as DbProjectState
 import com.qianyan.storage.db.Chapter as DbChapter
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
@@ -1192,6 +1194,26 @@ internal object StorageMappers {
         novelId = NovelId(row.novel_id),
         chapterId = com.qianyan.model.ChapterId(row.chapter_id),
         position = row.position.toInt(),
+        updatedAt = epochMillisToInstant(row.updated_at),
+    )
+
+    /* ---- I1 · ProjectState（IDE/Agent 运行态；只含引用，不含小说事实） ---- */
+
+    fun domainProjectState(s: DomainProjectState): DbProjectState = DbProjectState(
+        project_id = s.projectId.value,
+        novel_id = s.novelId.value,
+        active_variant_id = s.activeVariantId?.value,
+        active_chapter_id = s.activeChapterId?.value,
+        active_task_id = s.activeTaskId?.value,
+        updated_at = s.updatedAt.toEpochMillis(),
+    )
+
+    fun dbProjectState(row: DbProjectState): DomainProjectState = DomainProjectState(
+        projectId = com.qianyan.model.ProjectId(row.project_id),
+        novelId = NovelId(row.novel_id),
+        activeVariantId = row.active_variant_id?.let { com.qianyan.model.VariantId(it) },
+        activeChapterId = row.active_chapter_id?.let { com.qianyan.model.ChapterId(it) },
+        activeTaskId = row.active_task_id?.let { com.qianyan.model.TaskId(it) },
         updatedAt = epochMillisToInstant(row.updated_at),
     )
 }
