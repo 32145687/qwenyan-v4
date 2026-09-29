@@ -1,0 +1,77 @@
+-- I13 · Background Task / Queue 持久化（Schema v22）
+-- additive：仅新增 TaskQueueItem 表（Task 的**调度条目**），不修改任何既有表 / 列 / 语义。
+--
+-- 职责边界（I13 §3 / §4 / §5 / §11 / §12 / §30）：
+--   TaskQueueItem = "什么时候执行 / 等待谁执行"（调度）
+--   Task          = "要执行什么" + 生命周期（RUNNING / PAUSED / COMPLETED / FAILED / CANCELLED）
+--   ⇒ 本表**不是**第二个 Task：只存引用（task_id）+ 调度元数据，不复制 Task 的任何生命周期字段。
+--
+-- 约束：
+--   · status 只有 QUEUED / CLAIMED 两个**调度层**状态（TaskQueueItemStatus 枚举名）；
+--     业务结果仍由 Task 表表达，本表不承载第二套生命周期；
+--   · task_id 唯一 ⇒ 同一 Task 至多一个队列条目（重复入队的存储级兜底，§28 L）；
+--   · FOREIGN KEY(task_id) → Task(task_id) ⇒ 队列条目必须依附于真实 Task（§12）；
+--   · paused / cancel_requested 为调度资格标志（0/1），不是状态机状态；
+--   · claimed_at 为 lease 起点，供崩溃恢复判定过期（§25）。
+
+CREATE TABLE TaskQueueItem (
+    queue_item_id     TEXT NOT NULL PRIMARY KEY,
+    task_id           TEXT NOT NULL,
+    project_id        TEXT NOT NULL,               -- Project 归属（claim 时按此隔离，§28 J）
+    kind              TEXT NOT NULL,               -- TaskKind 枚举名（调度键）
+    priority          TEXT NOT NULL,               -- TaskPriority 枚举名
+    status            TEXT NOT NULL,               -- TaskQueueItemStatus 枚举名（QUEUED / CLAIMED）
+    queued_at         INTEGER NOT NULL,            -- 入队时间（epoch 毫秒；插入后不可变）
+    available_at      INTEGER NOT NULL,            -- 最早可领取时间（retry 退避）
+    attempt           INTEGER NOT NULL DEFAULT 0,  -- 已发生的失败尝试次数
+    max_attempts      INTEGER NOT NULL DEFAULT 3 CHECK (max_attempts >= 1),
+    paused            INTEGER NOT NULL DEFAULT 0,  -- 调度暂停标志（镜像 Task.PAUSED；§18）
+    cancel_requested  INTEGER NOT NULL DEFAULT 0,  -- 已请求取消、待执行边界收敛（§17）
+    claimed_by        TEXT,                        -- Worker 标识（最小 workerId，§8）
+    claimed_at        INTEGER,                     -- 领取时间（lease 起点，§25）
+    last_error        TEXT,                        -- 最近失败原因（可读文案）
+    UNIQUE (task_id),
+    FOREIGN KEY (task_id) REFERENCES Task(task_id)
+);
+
+-- 领取扫描：按 Project + 调度资格（status / paused / available_at）。
+CREATE INDEX idx_task_queue_claim ON TaskQueueItem(project_id, status, paused, available_at);
+
+insertTaskQueueItem:
+INSERT INTO TaskQueueItem(queue_item_id, task_id, project_id, kind, priority, status,
+                          queued_at, available_at, attempt, max_attempts, paused, cancel_requested,
+                          claimed_by, claimed_at, last_error)
+VALUES (:queue_item_id, :task_id, :project_id, :kind, :priority, :status,
+        :queued_at, :available_at, :attempt, :max_attempts, :paused, :cancel_requested,
+        :claimed_by, :claimed_at, :last_error);
+
+getTaskQueueItemById:
+SELECT * FROM TaskQueueItem WHERE queue_item_id = :queue_item_id;
+
+getTaskQueueItemByTask:
+SELECT * FROM TaskQueueItem WHERE task_id = :task_id;
+
+listTaskQueueItemsByProject:
+SELECT * FROM TaskQueueItem WHERE project_id = :project_id;
+
+-- **原子**领取：仅当仍处于 QUEUED 且未暂停时成功（否则 0 行受影响 ⇒ 不覆盖他人 claim，§7 / §27）。
+claimTaskQueueItem:
+UPDATE TaskQueueItem
+SET status = :claimed_status, claimed_by = :worker_id, claimed_at = :claimed_at
+WHERE queue_item_id = :queue_item_id AND status = :queued_status AND paused = 0;
+
+-- 仅更新调度字段（task_id / project_id / kind / queued_at 插入后不可变）。
+updateTaskQueueItemScheduling:
+UPDATE TaskQueueItem
+SET priority = :priority, status = :status, available_at = :available_at,
+    attempt = :attempt, max_attempts = :max_attempts, paused = :paused,
+    cancel_requested = :cancel_requested, claimed_by = :claimed_by, claimed_at = :claimed_at,
+    last_error = :last_error
+WHERE queue_item_id = :queue_item_id;
+
+deleteTaskQueueItem:
+DELETE FROM TaskQueueItem WHERE queue_item_id = :queue_item_id;
+
+-- 崩溃恢复：已领取且 lease 过期的条目（§25）。
+listClaimedBefore:
+SELECT * FROM TaskQueueItem WHERE status = :claimed_status AND claimed_at <= :threshold;

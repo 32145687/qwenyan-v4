@@ -12,8 +12,16 @@ import kotlinx.serialization.json.JsonObject
  * Checkpoint.snapshot 用结构化 JsonObject，避免 Map<String, Any> 充当领域模型。
  */
 
+/**
+ * 任务的**执行通道**。
+ *
+ * I13 追加 `BACKGROUND`（additive，不改既有取值语义）：表示"该 Task 由后台队列
+ * （`com.qianyan.application.usecase.taskqueue`）调度执行，具体由哪个能力执行由队列条目的
+ * `TaskKind` 决定"。`TaskRunner` 仍只处理同步受管类型（IMPORT / PLANNING / WRITING / …），
+ * 遇到 BACKGROUND 走既有 `UnsupportedTaskType` 分支，不越权执行后台任务。
+ */
 @Serializable
-enum class TaskType { ANALYSIS, WRITING, PLANNING, KNOWLEDGE_UPDATE, IMPORT }
+enum class TaskType { ANALYSIS, WRITING, PLANNING, KNOWLEDGE_UPDATE, IMPORT, BACKGROUND }
 
 @Serializable
 enum class TaskStatus { PENDING, RUNNING, PAUSED, CANCELLED, COMPLETED, FAILED }

@@ -79,8 +79,8 @@ class AgentLogMigrationTest {
 
         // 3) 经同一入口重开 → 自动迁移 v19 → 最新版本
         val second = QianyanDbFactory.open(url)
-        assertEquals(21L, QianyanDb.Schema.version, "新增 19.sqm 后 schema 版本应为 21")
-        assertEquals(21L, userVersion(second.driver), "旧 v19 库应自动迁移到最新版本")
+        assertEquals(22L, QianyanDb.Schema.version, "新增 19.sqm~21.sqm 后 schema 版本应为 22")
+        assertEquals(22L, userVersion(second.driver), "旧 v19 库应自动迁移到最新版本")
         assertTrue(tableExists(second.driver, "Activity"), "迁移后应有 Activity 表")
         assertTrue(tableExists(second.driver, "ToolCallLog"), "迁移后应有 ToolCallLog 表")
 
@@ -98,7 +98,7 @@ class AgentLogMigrationTest {
         // 4) 重复初始化幂等
         DatabaseInitializer.initializeDatabase(second.driver)
         DatabaseInitializer.initializeDatabase(second.driver)
-        assertEquals(21L, userVersion(second.driver))
+        assertEquals(22L, userVersion(second.driver))
         assertEquals("迁移书 I4", SqliteNovelRepository(second.db).getNovel(novelId)?.title)
         second.driver.close()
     }

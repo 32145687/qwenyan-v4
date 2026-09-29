@@ -170,6 +170,7 @@ import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
 import com.qianyan.storage.db.Novel as DbNovel
 import com.qianyan.storage.db.NovelVariant as DbNovelVariant
 import com.qianyan.storage.db.Task as DbTask
+import com.qianyan.storage.db.TaskQueueItem as DbTaskQueueItem
 import com.qianyan.storage.db.TextBlock as DbTextBlock
 import com.qianyan.storage.db.TxtChapter as DbTxtChapter
 import com.qianyan.storage.db.TxtDocument as DbTxtDocument
@@ -1346,4 +1347,43 @@ internal object StorageMappers {
         revertedHistoryId = row.reverted_history_id?.let { com.qianyan.model.commit.CommitHistoryId(it) },
         createdAt = epochMillisToInstant(row.created_at),
     )
+
+    /* ---------------- Task Queue Item (I13) ---------------- */
+
+    fun domainTaskQueueItem(item: com.qianyan.model.taskqueue.TaskQueueItem): DbTaskQueueItem = DbTaskQueueItem(
+        queue_item_id = item.queueItemId.value,
+        task_id = item.taskId.value,
+        project_id = item.projectId.value,
+        kind = item.kind.name,
+        priority = item.priority.name,
+        status = item.status.name,
+        queued_at = item.queuedAt.toEpochMillis(),
+        available_at = item.availableAt.toEpochMillis(),
+        attempt = item.attempt.toLong(),
+        max_attempts = item.maxAttempts.toLong(),
+        paused = if (item.paused) 1L else 0L,
+        cancel_requested = if (item.cancelRequested) 1L else 0L,
+        claimed_by = item.claimedBy,
+        claimed_at = item.claimedAt?.toEpochMillis(),
+        last_error = item.lastError,
+    )
+
+    fun dbTaskQueueItem(row: DbTaskQueueItem): com.qianyan.model.taskqueue.TaskQueueItem =
+        com.qianyan.model.taskqueue.TaskQueueItem(
+            queueItemId = com.qianyan.model.taskqueue.TaskQueueItemId(row.queue_item_id),
+            taskId = TaskId(row.task_id),
+            projectId = ProjectId(row.project_id),
+            kind = com.qianyan.model.taskqueue.TaskKind.valueOf(row.kind),
+            priority = com.qianyan.model.taskqueue.TaskPriority.valueOf(row.priority),
+            status = com.qianyan.model.taskqueue.TaskQueueItemStatus.valueOf(row.status),
+            queuedAt = epochMillisToInstant(row.queued_at),
+            availableAt = epochMillisToInstant(row.available_at),
+            attempt = row.attempt.toInt(),
+            maxAttempts = row.max_attempts.toInt(),
+            paused = row.paused != 0L,
+            cancelRequested = row.cancel_requested != 0L,
+            claimedBy = row.claimed_by,
+            claimedAt = row.claimed_at?.let { epochMillisToInstant(it) },
+            lastError = row.last_error,
+        )
 }

@@ -58,7 +58,7 @@ class RevealMigrationTest {
                 DatabaseInitializer.initializeDatabase(driver)
 
                 assertTrue(tableExists(driver, "Reveal"), "migration 后应有 Reveal 表（P13 LCL-D）")
-                assertEquals(21L, userVersion(driver), "user_version 应为最新版本 20+1（I10 Schema v21）")
+                assertEquals(22L, userVersion(driver), "user_version 应为最新版本 21+1（I13 Schema v22）")
                 // scope 索引已建
                 val idxEvent = driver.executeQuery(null,
                     "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_event_scope' LIMIT 1",

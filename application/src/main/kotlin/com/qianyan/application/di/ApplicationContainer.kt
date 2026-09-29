@@ -26,6 +26,10 @@ import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.task.TaskRunner
+import com.qianyan.application.usecase.taskqueue.TaskExecutor
+import com.qianyan.application.usecase.taskqueue.TaskQueueUseCases
+import com.qianyan.application.usecase.taskqueue.TaskWorker
+import com.qianyan.model.taskqueue.TaskKind
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.chapter.ChapterWritingUseCases
@@ -120,6 +124,7 @@ import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteProjectStateRepository
 import com.qianyan.storage.repository.SqliteReadingProgressRepository
 import com.qianyan.storage.repository.SqliteTaskRepository
+import com.qianyan.storage.repository.SqliteTaskQueueRepository
 import com.qianyan.storage.repository.SqliteTxtRepository
 import com.qianyan.storage.repository.SqliteStoryStateRepository
 import com.qianyan.storage.repository.SqliteVocabularyRepository
@@ -128,6 +133,7 @@ import com.qianyan.storage.repository.StoryStateRepository
 import com.qianyan.storage.repository.StoryFoundationRepository
 import com.qianyan.storage.repository.SqliteStoryFoundationRepository
 import com.qianyan.storage.repository.TaskRepository
+import com.qianyan.storage.repository.TaskQueueRepository
 import com.qianyan.storage.repository.TxtRepository
 import com.qianyan.storage.repository.VocabularyRepository
 import com.qianyan.storage.repository.WorkflowRepository
@@ -177,6 +183,8 @@ class ApplicationContainer(
     private val toolCallLogRepository: ToolCallLogRepository,
     /** I10 · Commit History 仓储（Canonical Commit / Revert 的不可变审计记录）。 */
     private val commitHistoryRepository: CommitHistoryRepository,
+    /** I13 · 后台任务队列仓储（Task 的**调度条目**；不承载 Task 生命周期）。 */
+    val taskQueueRepository: TaskQueueRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -383,6 +391,33 @@ class ApplicationContainer(
         vocabularies = vocabularies,
         foundations = storyFoundationRepository,
         errorMapper = errorMapper,
+    )
+
+    /**
+     * I13 · 后台任务队列（第 13 阶段）：只做**调度**（入队 / 原子领取 / 完成 / 失败 / 有限重试 /
+     * 取消 / 暂停恢复 / 崩溃恢复），Task 生命周期仍由既有 [tasks] 承载。
+     *
+     * 无自身状态（状态在 Task + TaskQueueItem 表），故每次访问都新建（与其他无状态 Use Case 一致）。
+     */
+    val taskQueue: TaskQueueUseCases
+        get() = TaskQueueUseCases(queue = taskQueueRepository, taskManager = tasks, errorMapper = errorMapper)
+
+    /**
+     * I13 · 后台 Worker（`claim → execute → complete/fail`）：执行能力经 [taskExecutors] 映射注入，
+     * Worker 本身不决定 Skill / Context / Workflow / Commit，也不直接访问数据库。
+     */
+    val taskWorker: TaskWorker
+        get() = TaskWorker(workerId = LOCAL_WORKER_ID, queue = taskQueue, executors = taskExecutors())
+
+    /**
+     * I13 · 后台执行能力映射：**只注册当前真实需要的 kind**（不提前加入未来功能，§10）。
+     *
+     *  - [TaskKind.PROJECT_INDEX_REBUILD] → 既有 I12 `ProjectIndexUseCases.rebuild(...)`（只调用，不重写）；
+     *  - [TaskKind.NOVEL_AGENT] → 本阶段只保留调度键 seam（NovelAgent 的真实请求不入队，
+     *    禁止把七相位或完整业务输入复制进 Task，§9 / §21）。
+     */
+    fun taskExecutors(): Map<TaskKind, TaskExecutor> = mapOf(
+        TaskKind.PROJECT_INDEX_REBUILD to TaskExecutor { item -> projectIndex.rebuild(item.projectId) },
     )
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
@@ -638,6 +673,9 @@ class ApplicationContainer(
 
     companion object {
 
+        /** I13 · 本地 Worker 标识（§8：最小 workerId；本地优先应用，单进程 Worker）。 */
+        const val LOCAL_WORKER_ID: String = "local-worker"
+
         /** 由底层 [SqlDriver] 装配（测试 / 运行时注入数据库实现 + LLM 网关 + 分析模型）。 */
         fun fromDriver(
             driver: SqlDriver,
@@ -668,6 +706,7 @@ class ApplicationContainer(
                 activityRepository = SqliteActivityRepository(db),
                 toolCallLogRepository = SqliteToolCallLogRepository(db),
                 commitHistoryRepository = SqliteCommitHistoryRepository(db),
+                taskQueueRepository = SqliteTaskQueueRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )
