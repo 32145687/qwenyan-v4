@@ -84,6 +84,9 @@ object DatabaseInitializer {
     /** v19（I3：AgentSession）→ v20（I4：Activity + ToolCallLog 活动事实记录）迁移起点。 */
     private const val V19 = 19L
 
+    /** v20（I4：Activity + ToolCallLog）→ v21（I10：CommitHistory Canonical 提交审计记录）迁移起点。 */
+    private const val V20 = 20L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -245,6 +248,12 @@ object DatabaseInitializer {
             !tableExists(driver, "Activity") -> withTransaction(driver) {
                 // v19 → v20：新增 Activity + ToolCallLog 表（I4：活动/调用事实记录；additive，不动既有表）。
                 QianyanDb.Schema.migrate(driver, V19, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "CommitHistory") -> withTransaction(driver) {
+                // v20 → v21：新增 CommitHistory 表（I10：Canonical Commit / Revert 的不可变审计记录；additive，不动既有表）。
+                QianyanDb.Schema.migrate(driver, V20, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

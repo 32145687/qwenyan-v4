@@ -162,6 +162,8 @@ import com.qianyan.storage.db.AuthorObservation as DbAuthorObservation
 import com.qianyan.storage.db.AuthorDnaVersion as DbAuthorDnaVersion
 import com.qianyan.storage.db.AuthorDnaFeature as DbAuthorDnaFeature
 import com.qianyan.storage.db.AuthorDnaSource as DbAuthorDnaSource
+import com.qianyan.model.commit.CommitHistoryEntry as DomainCommitHistoryEntry
+import com.qianyan.storage.db.CommitHistory as DbCommitHistory
 import com.qianyan.storage.db.ReadingProgress as DbReadingProgress
 import com.qianyan.storage.db.EntityOverride as DbEntityOverride
 import com.qianyan.storage.db.MemoryEntry as DbMemoryEntry
@@ -1303,5 +1305,45 @@ internal object StorageMappers {
         inputSummary = row.input_summary,
         outputSummary = row.output_summary,
         error = row.error,
+    )
+
+    /* ---- I10 · CommitHistory（Canonical Commit / Revert 的不可变审计记录；只含引用与最小恢复快照） ---- */
+
+    fun domainCommitHistory(e: DomainCommitHistoryEntry): DbCommitHistory = DbCommitHistory(
+        history_id = e.historyId.value,
+        commit_id = e.commitId.value,
+        project_id = e.projectId.value,
+        operation = e.operation.name,
+        artifact_id = e.artifactId?.value,
+        novel_id = e.target.novelId.value,
+        chapter_id = e.target.chapterId.value,
+        variant_id = e.target.variantId?.value,
+        previous_draft_id = e.previousDraftId?.value,
+        resulting_draft_id = e.resultingDraftId.value,
+        previous_content = e.previousContent,
+        resulting_content = e.resultingContent,
+        summary = e.summary,
+        reverted_history_id = e.revertedHistoryId?.value,
+        created_at = e.createdAt.toEpochMillis(),
+    )
+
+    fun dbCommitHistory(row: DbCommitHistory): DomainCommitHistoryEntry = DomainCommitHistoryEntry(
+        historyId = com.qianyan.model.commit.CommitHistoryId(row.history_id),
+        commitId = com.qianyan.model.commit.CommitId(row.commit_id),
+        projectId = com.qianyan.model.ProjectId(row.project_id),
+        operation = com.qianyan.model.commit.CommitOperation.valueOf(row.operation),
+        artifactId = row.artifact_id?.let { com.qianyan.model.change.ChangeArtifactId(it) },
+        target = com.qianyan.model.workingdraft.WorkingDraftTarget(
+            novelId = NovelId(row.novel_id),
+            chapterId = com.qianyan.model.ChapterId(row.chapter_id),
+            variantId = row.variant_id?.let { VariantId(it) },
+        ),
+        previousDraftId = row.previous_draft_id?.let { DraftId(it) },
+        resultingDraftId = DraftId(row.resulting_draft_id),
+        previousContent = row.previous_content,
+        resultingContent = row.resulting_content,
+        summary = row.summary,
+        revertedHistoryId = row.reverted_history_id?.let { com.qianyan.model.commit.CommitHistoryId(it) },
+        createdAt = epochMillisToInstant(row.created_at),
     )
 }

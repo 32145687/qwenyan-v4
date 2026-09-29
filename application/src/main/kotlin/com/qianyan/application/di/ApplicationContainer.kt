@@ -18,6 +18,7 @@ import com.qianyan.agent.agents.SkillRegistry
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftValidator
 import com.qianyan.application.usecase.change.ChangeUseCases
+import com.qianyan.application.usecase.commit.CommitUseCases
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -87,6 +88,8 @@ import com.qianyan.application.usecase.decision.DecisionModelUseCases
 import com.qianyan.storage.repository.AgentSessionRepository
 import com.qianyan.storage.repository.ActivityRepository
 import com.qianyan.storage.repository.ToolCallLogRepository
+import com.qianyan.storage.repository.CommitHistoryRepository
+import com.qianyan.storage.repository.SqliteCommitHistoryRepository
 import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorObservationRepository
@@ -170,6 +173,8 @@ class ApplicationContainer(
     /** I4 · Activity / ToolCallLog 仓储（已发生行为的事实记录；是记录，不是控制器）。 */
     private val activityRepository: ActivityRepository,
     private val toolCallLogRepository: ToolCallLogRepository,
+    /** I10 · Commit History 仓储（Canonical Commit / Revert 的不可变审计记录）。 */
+    private val commitHistoryRepository: CommitHistoryRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -309,6 +314,25 @@ class ApplicationContainer(
             errorMapper = errorMapper,
         ),
         drafts = writerUseCases,
+        errorMapper = errorMapper,
+    )
+
+    /**
+     * I10 · Canonical Commit + History / Revert（Novel IDE 第 10 阶段）。
+     *
+     * 唯一的 Canonical 正文写入入口：输入必须是 I9 Change Artifact；原子写入复用既有
+     * `WorkflowRepository.inTransaction`（真实跨仓储 DB 事务），放行判定复用 I2 [actionPolicy]，
+     * Working Draft 收尾复用 I8 [workingDrafts]。**有意持有单一实例**（无自身状态，与 [changes] 同构）。
+     */
+    val commits: CommitUseCases = CommitUseCases(
+        projects = projects,
+        chapters = chapters,
+        workingDrafts = workingDrafts,
+        changes = changes,
+        drafts = writerUseCases,
+        history = commitHistoryRepository,
+        workflows = workflows,
+        actionPolicy = actionPolicy,
         errorMapper = errorMapper,
     )
 
@@ -594,6 +618,7 @@ class ApplicationContainer(
                 agentSessionRepository = SqliteAgentSessionRepository(db),
                 activityRepository = SqliteActivityRepository(db),
                 toolCallLogRepository = SqliteToolCallLogRepository(db),
+                commitHistoryRepository = SqliteCommitHistoryRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

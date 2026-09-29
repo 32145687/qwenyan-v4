@@ -1,0 +1,56 @@
+-- I10 · Canonical Commit History 持久化（Schema v21）
+-- FD-9 additive：仅新增 CommitHistory 表（"Canonical 为何发生变化"的事实记录），不修改任何既有表 / 列 / 语义。
+--
+-- 职责边界（architecture §19 / §20）：
+--   CommitHistory = 一次 Canonical Commit / Revert 的**不可变**审计记录
+--   不承载：完整 Canonical 副本、Version Control、Branch / Merge / CRDT / Event Sourcing
+--   不是控制器：不改写 Workflow / Task / AgentSession / WorkingDraft / Artifact 的状态
+--
+-- 约束：
+--   · 只插入，不更新 / 不删除（History 不可变；Revert 产生**新**记录而不是删除旧记录）；
+--   · artifact_id 唯一（非空时）⇒ 同一 Artifact 不可能被成功提交两次（重复 Commit 的存储级兜底）；
+--   · previous_content / resulting_content 是 Revert 恢复所必需的最小快照（§9），不是第二套正文模型；
+--   · operation 只区分 COMMIT / REVERT（CommitOperation 枚举名），不是第二套状态机。
+
+CREATE TABLE CommitHistory (
+    history_id          TEXT NOT NULL PRIMARY KEY,
+    commit_id           TEXT NOT NULL,
+    project_id          TEXT NOT NULL,
+    operation           TEXT NOT NULL,            -- CommitOperation 枚举名（COMMIT / REVERT）
+    artifact_id         TEXT,                     -- COMMIT：源 Change Artifact；REVERT：NULL
+    novel_id            TEXT NOT NULL,            -- target.novelId
+    chapter_id          TEXT NOT NULL,            -- target.chapterId
+    variant_id          TEXT,                     -- target.variantId（NULL = Original）
+    previous_draft_id   TEXT,                     -- 提交前 Canonical 正文载体（无 → NULL）
+    resulting_draft_id  TEXT NOT NULL,            -- 提交后 Canonical 正文载体
+    previous_content    TEXT NOT NULL,            -- 提交前正文（无 → ''）
+    resulting_content   TEXT NOT NULL,            -- 提交后正文
+    summary             TEXT NOT NULL,
+    reverted_history_id TEXT,                     -- REVERT：被回退的历史；COMMIT：NULL
+    created_at          INTEGER NOT NULL          -- epoch 毫秒
+);
+
+-- 同一 Artifact 只能成功提交一次（NULL 不参与唯一性，故 REVERT 记录不受限）。
+CREATE UNIQUE INDEX idx_commit_history_artifact ON CommitHistory(artifact_id);
+
+-- Project 作用域查询（历史时序）。
+CREATE INDEX idx_commit_history_project ON CommitHistory(project_id, created_at);
+
+insertCommitHistory:
+INSERT OR REPLACE INTO CommitHistory(history_id, commit_id, project_id, operation, artifact_id, novel_id, chapter_id,
+                                     variant_id, previous_draft_id, resulting_draft_id, previous_content,
+                                     resulting_content, summary, reverted_history_id, created_at)
+VALUES (:history_id, :commit_id, :project_id, :operation, :artifact_id, :novel_id, :chapter_id,
+        :variant_id, :previous_draft_id, :resulting_draft_id, :previous_content,
+        :resulting_content, :summary, :reverted_history_id, :created_at);
+
+getCommitHistoryById:
+SELECT * FROM CommitHistory WHERE history_id = :history_id;
+
+-- 重复 Commit 检测（同一 Artifact 至多一条 COMMIT 历史）。
+getCommitHistoryByArtifactId:
+SELECT * FROM CommitHistory WHERE artifact_id = :artifact_id LIMIT 1;
+
+-- Project 内历史（**插入序** = 真实发生时序；不依赖时间戳精度，避免同毫秒平局）。
+listCommitHistoryByProject:
+SELECT * FROM CommitHistory WHERE project_id = :project_id ORDER BY rowid ASC;

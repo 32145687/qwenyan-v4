@@ -1,0 +1,26 @@
+-- I10 · Schema v21（20.sqm：v20 → v21）
+-- additive migration：仅新增 CommitHistory 表（Canonical Commit / Revert 的不可变审计记录）。
+-- 不修改任何既有表 / 列 / 语义；无 backfill、无既有数据转换。
+-- 幂等由 DatabaseInitializer 的 !tableExists("CommitHistory") 分支包裹。
+
+CREATE TABLE IF NOT EXISTS CommitHistory (
+    history_id          TEXT NOT NULL PRIMARY KEY,
+    commit_id           TEXT NOT NULL,
+    project_id          TEXT NOT NULL,
+    operation           TEXT NOT NULL,
+    artifact_id         TEXT,
+    novel_id            TEXT NOT NULL,
+    chapter_id          TEXT NOT NULL,
+    variant_id          TEXT,
+    previous_draft_id   TEXT,
+    resulting_draft_id  TEXT NOT NULL,
+    previous_content    TEXT NOT NULL,
+    resulting_content   TEXT NOT NULL,
+    summary             TEXT NOT NULL,
+    reverted_history_id TEXT,
+    created_at          INTEGER NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_commit_history_artifact ON CommitHistory(artifact_id);
+
+CREATE INDEX IF NOT EXISTS idx_commit_history_project ON CommitHistory(project_id, created_at);
