@@ -19,6 +19,7 @@ import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftValidator
 import com.qianyan.application.usecase.change.ChangeUseCases
 import com.qianyan.application.usecase.commit.CommitUseCases
+import com.qianyan.application.usecase.agent.NovelAgent
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -333,6 +334,35 @@ class ApplicationContainer(
         history = commitHistoryRepository,
         workflows = workflows,
         actionPolicy = actionPolicy,
+        errorMapper = errorMapper,
+    )
+
+    /**
+     * I11 · Novel Agent（Novel IDE 核心**编排**入口；第 11 阶段）。
+     *
+     * 决定"下一步做什么"，把每一步交给既有能力：I7 SkillRegistry（选择）→ I6 ContextEngine（上下文）→
+     * 既有五 Agent + I5 ProductToolService（执行）→ I8 WorkingDraft/Validation → I9 Diff/Artifact →
+     * I2 ActionPolicy/Human Gate → I10 Commit。**不直接写 Canonical**，也不重造 Tool / Skill / Context /
+     * Draft / Validation / Policy / Gate / Workflow。**有意持有单一实例**（无自身状态）。
+     */
+    val novelAgent: NovelAgent = NovelAgent(
+        projects = projects,
+        chapters = chapters,
+        sessions = agentSessions,
+        activities = activities,
+        skillRegistry = skillRegistry,
+        contextEngine = contextEngine,
+        productTools = productTools,
+        workingDrafts = workingDrafts,
+        changes = changes,
+        commits = commits,
+        actionPolicy = actionPolicy,
+        planner = planner,
+        writer = writer,
+        critic = critic,
+        rewriter = rewriter,
+        planningContexts = planningContextAssembly,
+        reader = writerUseCases,
         errorMapper = errorMapper,
     )
 
