@@ -10,6 +10,8 @@ import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.session.AgentSessionUseCases
 import com.qianyan.application.usecase.log.ActivityUseCases
 import com.qianyan.application.usecase.log.ToolCallLogUseCases
+import com.qianyan.application.usecase.tool.ProductToolService
+import com.qianyan.application.usecase.tool.readOnlyProductTools
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -212,6 +214,21 @@ class ApplicationContainer(
 
     val toolCallLogs: ToolCallLogUseCases
         get() = ToolCallLogUseCases(activityRepository, toolCallLogRepository, errorMapper)
+
+    /**
+     * I5 · 只读 Product Tool 调度入口（Novel Agent 读取项目的统一接口）。
+     *
+     * 只注册**只读**工具（READ / SEARCH），不注册任何写能力；执行经既有 `ToolRegistry` / `ToolExecutor`，
+     * 放行判定复用 I2 [actionPolicy]，调用事实落到 I4 [toolCallLogs]
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §12）。
+     */
+    val productTools: ProductToolService
+        get() = ProductToolService(
+            tools = readOnlyProductTools(projects, novels, chapters, writerUseCases, vocabularies),
+            activities = activities,
+            toolCallLogs = toolCallLogs,
+            actionPolicy = actionPolicy,
+        )
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
