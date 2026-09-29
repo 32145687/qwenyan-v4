@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 /**
  * 桌面装配冒烟测试（JVM，无 GUI）：
  *  1. ApplicationContainer + DefaultProviderAssembler + SQLite 在桌面模块中可完整工作；
- *  2. 全新库直接初始化到 **schema v19**（含 P20-P4 ReadingProgress + I1 ProjectState + I3 AgentSession），P2.4 守卫触发器仍在；
+ *  2. 全新库直接初始化到 **schema v20**（含 P20-P4 ReadingProgress + I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog），P2.4 守卫触发器仍在；
  *  3. 旧 v16 库经同一入口自动迁移到 v17，旧数据保留。
  *
  * 说明：完整的 v1→v17 迁移矩阵由 `:storage` 的迁移测试覆盖（DraftMigrationTest /
@@ -64,15 +64,17 @@ class DesktopGraphSmokeTest {
     }
 
     @Test
-    fun `fresh database initializes to schema v19 with reading progress project state session and guard triggers`() {
+    fun `fresh database initializes to schema v20 with reading progress project state session activity and guard triggers`() {
         val handle = openFileDb("qianyan-desktop-schema")
 
-        assertEquals(19L, userVersion(handle.driver), "全新库应直接建到 schema v19（含 I1 ProjectState + I3 AgentSession）")
-        assertTrue(tableExists(handle.driver, "Novel"), "v19 必须含 Novel")
-        assertTrue(tableExists(handle.driver, "ChapterDraft"), "v19 必须含 ChapterDraft")
-        assertTrue(tableExists(handle.driver, "ReadingProgress"), "v19 必须含 ReadingProgress（P20-P4）")
-        assertTrue(tableExists(handle.driver, "ProjectState"), "v19 必须含 ProjectState（I1）")
-        assertTrue(tableExists(handle.driver, "AgentSession"), "v19 必须含 AgentSession（I3）")
+        assertEquals(20L, userVersion(handle.driver), "全新库应直接建到 schema v20（含 I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog）")
+        assertTrue(tableExists(handle.driver, "Novel"), "v20 必须含 Novel")
+        assertTrue(tableExists(handle.driver, "ChapterDraft"), "v20 必须含 ChapterDraft")
+        assertTrue(tableExists(handle.driver, "ReadingProgress"), "v20 必须含 ReadingProgress（P20-P4）")
+        assertTrue(tableExists(handle.driver, "ProjectState"), "v20 必须含 ProjectState（I1）")
+        assertTrue(tableExists(handle.driver, "AgentSession"), "v20 必须含 AgentSession（I3）")
+        assertTrue(tableExists(handle.driver, "Activity"), "v20 必须含 Activity（I4）")
+        assertTrue(tableExists(handle.driver, "ToolCallLog"), "v20 必须含 ToolCallLog（I4）")
 
         // P2.4 物理写保护（PC-1 明确保留：R2 决策）
         assertTrue(triggerExists(handle.driver, "novel_original_update_protect"), "Original 改写保护必须存在")
@@ -87,14 +89,16 @@ class DesktopGraphSmokeTest {
         assertNotNull(c.workflowFacade, "Chapter 工作流 seam 必须可用")
         assertNotNull(c.projects, "I1 Project 聚合 seam 必须可用")
         assertNotNull(c.agentSessions, "I3 Agent Session seam 必须可用")
+        assertNotNull(c.activities, "I4 Activity seam 必须可用")
+        assertNotNull(c.toolCallLogs, "I4 ToolCallLog seam 必须可用")
     }
 
     @Test
-    fun `legacy v16 database migrates to v19 without losing data`() {
+    fun `legacy v16 database migrates to v20 without losing data`() {
         val dir = Files.createTempDirectory("qianyan-desktop-legacy")
         val url = "jdbc:sqlite:${dir.resolve("qianyan.db").toAbsolutePath()}"
 
-        // 1) 造一个「旧库」：先建到 v19，再删掉 ReadingProgress 并把版本退回 16（模拟更早版本的旧库）
+        // 1) 造一个「旧库」：先建到 v20，再删掉 ReadingProgress 并把版本退回 16（模拟更早版本的旧库）
         val first = QianyanDbFactory.open(url)
         val novelId = containerOf(first).novels.createOriginal(title = "旧库作品")
         first.driver.execute(null, "DROP TABLE ReadingProgress", 0)
@@ -105,7 +109,7 @@ class DesktopGraphSmokeTest {
         val handle = QianyanDbFactory.open(url)
         opened += handle.driver
 
-        assertEquals(19L, userVersion(handle.driver), "旧 v16 库应自动迁移到 v19")
+        assertEquals(20L, userVersion(handle.driver), "旧 v16 库应自动迁移到 v20")
         assertTrue(tableExists(handle.driver, "ReadingProgress"), "迁移后应重建 ReadingProgress")
         assertEquals("旧库作品", containerOf(handle).novels.getNovel(novelId)?.title, "迁移必须保留旧数据")
     }

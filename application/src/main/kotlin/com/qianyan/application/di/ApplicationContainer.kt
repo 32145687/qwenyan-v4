@@ -8,6 +8,8 @@ import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.session.AgentSessionUseCases
+import com.qianyan.application.usecase.log.ActivityUseCases
+import com.qianyan.application.usecase.log.ToolCallLogUseCases
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -75,6 +77,8 @@ import com.qianyan.application.usecase.decision.DecisionModelFacade
 import com.qianyan.application.usecase.decision.DecisionModelGateway
 import com.qianyan.application.usecase.decision.DecisionModelUseCases
 import com.qianyan.storage.repository.AgentSessionRepository
+import com.qianyan.storage.repository.ActivityRepository
+import com.qianyan.storage.repository.ToolCallLogRepository
 import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorObservationRepository
@@ -88,6 +92,8 @@ import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.ProjectStateRepository
 import com.qianyan.storage.repository.ReadingProgressRepository
 import com.qianyan.storage.repository.SqliteAgentSessionRepository
+import com.qianyan.storage.repository.SqliteActivityRepository
+import com.qianyan.storage.repository.SqliteToolCallLogRepository
 import com.qianyan.storage.repository.SqliteAuthorCoreRepository
 import com.qianyan.storage.repository.SqliteAuthorDnaRepository
 import com.qianyan.storage.repository.SqliteAuthorObservationRepository
@@ -153,6 +159,9 @@ class ApplicationContainer(
     private val projectStateRepository: ProjectStateRepository,
     /** I3 · Agent Session 仓储（会话身份 + Project 归属 + Workflow/Task 引用；不承载其状态与小说事实）。 */
     private val agentSessionRepository: AgentSessionRepository,
+    /** I4 · Activity / ToolCallLog 仓储（已发生行为的事实记录；是记录，不是控制器）。 */
+    private val activityRepository: ActivityRepository,
+    private val toolCallLogRepository: ToolCallLogRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
@@ -190,6 +199,19 @@ class ApplicationContainer(
      */
     val agentSessions: AgentSessionUseCases
         get() = AgentSessionUseCases(novelRepository, agentSessionRepository, workflowRepository, taskRepository, errorMapper)
+
+    /**
+     * I4 · Activity / Tool Call Log（Agent 工作过程的事实记录）。
+     *
+     * 只记录"发生了什么活动 / 调用了什么 Tool"，是观察记录而非控制器：
+     * 不创建或改写 AgentSession / Workflow / Task 状态，不执行 Tool，不含 Tool Registry / Skill / Context
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §15）。
+     */
+    val activities: ActivityUseCases
+        get() = ActivityUseCases(agentSessionRepository, activityRepository, errorMapper)
+
+    val toolCallLogs: ToolCallLogUseCases
+        get() = ToolCallLogUseCases(activityRepository, toolCallLogRepository, errorMapper)
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
@@ -471,6 +493,8 @@ class ApplicationContainer(
                 readingProgressRepository = SqliteReadingProgressRepository(db),
                 projectStateRepository = SqliteProjectStateRepository(db),
                 agentSessionRepository = SqliteAgentSessionRepository(db),
+                activityRepository = SqliteActivityRepository(db),
+                toolCallLogRepository = SqliteToolCallLogRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
             )

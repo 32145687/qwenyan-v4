@@ -81,6 +81,9 @@ object DatabaseInitializer {
     /** v18（I1：ProjectState）→ v19（I3：AgentSession 会话身份）迁移起点。 */
     private const val V18 = 18L
 
+    /** v19（I3：AgentSession）→ v20（I4：Activity + ToolCallLog 活动事实记录）迁移起点。 */
+    private const val V19 = 19L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -236,6 +239,12 @@ object DatabaseInitializer {
             !tableExists(driver, "AgentSession") -> withTransaction(driver) {
                 // v18 → v19：新增 AgentSession 表（I3：Agent 工作会话身份；additive，不动既有表）。
                 QianyanDb.Schema.migrate(driver, V18, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "Activity") -> withTransaction(driver) {
+                // v19 → v20：新增 Activity + ToolCallLog 表（I4：活动/调用事实记录；additive，不动既有表）。
+                QianyanDb.Schema.migrate(driver, V19, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

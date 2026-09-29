@@ -1,0 +1,31 @@
+-- I4 · Schema v20（19.sqm：v19 → v20）
+-- additive migration：仅新增 Activity / ToolCallLog 表（Agent 工作过程的事实记录），不修改任何既有表 / 列 / 语义。
+-- 幂等由 DatabaseInitializer 的 !tableExists("Activity") 分支包裹；无 backfill、无既有数据转换。
+
+CREATE TABLE IF NOT EXISTS Activity (
+    activity_id   TEXT NOT NULL PRIMARY KEY,
+    session_id    TEXT NOT NULL,
+    project_id    TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    status        TEXT NOT NULL,
+    started_at    INTEGER NOT NULL,
+    completed_at  INTEGER,
+    summary       TEXT,
+    error         TEXT,
+    FOREIGN KEY (session_id) REFERENCES AgentSession(session_id)
+);
+
+CREATE TABLE IF NOT EXISTS ToolCallLog (
+    tool_call_id   TEXT NOT NULL PRIMARY KEY,
+    activity_id    TEXT NOT NULL,
+    session_id     TEXT NOT NULL,
+    project_id     TEXT NOT NULL,
+    tool_name      TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    started_at     INTEGER NOT NULL,
+    completed_at   INTEGER,
+    input_summary  TEXT,
+    output_summary TEXT,
+    error          TEXT,
+    FOREIGN KEY (activity_id) REFERENCES Activity(activity_id)
+);

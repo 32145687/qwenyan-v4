@@ -21,7 +21,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * I3 · v18 → v19 migration 测试（FD-9 additive only）。
+ * I3 · v18 → 最新版本 migration 测试（FD-9 additive only；新增迁移后最新版本为 20）。
  *
  * 手法：先经同一入口建到最新版本并写入真实数据，再把库**退化为 v18 形态**
  * （`DROP TABLE AgentSession` + `PRAGMA user_version = 18`），重新经 `QianyanDbFactory.open` 打开，验证：
@@ -63,8 +63,8 @@ class AgentSessionMigrationTest {
 
         // 3) 经同一入口重开 → 自动迁移 v18 → 最新版本
         val second = QianyanDbFactory.open(url)
-        assertEquals(19L, QianyanDb.Schema.version, "新增 18.sqm 后 schema 版本应为 19")
-        assertEquals(19L, userVersion(second.driver), "旧 v18 库应自动迁移到最新版本")
+        assertEquals(20L, QianyanDb.Schema.version, "新增 19.sqm 后 schema 版本应为 20")
+        assertEquals(20L, userVersion(second.driver), "旧 v19 库应自动迁移到最新版本")
         assertTrue(tableExists(second.driver, "AgentSession"), "迁移后应有 AgentSession 表")
 
         // 既有数据原样保留（经既有 Repository 读回）
@@ -75,7 +75,7 @@ class AgentSessionMigrationTest {
         // 4) 重复初始化幂等
         DatabaseInitializer.initializeDatabase(second.driver)
         DatabaseInitializer.initializeDatabase(second.driver)
-        assertEquals(19L, userVersion(second.driver))
+        assertEquals(20L, userVersion(second.driver))
         assertEquals("迁移书 I3", SqliteNovelRepository(second.db).getNovel(novelId)?.title)
         second.driver.close()
     }

@@ -1,0 +1,39 @@
+-- I4 · Activity 持久化（Schema v20）
+-- FD-9：仅新增 Activity 表（AgentSession 内已发生活动的事实记录），不修改任何既有表 / 列 / 语义。
+--
+-- 职责边界（architecture §15）：
+--   Activity = 一次可追踪活动的事实记录（谁/何时/何种活动/结果）
+--   不承载：正文 / World Model / Project State / Context 内容 / Skill / Permission
+--   不是控制器：不改写 AgentSession / Workflow / Task 状态
+--
+-- 约束：
+--   · status 只描述"记录本身是否完成"（RUNNING/COMPLETED/FAILED/CANCELLED），不是任何业务状态机；
+--   · session_id 为**引用**（FK → AgentSession），不复制其生命周期；
+--   · kind 为活动类别标签（词汇表属未来 Skill / Agent 编排阶段，此处只记录）。
+
+CREATE TABLE Activity (
+    activity_id   TEXT NOT NULL PRIMARY KEY,
+    session_id    TEXT NOT NULL,
+    project_id    TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    status        TEXT NOT NULL,            -- AgentLogStatus 枚举名
+    started_at    INTEGER NOT NULL,         -- epoch 毫秒
+    completed_at  INTEGER,                  -- epoch 毫秒（可空）
+    summary       TEXT,
+    error         TEXT,
+    FOREIGN KEY (session_id) REFERENCES AgentSession(session_id)
+);
+
+upsertActivity:
+INSERT OR REPLACE INTO Activity(activity_id, session_id, project_id, kind, status, started_at, completed_at, summary, error)
+VALUES (:activity_id, :session_id, :project_id, :kind, :status, :started_at, :completed_at, :summary, :error);
+
+getActivity:
+SELECT * FROM Activity WHERE activity_id = :activity_id;
+
+/** 会话内活动（时序升序：日志时序）。 */
+listActivitiesBySession:
+SELECT * FROM Activity WHERE session_id = :session_id ORDER BY started_at ASC, activity_id ASC;
+
+listActivitiesByProject:
+SELECT * FROM Activity WHERE project_id = :project_id ORDER BY started_at ASC, activity_id ASC;

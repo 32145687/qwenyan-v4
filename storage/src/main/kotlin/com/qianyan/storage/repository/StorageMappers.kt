@@ -132,6 +132,11 @@ import com.qianyan.storage.db.ProjectState as DbProjectState
 import com.qianyan.model.session.AgentSession as DomainAgentSession
 import com.qianyan.model.session.AgentSessionStatus
 import com.qianyan.storage.db.AgentSession as DbAgentSession
+import com.qianyan.model.log.Activity as DomainActivity
+import com.qianyan.model.log.AgentLogStatus
+import com.qianyan.model.log.ToolCallLog as DomainToolCallLog
+import com.qianyan.storage.db.Activity as DbActivity
+import com.qianyan.storage.db.ToolCallLog as DbToolCallLog
 import com.qianyan.storage.db.Chapter as DbChapter
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
@@ -1244,5 +1249,59 @@ internal object StorageMappers {
         createdAt = epochMillisToInstant(row.created_at),
         updatedAt = epochMillisToInstant(row.updated_at),
         lastActivityAt = row.last_activity_at?.let { epochMillisToInstant(it) },
+    )
+
+    /* ---- I4 · Activity / ToolCallLog（已发生行为的事实记录；不含业务状态与小说事实） ---- */
+
+    fun domainActivity(a: DomainActivity): DbActivity = DbActivity(
+        activity_id = a.activityId.value,
+        session_id = a.sessionId.value,
+        project_id = a.projectId.value,
+        kind = a.kind,
+        status = a.status.name,
+        started_at = a.startedAt.toEpochMillis(),
+        completed_at = a.completedAt?.toEpochMillis(),
+        summary = a.summary,
+        error = a.error,
+    )
+
+    fun dbActivity(row: DbActivity): DomainActivity = DomainActivity(
+        activityId = com.qianyan.model.ActivityId(row.activity_id),
+        sessionId = com.qianyan.model.AgentSessionId(row.session_id),
+        projectId = com.qianyan.model.ProjectId(row.project_id),
+        kind = row.kind,
+        status = AgentLogStatus.valueOf(row.status),
+        startedAt = epochMillisToInstant(row.started_at),
+        completedAt = row.completed_at?.let { epochMillisToInstant(it) },
+        summary = row.summary,
+        error = row.error,
+    )
+
+    fun domainToolCallLog(c: DomainToolCallLog): DbToolCallLog = DbToolCallLog(
+        tool_call_id = c.toolCallId.value,
+        activity_id = c.activityId.value,
+        session_id = c.sessionId.value,
+        project_id = c.projectId.value,
+        tool_name = c.toolName.value,
+        status = c.status.name,
+        started_at = c.startedAt.toEpochMillis(),
+        completed_at = c.completedAt?.toEpochMillis(),
+        input_summary = c.inputSummary,
+        output_summary = c.outputSummary,
+        error = c.error,
+    )
+
+    fun dbToolCallLog(row: DbToolCallLog): DomainToolCallLog = DomainToolCallLog(
+        toolCallId = com.qianyan.model.ToolCallId(row.tool_call_id),
+        activityId = com.qianyan.model.ActivityId(row.activity_id),
+        sessionId = com.qianyan.model.AgentSessionId(row.session_id),
+        projectId = com.qianyan.model.ProjectId(row.project_id),
+        toolName = com.qianyan.model.agent.ToolName(row.tool_name),
+        status = AgentLogStatus.valueOf(row.status),
+        startedAt = epochMillisToInstant(row.started_at),
+        completedAt = row.completed_at?.let { epochMillisToInstant(it) },
+        inputSummary = row.input_summary,
+        outputSummary = row.output_summary,
+        error = row.error,
     )
 }

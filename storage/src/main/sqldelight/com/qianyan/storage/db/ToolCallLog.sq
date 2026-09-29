@@ -1,0 +1,43 @@
+-- I4 · ToolCallLog 持久化（Schema v20）
+-- FD-9：仅新增 ToolCallLog 表（一次 Tool 调用事实记录），不修改任何既有表 / 列 / 语义。
+--
+-- 职责边界（architecture §15）：
+--   ToolCallLog = 一次 Tool 调用事实的记录（何时调用了什么工具、结果如何）
+--   是 Tool Log，不是 Tool Registry：tool_name 只是调用标识，不含实现 / 注册 / 权限语义
+--   不承载：tool 实现 / executor / 权限策略 / Skill / Context / World Model / Canonical 内容
+--
+-- 约束：
+--   · status 只描述"记录本身是否完成"（RUNNING/COMPLETED/FAILED/CANCELLED）；
+--   · activity_id / session_id / project_id 均为**引用**（activity_id FK → Activity），归属由调用方从 Activity 派生。
+
+CREATE TABLE ToolCallLog (
+    tool_call_id   TEXT NOT NULL PRIMARY KEY,
+    activity_id    TEXT NOT NULL,
+    session_id     TEXT NOT NULL,
+    project_id     TEXT NOT NULL,
+    tool_name      TEXT NOT NULL,           -- ToolName 标识（仅记录）
+    status         TEXT NOT NULL,           -- AgentLogStatus 枚举名
+    started_at     INTEGER NOT NULL,        -- epoch 毫秒
+    completed_at   INTEGER,                 -- epoch 毫秒（可空）
+    input_summary  TEXT,
+    output_summary TEXT,
+    error          TEXT,
+    FOREIGN KEY (activity_id) REFERENCES Activity(activity_id)
+);
+
+upsertToolCallLog:
+INSERT OR REPLACE INTO ToolCallLog(tool_call_id, activity_id, session_id, project_id, tool_name, status, started_at, completed_at, input_summary, output_summary, error)
+VALUES (:tool_call_id, :activity_id, :session_id, :project_id, :tool_name, :status, :started_at, :completed_at, :input_summary, :output_summary, :error);
+
+getToolCallLog:
+SELECT * FROM ToolCallLog WHERE tool_call_id = :tool_call_id;
+
+/** Activity 内调用（时序升序）。 */
+listToolCallLogsByActivity:
+SELECT * FROM ToolCallLog WHERE activity_id = :activity_id ORDER BY started_at ASC, tool_call_id ASC;
+
+listToolCallLogsBySession:
+SELECT * FROM ToolCallLog WHERE session_id = :session_id ORDER BY started_at ASC, tool_call_id ASC;
+
+listToolCallLogsByProject:
+SELECT * FROM ToolCallLog WHERE project_id = :project_id ORDER BY started_at ASC, tool_call_id ASC;

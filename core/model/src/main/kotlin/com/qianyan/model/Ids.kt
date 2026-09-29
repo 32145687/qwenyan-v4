@@ -193,6 +193,16 @@ value class AgentId(val value: String)
 @Serializable
 value class AgentSessionId(val value: String)
 
+/** I4 · 一次可追踪活动（AgentSession 内发生的行为事实记录）。 */
+@JvmInline
+@Serializable
+value class ActivityId(val value: String)
+
+/** I4 · 一次 Tool 调用事实记录（属于某个 Activity）。 */
+@JvmInline
+@Serializable
+value class ToolCallId(val value: String)
+
 @JvmInline
 @Serializable
 value class RequestId(val value: String)

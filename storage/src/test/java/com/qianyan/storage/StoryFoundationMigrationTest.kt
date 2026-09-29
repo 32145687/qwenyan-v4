@@ -72,7 +72,7 @@ class StoryFoundationMigrationTest {
                 // 3) 两新表已创建，版本同步为 10
                 assertTrue(tableExists(driver, "StoryFoundation"), "migration 后应存在 StoryFoundation（P14-F.2）")
                 assertTrue(tableExists(driver, "FoundationOverride"), "migration 后应存在 FoundationOverride（P14-F.2）")
-                assertEquals(19L, userVersion(driver), "migration 后 user_version 应为最新版本 18+1（I3 Schema v19）")
+                assertEquals(20L, userVersion(driver), "migration 后 user_version 应为最新版本 19+1（I4 Schema v20）")
 
                 // 4) 既有 v9 数据仍可读取，迁移未触碰既有表语义
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"), "Novel 旧数据应保持")
