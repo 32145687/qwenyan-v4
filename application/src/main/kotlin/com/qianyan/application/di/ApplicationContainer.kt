@@ -20,6 +20,7 @@ import com.qianyan.application.usecase.draft.WorkingDraftValidator
 import com.qianyan.application.usecase.change.ChangeUseCases
 import com.qianyan.application.usecase.commit.CommitUseCases
 import com.qianyan.application.usecase.agent.NovelAgent
+import com.qianyan.application.usecase.index.ProjectIndexUseCases
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -363,6 +364,24 @@ class ApplicationContainer(
         rewriter = rewriter,
         planningContexts = planningContextAssembly,
         reader = writerUseCases,
+        errorMapper = errorMapper,
+    )
+
+    /**
+     * I12 · Project Index（项目内容的**派生**索引：可定位 / 可搜索 / 可重建；第 12 阶段）。
+     *
+     * 只经既有 Canonical 读取能力（ProjectUseCases / NovelUseCases / ChapterUseCases / WriterUseCases /
+     * VocabularyUseCases / 既有 `StoryFoundationRepository`）从 Canonical 数据重建；
+     * **有意持有单一实例**（应用级内存派生存储，不落库、不加表、不加迁移），可整体丢弃并重建。
+     * 不写 Canonical、不做 Context 选择、不建立第二套搜索基础设施。
+     */
+    val projectIndex: ProjectIndexUseCases = ProjectIndexUseCases(
+        projects = projects,
+        novels = novels,
+        chapters = chapters,
+        writer = writerUseCases,
+        vocabularies = vocabularies,
+        foundations = storyFoundationRepository,
         errorMapper = errorMapper,
     )
 
