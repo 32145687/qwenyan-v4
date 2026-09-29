@@ -15,6 +15,8 @@ import com.qianyan.application.usecase.tool.readOnlyProductTools
 import com.qianyan.application.usecase.context.ContextEngineUseCases
 import com.qianyan.application.usecase.context.defaultContextSources
 import com.qianyan.agent.agents.SkillRegistry
+import com.qianyan.application.usecase.draft.WorkingDraftUseCases
+import com.qianyan.application.usecase.draft.WorkingDraftValidator
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -265,6 +267,28 @@ class ApplicationContainer(
      */
     val skillRegistry: SkillRegistry
         get() = SkillRegistry.default()
+
+    /**
+     * I8 · Working Draft 工作区（Agent / Skill 的临时成果区；Novel IDE 第 8 阶段）。
+     *
+     * **有意持有单一实例**（应用级内存工作区）：Working Draft 是"一次任务中的临时产物"，
+     * 本阶段不落库、不加表、不加迁移；校验复用既有 `ValidationResult`，且只读 Canonical 数据
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §17 / §18）。
+     */
+    val workingDrafts: WorkingDraftUseCases = WorkingDraftUseCases(
+        projects = projects,
+        chapters = chapters,
+        drafts = writerUseCases,
+        validator = WorkingDraftValidator(
+            projects = projects,
+            chapters = chapters,
+            sessions = agentSessions,
+            activities = activities,
+            drafts = writerUseCases,
+            errorMapper = errorMapper,
+        ),
+        errorMapper = errorMapper,
+    )
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
