@@ -12,6 +12,8 @@ import com.qianyan.application.usecase.log.ActivityUseCases
 import com.qianyan.application.usecase.log.ToolCallLogUseCases
 import com.qianyan.application.usecase.tool.ProductToolService
 import com.qianyan.application.usecase.tool.readOnlyProductTools
+import com.qianyan.application.usecase.context.ContextEngineUseCases
+import com.qianyan.application.usecase.context.defaultContextSources
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -228,6 +230,29 @@ class ApplicationContainer(
             activities = activities,
             toolCallLogs = toolCallLogs,
             actionPolicy = actionPolicy,
+        )
+
+    /**
+     * I6 · Context Engine（任务级 Context 构建；Novel IDE 第 6 阶段）。
+     *
+     * 把"当前任务"翻译成 `ContextPack`：只读已有 Project / Novel / Chapter / Draft / StoryFoundation / Vocabulary，
+     * 经确定性 Selection / Priority / Budget 产出可审计的冻结快照；不写状态、不调 LLM、不建第二套长期数据
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §9 / §25）。
+     */
+    val contextEngine: ContextEngineUseCases
+        get() = ContextEngineUseCases(
+            projects = projects,
+            chapters = chapters,
+            sessions = agentSessions,
+            sources = defaultContextSources(
+                projects = projects,
+                novels = novels,
+                chapters = chapters,
+                writer = writerUseCases,
+                vocabularies = vocabularies,
+                foundations = storyFoundationRepository,
+            ),
+            errorMapper = errorMapper,
         )
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
