@@ -40,6 +40,10 @@ dependencies {
     // （:agent:runtime 以 implementation 暴露 :agent:tool，不对外传递，故在此补充）。
     implementation(project(":agent:tool"))
 
+    // I7 新增：Application 组合根暴露 Skill Registry seam（:agent:agents 承载 Skill 契约与注册机制）。
+    // 依赖方向仍为单向 application → :agent:agents → :core:model（不出现反向依赖）。
+    implementation(project(":agent:agents"))
+
     // 领域类型携带的序列化/时间类型（core:model 以 implementation 声明，需在此显式补充以编译/运行）。
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.datetime)

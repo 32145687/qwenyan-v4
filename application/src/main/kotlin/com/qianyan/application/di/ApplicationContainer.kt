@@ -14,6 +14,7 @@ import com.qianyan.application.usecase.tool.ProductToolService
 import com.qianyan.application.usecase.tool.readOnlyProductTools
 import com.qianyan.application.usecase.context.ContextEngineUseCases
 import com.qianyan.application.usecase.context.defaultContextSources
+import com.qianyan.agent.agents.SkillRegistry
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -254,6 +255,16 @@ class ApplicationContainer(
             ),
             errorMapper = errorMapper,
         )
+
+    /**
+     * I7 · Skill Registry（专业创作方法 / 能力的注册与发现；Novel IDE 第 7 阶段）。
+     *
+     * 纯内存不可变注册表（无数据库、无迁移）；只回答问题"这类任务有哪些 Skill 可处理"，
+     * **不执行 Skill / 不调用 LLM / 不执行 Tool / 不推进 Workflow / 不判定权限**
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §11）。
+     */
+    val skillRegistry: SkillRegistry
+        get() = SkillRegistry.default()
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
