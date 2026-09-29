@@ -17,6 +17,7 @@ import com.qianyan.application.usecase.context.defaultContextSources
 import com.qianyan.agent.agents.SkillRegistry
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftValidator
+import com.qianyan.application.usecase.change.ChangeUseCases
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
 import com.qianyan.application.usecase.override.OverrideUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -287,6 +288,27 @@ class ApplicationContainer(
             drafts = writerUseCases,
             errorMapper = errorMapper,
         ),
+        errorMapper = errorMapper,
+    )
+
+    /**
+     * I9 · Change Review（Diff / Change / Artifact；Novel IDE 第 9 阶段）。
+     *
+     * 在 I8 Working Draft 之上生成**变更审查载体**；**有意持有单一实例**（应用级内存 Artifact Store）：
+     * 不落库、不加表、不加迁移，且只读 Canonical 数据、不执行 Commit
+     * （见 docs/architecture/qianyan-novel-ide-architecture.md §19 / §26）。
+     */
+    val changes: ChangeUseCases = ChangeUseCases(
+        workingDrafts = workingDrafts,
+        validator = WorkingDraftValidator(
+            projects = projects,
+            chapters = chapters,
+            sessions = agentSessions,
+            activities = activities,
+            drafts = writerUseCases,
+            errorMapper = errorMapper,
+        ),
+        drafts = writerUseCases,
         errorMapper = errorMapper,
     )
 
