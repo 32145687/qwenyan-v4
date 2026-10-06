@@ -90,6 +90,9 @@ object DatabaseInitializer {
     /** v21（I10：CommitHistory）→ v22（I13：TaskQueueItem 后台任务调度条目）迁移起点。 */
     private const val V21 = 21L
 
+    /** v22（I13：TaskQueueItem）→ v23（I1：RuntimeSessionRef 运行时会话绑定）迁移起点。 */
+    private const val V22 = 22L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -263,6 +266,12 @@ object DatabaseInitializer {
             !tableExists(driver, "TaskQueueItem") -> withTransaction(driver) {
                 // v21 → v22：新增 TaskQueueItem 表（I13：后台任务调度条目；additive，不动既有表）。
                 QianyanDb.Schema.migrate(driver, V21, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "RuntimeSessionRef") -> withTransaction(driver) {
+                // v22 → v23：新增 RuntimeSessionRef 表（I1：运行时会话绑定；additive，不动既有表）。
+                QianyanDb.Schema.migrate(driver, V22, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

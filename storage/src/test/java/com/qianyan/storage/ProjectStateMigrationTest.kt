@@ -59,8 +59,8 @@ class ProjectStateMigrationTest {
 
         // 3) 经同一入口重开 → 自动迁移到最新版本
         val second = QianyanDbFactory.open(url)
-        assertEquals(22L, QianyanDb.Schema.version, "新增 17.sqm~21.sqm 后 schema 版本应为 22")
-        assertEquals(22L, userVersion(second.driver), "旧 v17 库应自动迁移到最新版本")
+        assertEquals(23L, QianyanDb.Schema.version, "新增 17.sqm~22.sqm 后 schema 版本应为 23")
+        assertEquals(23L, userVersion(second.driver), "旧 v17 库应自动迁移到最新版本")
         assertTrue(tableExists(second.driver, "ProjectState"), "迁移后应有 ProjectState 表")
 
         // 既有数据原样保留（经既有 Repository 读回）
@@ -71,7 +71,7 @@ class ProjectStateMigrationTest {
         // 4) 重复初始化幂等
         DatabaseInitializer.initializeDatabase(second.driver)
         DatabaseInitializer.initializeDatabase(second.driver)
-        assertEquals(22L, userVersion(second.driver))
+        assertEquals(23L, userVersion(second.driver))
         assertEquals("迁移书", SqliteNovelRepository(second.db).getNovel(novelId)?.title)
         second.driver.close()
     }

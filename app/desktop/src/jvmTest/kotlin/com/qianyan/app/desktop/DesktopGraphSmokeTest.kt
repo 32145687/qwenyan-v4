@@ -19,8 +19,8 @@ import kotlin.test.assertTrue
 /**
  * 桌面装配冒烟测试（JVM，无 GUI）：
  *  1. ApplicationContainer + DefaultProviderAssembler + SQLite 在桌面模块中可完整工作；
- *  2. 全新库直接初始化到 **schema v22**（含 P20-P4 ReadingProgress + I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog + I13 TaskQueueItem），P2.4 守卫触发器仍在；
- *  3. 旧 v16 库经同一入口自动迁移到 v22，旧数据保留。
+ *  2. 全新库直接初始化到 **schema v23**（含 P20-P4 ReadingProgress + I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog + I13 TaskQueueItem），P2.4 守卫触发器仍在；
+ *  3. 旧 v16 库经同一入口自动迁移到 v23，旧数据保留。
  *
  * 说明：完整的 v1→v17 迁移矩阵由 `:storage` 的迁移测试覆盖（DraftMigrationTest /
  * ReadingProgressMigrationTest 等）；桌面侧只验证「用同一 QianyanDbFactory.open 入口」这一事实。
@@ -64,18 +64,18 @@ class DesktopGraphSmokeTest {
     }
 
     @Test
-    fun `fresh database initializes to schema v22 with reading progress project state session activity and guard triggers`() {
+    fun `fresh database initializes to schema v23 with reading progress project state session activity and guard triggers`() {
         val handle = openFileDb("qianyan-desktop-schema")
 
-        assertEquals(22L, userVersion(handle.driver), "全新库应直接建到 schema v22（含 I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog + I13 TaskQueueItem）")
-        assertTrue(tableExists(handle.driver, "Novel"), "v22 必须含 Novel")
-        assertTrue(tableExists(handle.driver, "ChapterDraft"), "v22 必须含 ChapterDraft")
-        assertTrue(tableExists(handle.driver, "ReadingProgress"), "v22 必须含 ReadingProgress（P20-P4）")
-        assertTrue(tableExists(handle.driver, "ProjectState"), "v22 必须含 ProjectState（I1）")
-        assertTrue(tableExists(handle.driver, "AgentSession"), "v22 必须含 AgentSession（I3）")
-        assertTrue(tableExists(handle.driver, "Activity"), "v22 必须含 Activity（I4）")
-        assertTrue(tableExists(handle.driver, "ToolCallLog"), "v22 必须含 ToolCallLog（I4）")
-        assertTrue(tableExists(handle.driver, "TaskQueueItem"), "v22 必须含 TaskQueueItem（I13）")
+        assertEquals(23L, userVersion(handle.driver), "全新库应直接建到 schema v23（含 I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog + I13 TaskQueueItem）")
+        assertTrue(tableExists(handle.driver, "Novel"), "v23 必须含 Novel")
+        assertTrue(tableExists(handle.driver, "ChapterDraft"), "v23 必须含 ChapterDraft")
+        assertTrue(tableExists(handle.driver, "ReadingProgress"), "v23 必须含 ReadingProgress（P20-P4）")
+        assertTrue(tableExists(handle.driver, "ProjectState"), "v23 必须含 ProjectState（I1）")
+        assertTrue(tableExists(handle.driver, "AgentSession"), "v23 必须含 AgentSession（I3）")
+        assertTrue(tableExists(handle.driver, "Activity"), "v23 必须含 Activity（I4）")
+        assertTrue(tableExists(handle.driver, "ToolCallLog"), "v23 必须含 ToolCallLog（I4）")
+        assertTrue(tableExists(handle.driver, "TaskQueueItem"), "v23 必须含 TaskQueueItem（I13）")
 
         // P2.4 物理写保护（PC-1 明确保留：R2 决策）
         assertTrue(triggerExists(handle.driver, "novel_original_update_protect"), "Original 改写保护必须存在")
@@ -95,11 +95,11 @@ class DesktopGraphSmokeTest {
     }
 
     @Test
-    fun `legacy v16 database migrates to v22 without losing data`() {
+    fun `legacy v16 database migrates to v23 without losing data`() {
         val dir = Files.createTempDirectory("qianyan-desktop-legacy")
         val url = "jdbc:sqlite:${dir.resolve("qianyan.db").toAbsolutePath()}"
 
-        // 1) 造一个「旧库」：先建到 v22，再删掉 ReadingProgress 并把版本退回 16（模拟更早版本的旧库）
+        // 1) 造一个「旧库」：先建到当前最新版本，再删掉 ReadingProgress 并把版本退回 16（模拟更早版本的旧库）
         val first = QianyanDbFactory.open(url)
         val novelId = containerOf(first).novels.createOriginal(title = "旧库作品")
         first.driver.execute(null, "DROP TABLE ReadingProgress", 0)
@@ -110,7 +110,7 @@ class DesktopGraphSmokeTest {
         val handle = QianyanDbFactory.open(url)
         opened += handle.driver
 
-        assertEquals(22L, userVersion(handle.driver), "旧 v16 库应自动迁移到 v22")
+        assertEquals(23L, userVersion(handle.driver), "旧 v16 库应自动迁移到 v23")
         assertTrue(tableExists(handle.driver, "ReadingProgress"), "迁移后应重建 ReadingProgress")
         assertEquals("旧库作品", containerOf(handle).novels.getNovel(novelId)?.title, "迁移必须保留旧数据")
     }

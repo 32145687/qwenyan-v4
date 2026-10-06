@@ -44,6 +44,11 @@ dependencies {
     // 依赖方向仍为单向 application → :agent:agents → :core:model（不出现反向依赖）。
     implementation(project(":agent:agents"))
 
+    // I1 新增：Application 只依赖 Runtime **契约**（:runtime:api），绝不依赖 Adapter 模块。
+    // 用 api 暴露契约：容器公开的装配入口（fromDriver）以契约类型为可选入参，
+    // 消费方（app 装配根）必须能解析该类型；Adapter 实现仍由组合根注入，不经此处传递。
+    api(project(":runtime:api"))
+
     // 领域类型携带的序列化/时间类型（core:model 以 implementation 声明，需在此显式补充以编译/运行）。
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.datetime)

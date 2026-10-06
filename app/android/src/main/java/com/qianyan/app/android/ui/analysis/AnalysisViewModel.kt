@@ -178,6 +178,8 @@ class AnalysisViewModel(
         is ApplicationError.InvalidContinuationSource -> "续篇来源无效：${error.detail}"
         is ApplicationError.DraftConfirmationRequired -> "知识更新需先确认最终稿：${error.detail}"
         is ApplicationError.ProviderCredentialMissing -> "AI 服务未配置密钥：${error.detail}"
+        is ApplicationError.RuntimeUnavailable -> "外部运行环境不可用"
+        is ApplicationError.RuntimeExecutionFailed -> "外部运行环境执行失败，请重试"
         is ApplicationError.UnknownStorage -> "存储错误，请重试"
     }
 

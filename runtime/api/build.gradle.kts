@@ -11,8 +11,8 @@ kotlin {
 }
 
 dependencies {
-    // 平台 Runtime 抽象：文件系统 / 网络 / DB 实现（见 P16/P17）
-    api(project(":core:model"))
+    // I1 Runtime Integration：契约**刻意零依赖**（不依赖 core:model / provider:api / DSH）。
+    // 只描述"外部 Agent Runtime 会话"的最小抽象，保证 Application 依赖它不会传递出任何实现或领域概念。
     testImplementation(libs.kotlin.test.junit5)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

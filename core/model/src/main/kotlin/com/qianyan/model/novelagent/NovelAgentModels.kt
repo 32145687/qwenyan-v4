@@ -47,6 +47,8 @@ import kotlinx.serialization.Serializable
  * @param activeVariantId 调用方声明的当前作用域（可选）：必须与 Project 运行态一致（一致性守卫，不复制运行态）。
  * @param budget Context 预算（复用 I6 [ContextBudget]；null = 用 I6 默认）。
  * @param preferredSkillId 调用方指定的 Skill（可选）：必须在 SkillRegistry 匹配结果内，否则类型化拒绝。
+ * @param runtimeBacked I1 运行时 seam（默认关闭）：为 true 且装配了外部 Agent Runtime 时，
+ *   本次 run 会为该会话建立一次外部运行时会话绑定（**不改变七相位与 Canonical 写入路径**）。
  */
 @Serializable
 data class NovelAgentRequest(
@@ -58,6 +60,7 @@ data class NovelAgentRequest(
     val activeVariantId: VariantId? = null,
     val budget: ContextBudget = ContextBudget(),
     val preferredSkillId: SkillId? = null,
+    val runtimeBacked: Boolean = false,
 )
 
 /**

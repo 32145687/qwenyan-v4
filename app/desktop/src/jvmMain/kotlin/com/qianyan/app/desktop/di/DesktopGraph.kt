@@ -7,6 +7,7 @@ import com.qianyan.provider.ProviderAssembler
 import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.provider.ProviderType
 import com.qianyan.provider.impl.DefaultProviderAssembler
+import com.qianyan.runtime.dsh.DshRuntimeClient
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,6 +65,14 @@ class DesktopGraph private constructor(
     private lateinit var assembler: ProviderAssembler
     private lateinit var configuration: ProviderConfiguration
 
+    /**
+     * I1 · 外部 Agent Runtime Adapter（**组合根唯一构造点**）。
+     *
+     * 与 Provider 同构：UI 不得 new Adapter，Application 只见 `:runtime:api` 契约；
+     * 这里构造具体实现（DSH Adapter）并按契约注入容器。构造本身**不启动进程**（懒启动）。
+     */
+    private val runtimeGateway = DshRuntimeClient()
+
     init {
         assembler = DesktopProviderAssembler(DefaultProviderAssembler(credentialStore))
         val stored = readStored()
@@ -91,7 +100,7 @@ class DesktopGraph private constructor(
         val handle = QianyanDbFactory.open(url)
         currentHandle?.driver?.close()
         currentHandle = handle
-        return ApplicationContainer.fromDriver(handle.driver, assembler, configuration)
+        return ApplicationContainer.fromDriver(handle.driver, assembler, configuration, runtimeGateway = runtimeGateway)
     }
 
     private fun readStored(): Map<String, String> = runCatching {

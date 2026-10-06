@@ -34,7 +34,14 @@ project(":provider:api").projectDir = file("provider/api")
 project(":provider:impl").projectDir = file("provider/impl")
 include(":storage")
 include(":application")
-include(":runtime")
+// I1 Runtime Integration：把 I0 的 :runtime 拆成"契约"与"DSH Adapter"两个模块。
+// - runtime:api：Qianyan Runtime Contract（vendor-neutral），Application 只允许依赖它；
+// - runtime:dsh：DSH Adapter（ACP / JSON-RPC / DshProcess / DshRuntimeClient），只有组合根可依赖。
+// 与 provider:api / provider:impl 同构：显式指定 projectDir，避免与 Gradle 自动创建的中间父项目 :runtime 共用目录。
+include(":runtime:api")
+include(":runtime:dsh")
+project(":runtime:api").projectDir = file("runtime/api")
+project(":runtime:dsh").projectDir = file("runtime/dsh")
 include(":app:android")
 include(":app:desktop")
 include(":test:e2e")

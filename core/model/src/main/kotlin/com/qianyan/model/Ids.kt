@@ -203,6 +203,15 @@ value class ActivityId(val value: String)
 @Serializable
 value class ToolCallId(val value: String)
 
+/**
+ * I1 · Runtime Session 绑定记录身份（把 Qianyan AgentSession 关联到一次外部 Runtime Session）。
+ *
+ * 厂商中立：这里只标识"某条绑定记录"，不认识任何具体运行时实现。
+ */
+@JvmInline
+@Serializable
+value class RuntimeSessionRefId(val value: String)
+
 @JvmInline
 @Serializable
 value class RequestId(val value: String)

@@ -7,6 +7,8 @@ import com.qianyan.application.usecase.action.ActionPolicyUseCases
 import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
+import com.qianyan.application.usecase.runtimeintegration.RuntimeIntegrationUseCases
+import com.qianyan.application.usecase.runtimeintegration.RuntimeSessionBindingUseCases
 import com.qianyan.application.usecase.session.AgentSessionUseCases
 import com.qianyan.application.usecase.log.ActivityUseCases
 import com.qianyan.application.usecase.log.ToolCallLogUseCases
@@ -109,6 +111,9 @@ import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.ProjectStateRepository
 import com.qianyan.storage.repository.ReadingProgressRepository
 import com.qianyan.storage.repository.SqliteAgentSessionRepository
+import com.qianyan.storage.repository.RuntimeSessionRefRepository
+import com.qianyan.storage.repository.SqliteRuntimeSessionRefRepository
+import com.qianyan.runtime.contract.AgentRuntimeGateway
 import com.qianyan.storage.repository.SqliteActivityRepository
 import com.qianyan.storage.repository.SqliteToolCallLogRepository
 import com.qianyan.storage.repository.SqliteAuthorCoreRepository
@@ -185,9 +190,18 @@ class ApplicationContainer(
     private val commitHistoryRepository: CommitHistoryRepository,
     /** I13 · 后台任务队列仓储（Task 的**调度条目**；不承载 Task 生命周期）。 */
     val taskQueueRepository: TaskQueueRepository,
+    /** I1 · Runtime Session 绑定仓储（Qianyan 会话 ↔ 外部运行时会话的**旁路引用**；不承载 transcript）。 */
+    private val runtimeSessionRefRepository: RuntimeSessionRefRepository,
     private val analysisGateway: LLMGateway,
     private val analysisModel: ModelProfile = ModelProfile.MOCK,
     private val txtPipeline: TxtPipeline = TxtPipeline(),
+    /**
+     * I1 · 外部 Agent Runtime 契约（null = 本容器未启用外部 Runtime）。
+     *
+     * **只按契约注入**：容器（Application 层）不认识任何 Adapter / 供应商实现；
+     * 具体实现由组合根（app 装配根）构造后传入，与 Provider 的注入方式同构。
+     */
+    private val runtimeGateway: AgentRuntimeGateway? = null,
 ) {
 
     val errorMapper: ErrorMapper = ErrorMapper
@@ -347,6 +361,28 @@ class ApplicationContainer(
     )
 
     /**
+     * I1 · Runtime Session 绑定（Qianyan AgentSession ↔ 外部 Runtime Session，`1 : N`）。
+     *
+     * 只读写**旁路引用**：不改 AgentSession 模型 / 表语义，不承载 Runtime transcript。
+     */
+    val runtimeSessionBindings: RuntimeSessionBindingUseCases
+        get() = RuntimeSessionBindingUseCases(agentSessionRepository, runtimeSessionRefRepository, errorMapper)
+
+    /**
+     * I1 · Runtime Integration（生命周期桥接 seam）。
+     *
+     * 只按契约使用外部 Runtime：装配 / 未装配都不影响既有能力；**有意持有单一实例**
+     * （内部持有载体句柄状态，必须与容器同生命周期）。
+     */
+    val runtimeIntegration: RuntimeIntegrationUseCases = RuntimeIntegrationUseCases(
+        gateway = runtimeGateway,
+        sessions = agentSessions,
+        bindings = runtimeSessionBindings,
+        activities = activities,
+        errorMapper = errorMapper,
+    )
+
+    /**
      * I11 · Novel Agent（Novel IDE 核心**编排**入口；第 11 阶段）。
      *
      * 决定"下一步做什么"，把每一步交给既有能力：I7 SkillRegistry（选择）→ I6 ContextEngine（上下文）→
@@ -372,6 +408,7 @@ class ApplicationContainer(
         rewriter = rewriter,
         planningContexts = planningContextAssembly,
         reader = writerUseCases,
+        runtimeIntegration = runtimeIntegration,
         errorMapper = errorMapper,
     )
 
@@ -681,6 +718,7 @@ class ApplicationContainer(
             driver: SqlDriver,
             analysisGateway: LLMGateway,
             analysisModel: ModelProfile = ModelProfile.MOCK,
+            runtimeGateway: AgentRuntimeGateway? = null,
         ): ApplicationContainer {
             val db = QianyanDb(driver)
             return ApplicationContainer(
@@ -707,8 +745,10 @@ class ApplicationContainer(
                 toolCallLogRepository = SqliteToolCallLogRepository(db),
                 commitHistoryRepository = SqliteCommitHistoryRepository(db),
                 taskQueueRepository = SqliteTaskQueueRepository(db),
+                runtimeSessionRefRepository = SqliteRuntimeSessionRefRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,
+                runtimeGateway = runtimeGateway,
             )
         }
 
@@ -742,12 +782,14 @@ class ApplicationContainer(
             driver: SqlDriver,
             providerAssembler: ProviderAssembler,
             configuration: ProviderConfiguration,
+            runtimeGateway: AgentRuntimeGateway? = null,
         ): ApplicationContainer {
             val gateway = providerAssembler.assemble(configuration)
             return fromDriver(
                 driver,
                 analysisGateway = gateway,
                 analysisModel = configuration.model ?: ModelProfile.MOCK,
+                runtimeGateway = runtimeGateway,
             )
         }
 

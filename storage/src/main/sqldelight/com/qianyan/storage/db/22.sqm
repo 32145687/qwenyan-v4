@@ -1,0 +1,18 @@
+-- I1 · Schema v23（22.sqm：v22 → v23）
+-- additive migration：仅新增 RuntimeSessionRef 表（Qianyan AgentSession ↔ 外部 Runtime Session 绑定记录）。
+-- 不修改任何既有表 / 列 / 语义；无 backfill、无既有数据转换。
+-- 幂等由 DatabaseInitializer 的 !tableExists("RuntimeSessionRef") 分支包裹。
+--
+-- 刻意不包含：usage statistics / session analytics / transcript / cloud sync / recommendation。
+
+CREATE TABLE IF NOT EXISTS RuntimeSessionRef (
+    ref_id             TEXT NOT NULL PRIMARY KEY,
+    agent_session_id   TEXT NOT NULL,
+    runtime_name       TEXT NOT NULL,
+    runtime_session_id TEXT NOT NULL,
+    created_at         INTEGER NOT NULL,
+    FOREIGN KEY (agent_session_id) REFERENCES AgentSession(session_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_runtime_session_ref_agent_session
+    ON RuntimeSessionRef(agent_session_id, created_at DESC);

@@ -1,0 +1,44 @@
+-- I1 · Runtime Session 绑定持久化（Schema v23）
+-- additive migration：仅新增 RuntimeSessionRef 表（Qianyan AgentSession ↔ 外部 Runtime Session 的绑定记录）。
+-- 不修改任何既有表 / 列 / 语义；无 backfill、无既有数据转换。
+--
+-- 职责边界：
+--   RuntimeSessionRef = 绑定记录（哪个 Qianyan 会话用过哪一次 Runtime 会话）
+--   不承载：正文 / World Model / Project State / Workflow·Task 状态 / Runtime transcript / 用量统计
+--
+-- 约束：
+--   · **厂商中立**：runtime_name 是**不透明标识**（取值由 Adapter 提供），DDL 不认识任何具体运行时；
+--   · **1 : N**：agent_session_id 可对应多条记录（Runtime 会话是进程作用域的，可多次重建）；
+--   · **旁路引用**：不修改 AgentSession 表，也不复制其生命周期。
+
+CREATE TABLE RuntimeSessionRef (
+    ref_id             TEXT NOT NULL PRIMARY KEY,
+    agent_session_id   TEXT NOT NULL,
+    runtime_name       TEXT NOT NULL,            -- 不透明运行时标识（非领域概念）
+    runtime_session_id TEXT NOT NULL,            -- 对端 Runtime 会话 id（不透明）
+    created_at         INTEGER NOT NULL,         -- epoch 毫秒
+    FOREIGN KEY (agent_session_id) REFERENCES AgentSession(session_id)
+);
+
+-- 绑定回溯：list / latest 两个查询都按 agent_session_id 过滤并按 created_at 倒序取回。
+CREATE INDEX idx_runtime_session_ref_agent_session ON RuntimeSessionRef(agent_session_id, created_at DESC);
+
+upsertRuntimeSessionRef:
+INSERT OR REPLACE INTO RuntimeSessionRef(ref_id, agent_session_id, runtime_name, runtime_session_id, created_at)
+VALUES (:ref_id, :agent_session_id, :runtime_name, :runtime_session_id, :created_at);
+
+getRuntimeSessionRef:
+SELECT * FROM RuntimeSessionRef WHERE ref_id = :ref_id;
+
+/** 某会话的全部绑定（新到旧：最近使用的 Runtime 会话在前）。 */
+listRuntimeSessionRefsByAgentSession:
+SELECT * FROM RuntimeSessionRef
+WHERE agent_session_id = :agent_session_id
+ORDER BY created_at DESC, ref_id DESC;
+
+/** 某会话最近一次绑定（无则返回空）。 */
+latestRuntimeSessionRefByAgentSession:
+SELECT * FROM RuntimeSessionRef
+WHERE agent_session_id = :agent_session_id
+ORDER BY created_at DESC, ref_id DESC
+LIMIT 1;

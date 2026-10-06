@@ -164,4 +164,14 @@ sealed interface ApplicationError {
 
     /** 需要 credential 的 Provider（DeepSeek / MiMo）缺少 API Key，无法组装/调用。 */
     data class ProviderCredentialMissing(val detail: String) : ApplicationError
+
+    // ---- I1 Runtime Integration 新增：外部 Agent Runtime 失败归一 ----
+    // 类型化错误，绝不靠 String 判断类型；由运行时契约的 typed 失败（RuntimeError）
+    // 在 Application 边界归一为领域错误，供应商细节只留在 Adapter diagnostics。
+
+    /** 外部 Agent Runtime 不可用（未装配 / 无法启动 / 已在关闭状态）。 */
+    data class RuntimeUnavailable(val detail: String) : ApplicationError
+
+    /** 外部 Agent Runtime 执行失败（协议错误 / 对端错误 / 超时 / 流中断）。 */
+    data class RuntimeExecutionFailed(val detail: String) : ApplicationError
 }

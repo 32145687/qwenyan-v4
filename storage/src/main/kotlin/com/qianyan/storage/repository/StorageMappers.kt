@@ -137,6 +137,8 @@ import com.qianyan.model.log.AgentLogStatus
 import com.qianyan.model.log.ToolCallLog as DomainToolCallLog
 import com.qianyan.storage.db.Activity as DbActivity
 import com.qianyan.storage.db.ToolCallLog as DbToolCallLog
+import com.qianyan.model.runtime.RuntimeSessionRef as DomainRuntimeSessionRef
+import com.qianyan.storage.db.RuntimeSessionRef as DbRuntimeSessionRef
 import com.qianyan.storage.db.Chapter as DbChapter
 import com.qianyan.storage.db.Checkpoint as DbCheckpoint
 import com.qianyan.storage.db.ChapterDraft as DbChapterDraft
@@ -1306,6 +1308,24 @@ internal object StorageMappers {
         inputSummary = row.input_summary,
         outputSummary = row.output_summary,
         error = row.error,
+    )
+
+    /* ---- I1 · RuntimeSessionRef（Qianyan 会话 ↔ 外部 Runtime 会话绑定；厂商中立，只存不透明标识） ---- */
+
+    fun domainRuntimeSessionRef(r: DomainRuntimeSessionRef): DbRuntimeSessionRef = DbRuntimeSessionRef(
+        ref_id = r.refId.value,
+        agent_session_id = r.agentSessionId.value,
+        runtime_name = r.runtimeName,
+        runtime_session_id = r.runtimeSessionId,
+        created_at = r.createdAt.toEpochMillis(),
+    )
+
+    fun dbRuntimeSessionRef(row: DbRuntimeSessionRef): DomainRuntimeSessionRef = DomainRuntimeSessionRef(
+        refId = com.qianyan.model.RuntimeSessionRefId(row.ref_id),
+        agentSessionId = com.qianyan.model.AgentSessionId(row.agent_session_id),
+        runtimeName = row.runtime_name,
+        runtimeSessionId = row.runtime_session_id,
+        createdAt = epochMillisToInstant(row.created_at),
     )
 
     /* ---- I10 · CommitHistory（Canonical Commit / Revert 的不可变审计记录；只含引用与最小恢复快照） ---- */

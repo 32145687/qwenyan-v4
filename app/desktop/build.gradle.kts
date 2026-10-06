@@ -26,6 +26,9 @@ kotlin {
                 implementation(project(":application"))
                 implementation(project(":provider:api"))
                 implementation(project(":provider:impl"))
+                // I1 · 组合根注入外部 Agent Runtime：app 只见 Adapter（契约经 :application 传递可见）。
+                implementation(project(":runtime:api"))
+                implementation(project(":runtime:dsh"))
                 // Compose Desktop
                 implementation(compose.desktop.currentOs)
                 implementation(compose.material3)

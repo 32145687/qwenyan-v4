@@ -13,6 +13,8 @@ import com.qianyan.application.usecase.context.ContextEngineUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.log.ActivityUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
+import com.qianyan.application.usecase.runtimeintegration.RuntimeIntegrationUseCases
+import com.qianyan.runtime.contract.RuntimeSession
 import com.qianyan.application.usecase.session.AgentSessionUseCases
 import com.qianyan.application.usecase.tool.ProductToolNames
 import com.qianyan.application.usecase.tool.ProductToolService
@@ -123,6 +125,14 @@ class NovelAgent(
     private val rewriter: RevisionAgent,
     private val planningContexts: PlanningContextAssembly,
     private val reader: WriterUseCases,
+    /**
+     * I1 · Runtime 集成 seam（可为 null = 未装配外部 Runtime）。
+     *
+     * **只听契约，不认识任何 Adapter / 供应商**；且默认不介入任何相位 ——
+     * 只有 [NovelAgentRequest.runtimeBacked] 显式 opt-in 时才建立一次运行时会话绑定，
+     * 从而保证既有七相位、Change Layer 与 Canonical 写入路径**完全不变**。
+     */
+    private val runtimeIntegration: RuntimeIntegrationUseCases? = null,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -166,10 +176,13 @@ class NovelAgent(
         var session: AgentSession? = null
         var selectedSkill: Skill? = null
         var builtPack: ContextPack? = null
+        var runtimeSession: RuntimeSession? = null
         try {
             val project = requireProject(request)
             session = resolveSession(request, project)
             val sessionId = session.sessionId
+            // I1 · Runtime seam（默认关闭）：opt-in 时只建立会话绑定，不介入任何相位
+            runtimeSession = openRuntimeSessionIfRequested(request, sessionId)
 
             step(sessionId, OrchestrationPhase.INTENT, NovelAgentErrorCodes.EXECUTION_FAILED, state, "识别用户意图") { intent }
 
@@ -292,7 +305,29 @@ class NovelAgent(
                 summary = "运行失败：${mapped.error}",
                 failure = NovelAgentFailure(NovelAgentErrorCodes.EXECUTION_FAILED, mapped.error.toString()),
             )
+        } finally {
+            // I1 · Runtime seam：无论成败都收敛本次运行时会话（未 opt-in 时为 null，行为不变）
+            closeRuntimeSession(runtimeSession, session?.sessionId)
         }
+    }
+
+    /**
+     * I1 · Runtime seam：仅当请求显式 [NovelAgentRequest.runtimeBacked] 且已装配 Runtime 时，
+     * 为该会话建立一次外部运行时会话绑定。
+     *
+     * **失败不阻断编排**：外部 Runtime 不可用只意味着"本次没有运行时绑定"，不影响既有七相位
+     * （I1 只是 seam，不把外部运行时变成 NovelAgent 的硬依赖）。
+     */
+    private fun openRuntimeSessionIfRequested(request: NovelAgentRequest, sessionId: AgentSessionId): RuntimeSession? {
+        if (!request.runtimeBacked) return null
+        val runtime = runtimeIntegration ?: return null
+        return runCatching { runtime.createRuntimeSession(sessionId) }.getOrNull()
+    }
+
+    /** I1 · Runtime seam：收敛绑定会话（best-effort，不抛异常；不泄漏对端会话）。 */
+    private fun closeRuntimeSession(runtimeSession: RuntimeSession?, sessionId: AgentSessionId?) {
+        if (runtimeSession == null || sessionId == null) return
+        runCatching { runtimeIntegration?.closeSession(sessionId) }
     }
 
     /**
