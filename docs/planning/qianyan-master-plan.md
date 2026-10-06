@@ -11,6 +11,11 @@
 > - 三版中重复的内容（写作示例、冲突处理、MVP/Future、一致性检查、决策状态）已合并去重。
 > - 不推翻任何既有决策；V3.1 Agent Architecture 视为冻结，V4.1 只增加写作智能层。
 >
+> 🧭 **产品定位（2026-10-06 纠偏 · 现行）**：Qianyan = **一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**
+> —— 自然语言 / Agent 是**统一任务入口**，小说内容是**核心对象**并按任务**动态打开**；
+> **不是** IDE、**不是** ChatGPT + 小说数据库、**不是**传统小说后台、**不是** Agent Runtime 控制台、**也不是** DeepSeek Harness 的小说皮肤。
+> `Novel IDE` / `Codex` 今后仅作**内部架构思想与工程类比**，不是产品定义，也不是 UI 设计依据。
+> 本文档下方 2026-09-28 横幅中的「AI Novel IDE」按此理解；PC FIRST 战略不变。
 > 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**。
 > 本文档作为**底层架构与领域模型的设计依据继续有效**（Project / Workspace / Agent / Tool / Context / 规划 / 一致性等章节仍被引用）；
 > 但其**阶段路线（旧 P0–P18 编号）整体状态 = `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`**。
@@ -2037,7 +2042,7 @@ P13 完成后的 **未来工程路线**（P14+，均为 PLANNED / NOT IMPLEMENTE
 P14   Story Intent / Idea Intelligence Layer      PLANNED / NOT IMPLEMENTED（NEXT）
 P15   User Creative Decision Loop                 PLANNED / NOT IMPLEMENTED
 P16~P19  Author Intelligence Foundation/Core/DNA/Decision Model/Writing Intelligence   PLANNED（Author Intelligence）
-P20   Productization（Android 随身小说本 / Reader / 富文本 / Provider Settings UI / Background Execution / Error Recovery UI / Desktop 专业小说创作工作台）  FUTURE / PLANNED
+P20   Productization（Android 随身小说本 / Reader / 富文本 / Provider Settings UI / Background Execution / Error Recovery UI / Desktop 完整小说创作客户端（早期曾称「专业小说创作工作台」，该词不定义界面形态））  FUTURE / PLANNED
 P21   Long-form Auto Creation                     FUTURE / PLANNED
 Later RAG / Vector Memory / Multi-Agent Swarm / MCP / Cloud Backend / 大模型微调    FUTURE / DEFERRED（保持 Local-first）
 ```

@@ -9,6 +9,11 @@
 >
 > 本文档内容保留作为 **V4.1 历史规划档案**，不依据旧编号推导当前状态。
 
+> 🧭 **产品定位（2026-10-06 纠偏 · 现行）**：Qianyan = **一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**
+> —— 自然语言 / Agent 是**统一任务入口**，小说内容是**核心对象**并按任务**动态打开**；
+> **不是** IDE、**不是** ChatGPT + 小说数据库、**不是**传统小说后台、**不是** Agent Runtime 控制台、**也不是** DeepSeek Harness 的小说皮肤。
+> `Novel IDE` / `Codex` 今后仅作**内部架构思想与工程类比**，不是产品定义，也不是 UI 设计依据。
+> 本文档下方 2026-09-28 横幅中的「AI Novel IDE」按此理解；PC FIRST 战略不变。
 > 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**。
 > 本文档中的**阶段路线**整体状态 = `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`（历史记录保留，不删除、不再机械续做）。
 > 已完成的工程基础（P0 Foundation、P19 Decision Model、P20 Freeze/P1/P2/P3/P4/P5-fix、PC-1/PC-2/PC-2.1）继续有效并作为新架构基础。

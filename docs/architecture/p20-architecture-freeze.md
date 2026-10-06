@@ -4,6 +4,10 @@
 > 本文档忠实记录 P20 已经冻结的十条规则，**不引入任何新的架构决策**。
 > 落地位置一栏指向当前仓库中真实存在的代码/迁移；未在代码注释中出现的条目以「冻结于 P20 Freeze」标注。
 >
+> 🧭 **产品定位（2026-10-06 纠偏 · 现行）**：Qianyan = **一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**
+> （自然语言 / Agent 是统一任务入口；小说内容是核心对象，按任务动态打开；**不是** IDE / 聊天软件+数据库 / 小说后台 / Runtime 控制台 / DSH 皮肤）；
+> 「Novel IDE / Codex」仅作**历史口径与内部架构思想**。本条只统一文档表达，**不改变、不解除 FD-1…FD-10 任何一条冻结规则**。
+>
 > 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**，见
 > [qianyan-novel-ide-direction.md](qianyan-novel-ide-direction.md)。**本文档 FD-1…FD-10 全部继续有效**
 > （FD-5 Compose Desktop 与 PC FIRST 一致；FD-9 Storage additive-only、FD-10 Scope 边界在新的设计阶段同样适用；

@@ -1,18 +1,38 @@
 # Qianyan（千言）
 
-**本地优先的长篇创作辅助工具** —— 受控的 Agentic Writing 系统。
+**一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端** —— 本地优先 · 受控创作。
 
-面向长篇网络小说 / 连载作者，把「大纲、世界观、人物、时间线、伏笔、词汇风格」等创作要素结构化沉淀，并借助 AI Agent 完成剧情重构、续写、风格统一等写作任务，同时通过 Human-in-the-loop（HITL）保证作者对创作过程的完全控制。
+作者不需要"找功能页面、点功能按钮"，而是**直接说出想完成什么**：
 
-> 🧭 **产品方向（2026-09-28 起）**：Qianyan 进入新方向 **AI Novel IDE（PC FIRST）** ——
-> 不再只是"让 AI 一次次生成小说"的工具，而是"像 Codex 一样，通过 **Project + Workspace + Agent + Tool + 大上下文**持续开发一部小说"的 AI 创作环境。
+> "继续写第 89 章，接着现在这里写 3000 字。" · "这段太平了，加强冲突但别改后面的剧情。"
+> "沈昭第一次知道苏清身份是什么时候？" · "检查这一章有没有人物行为和前面冲突。"
+
+Agent 负责理解目标、自行判断需要什么、调用 Context / Skill / Tool、读取小说相关信息、执行、检查，
+再把**结果 / 修改 / Proposal** 交给作者确认；作者不需要理解 Agent、Skill、Tool、Workflow、Context、Runtime。
+
+小说本身始终是核心对象：**正文 · 阅读 · 故事 · 人物 · 世界 · 资料 · 修改 / Diff · Proposal · 历史**
+按任务需要**动态打开**，而不是要求用户先进入某个固定页面，也不是把所有内容永远同时摊在屏幕上。
+
+Qianyan **不是**：小说版 VS Code / Cursor / Codex / 编程 IDE · ChatGPT + 小说数据库 ·
+章节/人物/世界/词库/伏笔各做一个页面的**传统小说后台** · **Agent Runtime 控制台** · **DeepSeek Harness 的小说皮肤**。
+
+> 内部实现确实借鉴 `Project / Context / Agent / Tool / Skill / Change / Diff / History / Runtime / Session` 等工程思想，
+> 但它们是**产品内部能力**，**不是用户界面形态，也不是 UI 设计依据**。
+> 界面取向：干净 · 安静 · 低干扰 · 大量留白 · **侧栏可收缩** · 功能按需出现。
+> **具体信息架构（栏位、一级页面、是否三栏）目前尚未确定**，见 direction §1.5。
+
+> 🧭 **产品定位（2026-10-06 纠偏 · 现行）**：Qianyan = **一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**
+> —— **自然语言 / Agent 是统一任务入口**，小说内容是核心对象，界面按任务动态打开。
+> 2026-09-28 曾把产品定义写作「**AI Novel IDE** / 像 Codex 一样，通过 **Project + Workspace + Agent + Tool + 大上下文**持续开发一部小说」——
+> **该表述已废止为产品定义**：`Novel IDE` / `Codex` 今后**只表示内部架构思想与工程类比**，不是用户界面形态，也不是 UI 设计依据。
+> **PC FIRST 战略不变**；上位方向文档的 §1.1 / §1.4 / §1.5 已按新定位改写。
 >
 > | 项 | 状态 |
 > | --- | --- |
 > | PC | **PRIMARY**（`:app:desktop` = Compose Desktop；PC-1 Desktop Foundation · PC-2 Desktop Writer 已交付） |
 > | Android | **PAUSED**（**保留**，非删除；现有 `:app:android` 与全部功能保留，未来重新设计为 Companion） |
 > | 旧 PC 路线（PC-3 Reader … PC-9 E2E） | **PAUSED / SUPERSEDED BY NEW ARCHITECTURE**（历史记录保留，不机械续做） |
-> | Novel IDE 架构（Project / Workspace / Index / Agent / Tool / Context） | **DESIGN PHASE**（**未实现**） |
+> | 内部架构思想（Novel IDE 类比：Project / Workspace / Index / Agent / Tool / Context） | **DESIGN PHASE**（**未实现**；属**内部能力**，不作为界面形态） |
 >
 > 上位方向文档：**[docs/architecture/qianyan-novel-ide-direction.md](docs/architecture/qianyan-novel-ide-direction.md)**
 > （§13 说明新方向如何复用既有工程基础；§14 列出暂停/取代项；§15 为下一设计阶段）。
@@ -120,7 +140,7 @@
 | **P14**   | Story Intent / Idea Intelligence Layer（Genre Taxonomy · Idea Intelligence · Story Direction（Audience / Narrative Profile）· Writing Policy · Story Foundation；路线：`Genre Taxonomy → Idea Analyzer → Story Direction → Long-form Potential → User Decision → Story Foundation`）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 🟡 PLANNED / NEXT（NOT IMPLEMENTED） |
 | **P15**   | User Creative Decision Loop（AI Proposal → User Select / Modify / Reject → User Confirm；AI 提案、用户决策；AI 执行、用户确认；确认后才进入故事事实）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | 🟡 PLANNED（NOT IMPLEMENTED） |
 | **P16**   | Author Intelligence Foundation / Author Core（用户选择/修改/拒绝/采纳 → Author Preference / Author Core / Author DNA / Author Decision Model / Writing Intelligence）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | 🟡 PLANNED（NOT IMPLEMENTED） |
-| **P20**   | Productization（Android 随身小说本：Reader / 富文本 / Provider Settings UI / Background Execution / Error Recovery UI / 词库候选确认；Desktop 专业小说创作工作台）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 🔮 FUTURE / PLANNED |
+| **P20**   | Productization（Android 随身小说本：Reader / 富文本 / Provider Settings UI / Background Execution / Error Recovery UI / 词库候选确认；Desktop 完整小说创作客户端（早期设想曾称「专业小说创作工作台」，该词不定义界面形态））                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | 🔮 FUTURE / PLANNED |
 | **P21**   | Long-form Auto Creation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | 🔮 FUTURE / PLANNED |
 | **LATER** | RAG / Vector Memory / Multi-Agent Swarm / MCP / Cloud Backend / 大模型微调（保持 Local-first）                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | 🔮 FUTURE / DEFERRED |
 
@@ -147,7 +167,7 @@
 | Story State 六类 / NarrativeState / ChapterContextPack / Foreshadow / Reveal | `IMPLEMENTED` | P12.x / P13 LCL（SEALED `f291853`） |
 | Author（Preference / Core / DNA）+ Decision Model | `IMPLEMENTED`（后端） | P16–P19；PC 产品层编排见 direction §13 |
 | **PC FIRST 新方向：Project / Workspace / Project Index / 任务级 Context / Agent 编排升级 / 产品级 Tool** | **`DESIGN PHASE`（未实现）** | [qianyan-novel-ide-direction.md](docs/architecture/qianyan-novel-ide-direction.md) |
-| 旧 PC 路线（PC-3 Reader / PC-4 Story & Plan / PC-5 Knowledge / PC-6 Author / PC-7 Book / PC-8 Provider / PC-9 E2E） | `PAUSED / SUPERSEDED` | 历史记录保留；在新的 Novel IDE 架构下重新规划 |
+| 旧 PC 路线（PC-3 Reader / PC-4 Story & Plan / PC-5 Knowledge / PC-6 Author / PC-7 Book / PC-8 Provider / PC-9 E2E） | `PAUSED / SUPERSEDED` | 历史记录保留；在新的内部架构思想（Novel IDE 类比）下重新规划 |
 | Android 后续产品开发 | `PAUSED`（保留，非删除） | `:app:android` 与既有功能继续保留 |
 | `ui/desktop` 分支（P14 时期 Compose Desktop 原型，`27a8408`） | `PROTOTYPE`（保留参考） | PC-1 已按新架构迁移有效部分；未 merge / rebase / cherry-pick |
 | RAG / Vector / Multi-Agent / MCP / Cloud / 微调 | `DEFERRED`（保持 Local-first） | FD-10 边界不变 |
@@ -612,9 +632,9 @@ TXT 文件 → TxtImporter（编码/BOM）→ TextNormalizer（确定性规范�
 
 ## 文档
 
-- [**产品方向（现行上位）**：Novel IDE / PC FIRST](docs/architecture/qianyan-novel-ide-direction.md)
+- [**产品方向（现行上位）**：AI 小说创作客户端 · PC FIRST（Novel IDE 仅作内部架构思想）](docs/architecture/qianyan-novel-ide-direction.md)
 
-- [**Novel IDE 总架构设计**（含迁移矩阵与重写范围结论）](docs/architecture/qianyan-novel-ide-architecture.md)
+- [**总架构设计**（内部架构思想，非 UI 形态；含迁移矩阵与重写范围结论）](docs/architecture/qianyan-novel-ide-architecture.md)
 
 - [架构冻结：P20 FD-1…FD-10](docs/architecture/p20-architecture-freeze.md)
 

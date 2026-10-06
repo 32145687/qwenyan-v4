@@ -12,10 +12,21 @@
 > **P20-PC2 同步记录**：仅更新状态 —— 「04 正文创作」已由骨架变为**真实接线**
 > （`writerGateway` + `workflowFacade`）；`WriterGateway.rewrite` 无「修改方向」参数（未改契约）。
 >
+> 🧭 **产品定位（2026-10-06 纠偏 · 现行）**：Qianyan = **一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**。
+> **本文件是 PC UI 契约，因此先声明设计依据**：
+> · **统一任务入口 = 自然语言 / Agent**（作者说出目标，Agent 自行决定用哪些 Context / Skill / Tool）；
+> · **核心对象 = 小说本身**（正文 / 阅读 / 故事 / 人物 / 世界 / 资料 / 修改 · Diff / Proposal / 历史），**按任务动态打开**，不要求用户先进入固定页面，也不把所有内容永远同时显示；
+> · **界面取向** = 干净 · 安静 · 低干扰 · 大量留白 · **侧栏可收缩** · 功能按需出现。
+> **不得**以 Novel IDE / Codex / 后台管理页（章节管理·人物管理·世界管理·词库管理·伏笔管理各做一个页面）/
+> Agent 控制台 / Dashboard / 纯聊天页 / DeepSeek Harness 产品结构 作为界面形态依据；
+> `Agent Runtime` / `Tool Registry` / `Skill Registry` / `Session Runtime` / `Sandbox` / `MCP` 属内部实现，**不得成为用户可见入口**。
+> ⚠ **具体信息架构尚未确定**：栏位数量、左右栏内容、一级页面清单、是否需要 Dashboard / Inspector / 固定 Chat 页，本文件**不做拍板**。
+> 下文 2026-09-28 横幅中的「AI Novel IDE」仅作内部架构思想理解；PC FIRST 战略不变。
 > 🧭 **产品方向更新（2026-09-28）**：Qianyan 已进入新方向 **AI Novel IDE（PC FIRST）**。
 > - 本契约中「PC-1 / PC-2 / PC-2.1 已接线」的部分 = `IMPLEMENTED`，**继续有效**（PC 真实可用能力 / UseCase 名称 / UI 硬约束仍以此文件为准）。
 > - 「PC-3 Reader」及此后各 PC 阶段的**路线** = `PAUSED / SUPERSEDED BY NEW ARCHITECTURE`（历史记录保留，不机械续做）。
-> - PC UI 的**形态**将在新架构下重新设计（Project / Workspace / AI Agent 三栏，见 direction §13），**本轮不改 UI**。
+> - PC UI 的**形态**将在新架构下重新设计，设计依据是 [direction §1.5](../architecture/qianyan-novel-ide-direction.md)「面向小说作者的 AI 小说创作客户端」（正文 / 故事 / 人物 / 世界 / 资料 / AI 创作 / 阅读 / 修改 / 历史），**本轮不改 UI**；
+>   架构文档 [§35 Desktop 如何演进](../architecture/qianyan-novel-ide-architecture.md) 曾以「Project / Workspace / AI Agent **三栏**」描述该形态，此表述**已废止为界面依据**，仅保留为内部信息分区的类比。
 > - **Android = PAUSED**（保留，非删除）。现行上位方向以
 >   [qianyan-novel-ide-direction.md](../architecture/qianyan-novel-ide-direction.md) 为准。
 

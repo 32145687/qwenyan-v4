@@ -1,4 +1,11 @@
-# Qianyan Novel IDE — 总架构设计
+# Qianyan — 总架构设计（内部架构思想 · 非用户界面形态）
+
+> **产品定位（2026-10-06 纠偏 · 现行）**：Qianyan = **一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**。
+> 统一任务入口是**自然语言 / Agent**；核心对象是**小说本身**；内容按任务**动态打开**。
+> **不是** IDE、**不是** ChatGPT + 小说数据库、**不是** 传统小说后台、**不是** Agent Runtime 控制台、**也不是** DeepSeek Harness 的小说皮肤。
+> 本文档标题与正文中的 `Novel IDE` / `AI IDE` / `Codex` / `IDE` **一律指内部架构思想与工程类比**，
+> **不是产品定义，也不是 UI 设计依据**。文件名保留 `qianyan-novel-ide-architecture` 仅为历史链接稳定。
+> 任何"界面 / 页面 / 布局"设计依据以 [qianyan-novel-ide-direction.md](qianyan-novel-ide-direction.md) §1.5「小说创作客户端」为准。
 
 > **状态**：`DESIGN COMPLETE / NEEDS REVIEW`（设计完成，待评审）
 > **性质**：DESIGN ONLY —— 本文档**不含任何代码改动**；不修改 P19 / P20 / Storage / Provider / Workflow / Android / Desktop UI
@@ -52,7 +59,13 @@ feature/p14-f @ dbc750f · schema v17 · ./gradlew test 158 suites / 923 tests /
 
 ## 1. 产品架构总览
 
-Qianyan = 面向长篇小说的 **AI IDE**：让 AI 在一个**长期存在的 Project** 中持续理解、规划、创作、检查、修改和维护整部长篇。
+**产品形态**：Qianyan 是**一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**。
+作者**用自然语言说出想完成什么**（继续写 / 修改 / 查询 / 检查 / 规划），Agent 理解目标、自行判断需要什么、调用 Context / Skill / Tool、读取小说相关信息、执行并检查，再把结果 / 修改 / Proposal 交给作者确认。
+核心对象始终是**小说本身**：正文 / 阅读 / 故事 / 人物 / 世界 / 资料 / 修改 · Diff / Proposal / 历史**按任务动态打开**，不要求用户先进入固定页面。
+
+**内部架构思想**：Qianyan 在实现上借鉴 IDE / Codex 的 `Project / Context / Agent / Tool / Change / History` 等工程思想，让 AI 能在一个**长期存在的 Project** 中持续理解、规划、创作、检查、修改和维护整部长篇，以支撑复杂的小说创作工作流。
+
+> 本节下面的分层图描述的是**系统内部结构**，不是界面布局；`Skill Registry` / `Tool Registry` / `Project Index` / `Workspace` / `Context Engine` 等框**不是页面**。
 
 ```text
                               User
@@ -81,7 +94,7 @@ Qianyan = 面向长篇小说的 **AI IDE**：让 AI 在一个**长期存在的 P
                 ▼                                ▼
        ┌──────────────────┐            ┌──────────────────┐
        │ Novel World Model│            │  Project State   │
-       │ （小说世界事实） │            │ （IDE/Agent 运行）│
+       │ （小说世界事实） │            │ （Agent 运行态·内部）│
        └────────┬─────────┘            └────────┬─────────┘
                 └───────────────┬────────────────┘
                                 ▼
@@ -130,7 +143,7 @@ Qianyan = 面向长篇小说的 **AI IDE**：让 AI 在一个**长期存在的 P
 
 ***
 
-## 2. Codex 类 Agent IDE 能力模型（现状对照）
+## 2. 借鉴 Codex / Agent IDE 的**内部能力**模型（现状对照 · 不是界面功能清单）
 
 | #  | 能力                         | 现状                                  | 说明                                                                      |
 | -- | -------------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
@@ -146,6 +159,13 @@ Qianyan = 面向长篇小说的 **AI IDE**：让 AI 在一个**长期存在的 P
 | 10 | Artifact System            | `ABSENT`                            | 生成物目前散落为 Draft/ChapterPlan/Checkpoint/Knowledge → §26                   |
 
 **结论**：10 项中 0 项可直接使用，2 项（Agent Session / Diff）有部分原语，5 项有可复用生死线。这是本轮"真正需要新建设计"的主体。
+
+> **边界说明（2026-10-06）**：上表 10 项是**系统内部机制**，不是要做的页面。
+> 它们对用户必须以**小说语言**呈现，而不是以工程名称呈现：
+> `Diff / Change Review` → 「这次修改」；`Undo / Revert` → 「恢复之前的版本」；
+> `Context Inspector` → 「AI 这次看到了什么」；`Agent Session / Activity` → 「AI 做过什么」；
+> `Artifact System` → 「AI 产出的稿子 / 计划」。
+> **不得**出现 `Agent Runtime` / `Tool Registry` / `Skill Registry` / `Session Runtime` / `Sandbox` / `MCP` 页面或 Runtime Dashboard。
 
 ***
 
@@ -217,7 +237,7 @@ Workspace
 ├── Pending Proposals（待确认变更）
 ├── Validation Findings（检查结论）
 ├── Background Tasks（运行中/排队）
-└── UI 视图状态（三栏：Project / Workspace / Agent）
+└── UI 视图状态（内部态：当前小说要素 / 当前正文 / AI 过程 —— 不是三栏界面定义）
 ```
 
 不变式：
@@ -316,7 +336,7 @@ Project State
 ├── 当前任务进度 / Checkpoint 引用
 ├── 用户确认状态（Human Gate 待决项）
 ├── 最近活动（Activity 摘要）
-└── UI 视图状态（Workspace 三栏）
+└── UI 视图状态（内部视图分区，非界面栏位定义）
 ```
 
 ### 8.1 边界（必须严格区分）
@@ -854,7 +874,7 @@ Novel IDE（目标：Workflow 提供 step 容器与安全边界，Agent 在容�
 | FD-2 Task/Checkpoint 为业务事实、平台调度器仅 Scheduler               | `SEALED` + `REUSE`（**约束后台任务/队列设计**）    | 后台调度不得承载业务状态                                                             |
 | FD-3 Checkpoint Resume 幂等                                 | `SEALED` + `REUSE`（Session Resume 的基础） | 幂等是 Session 恢复前提                                                         |
 | FD-4 DecisionPolicy 单次决定                                  | `SEALED` + `REUSE`                     | 见 §29                                                                    |
-| FD-5 Compose Desktop                                      | `SEALED` + `REUSE`                     | PC FIRST 与之一致；Novel IDE UI 仍为 Compose Desktop                            |
+| FD-5 Compose Desktop                                      | `SEALED` + `REUSE`                     | PC FIRST 与之一致；**小说创作客户端**的技术形态仍为 Compose Desktop                            |
 | FD-6 Vocabulary Confirmation                              | `REUSE`                                | 词法确认流可作"低风险自动/中风险记录"的既有范例                                                |
 | FD-7 Reader 复用既有正文事实                                      | `REUSE`                                | Reader/Artifact 预览共用同一正文来源                                               |
 | FD-8 Error Recovery 分层                                    | `REUSE` + `EXTEND`                     | Session/Queue 的错误恢复必须遵守同分层，不引入全局重试总线                                     |
@@ -946,8 +966,8 @@ RESTRICTION
   Home / Plan（真实）· Write（真实，WriterGateway + workflowFacade）
   Story / Manage / Book / Author（骨架）· Provider Settings（真实）
 
-目标（DESIGNED）
-  三栏 Novel IDE：
+历史设计草图（2026-09 口径 · **已废止为界面依据**，保留作记录）
+  三栏 Novel IDE（当时用来表达三类信息需同时在场，**不是目标界面形态**）：
   ┌──────────┬──────────────────┬──────────────┐
   │ Project  │    Workspace     │   AI Agent   │
   │ 世界/人物 │      正文        │ 当前任务      │
@@ -957,13 +977,30 @@ RESTRICTION
   └──────────┴──────────────────┴──────────────┘
 ```
 
+**现行口径（2026-10-06 定位纠偏）**：界面设计依据是 [direction §1.1 / §1.5](qianyan-novel-ide-direction.md)
+「**一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**」，**不是**这张三栏 IDE 图。
+
+- **统一任务入口 = 自然语言 / Agent**：作者说出目标，而不是"打开某个功能页面 → 找到某个按钮 → 执行某个功能"。
+- **核心对象 = 小说本身**：正文 / 阅读 / 故事 / 人物 / 世界 / 资料 / 修改 · Diff / Proposal / 历史**按任务动态打开**。
+- 仍然有效的信息分区（改用小说语言表达）：
+  **小说要素**（世界 / 人物 / 剧情 / 伏笔 / 时间线 / 章节）· **正文与阅读**（作者真正写作与阅读的地方）·
+  **AI 工作状态**（AI 这次看到什么、做了什么、产出了什么、等待作者确认什么）。
+- **界面取向**：干净 · 安静 · 低干扰 · 大量留白 · **侧栏可收缩**（展开看必要内容，收缩扩大主工作区）· 功能按需出现。
+
+失效的部分：以 `Project` / `Workspace` / `AI Agent` 这类**工程概念**作为用户可见的栏位与入口；
+把小说对象做成**后台管理页**（章节管理 / 人物管理 / 世界管理 / 词库管理 / 伏笔管理各一页）；
+做成**纯聊天窗口 + 几个小说按钮**；或照搬 DeepSeek Harness 的产品结构做成"DSH 小说皮肤"。
+
+⚠ **具体信息架构尚未确定**：栏位数量、左右栏内容、一级页面清单、是否需要 Dashboard / Inspector / 固定 Chat 页，
+均**不在本文档拍板**；须在后续 UI 设计阶段按客户端原则另行设计。**本轮不设计新 UI**。
+
 | 项                                           | 处理                                              |
 | ------------------------------------------- | ----------------------------------------------- |
 | Compose Desktop 技术形态（FD-5）                  | `SEALED` + `REUSE`                              |
 | `DesktopGraph`（装配根）→ `ApplicationContainer` | `REUSE` + `EXTEND`（注入 Session/Queue/Index seam） |
 | UI 约束（不直连 Repository；骨架页不伪造能力）              | `SEALED`（继续有效）                                  |
 | 现有 8 个页面                                    | `EXTEND`（真实页保留能力；骨架页随新架构接入）                     |
-| 三栏 IDE 布局 + Agent 面板 + Diff/Inspector       | `DESIGNED`（**本轮不改 UI**）                         |
+| 三栏 IDE 布局 + Agent 面板 + Diff/Inspector       | `SUPERSEDED 为界面依据`（内部信息分区仍有效；界面按客户端原则，**本轮不改 UI**）    |
 | PC-3…PC-9 旧阶段路线                             | `SUPERSEDED`（在新架构下重新规划）                         |
 
 ***
@@ -973,10 +1010,10 @@ RESTRICTION
 | 理由   | 说明                                                                                                             |
 | ---- | -------------------------------------------------------------------------------------------------------------- |
 | 产品策略 | **PC FIRST**：先用 PC 验证 Project + Workspace + Agent + Tool + Context 的新范式，再定义移动端形态                               |
-| 架构原因 | Agent Session / 三栏 Workspace / Index / Diff Review 属**重交互、重上下文**场景，与 PC 匹配；移动端应做 Companion 精简投影（direction §12） |
+| 架构原因 | AI 会话过程 / 长正文编辑 / 索引定位 / 修改对照 属**重交互、重上下文**场景，与 PC 匹配；移动端应做 Companion 精简投影（direction §12） |
 | 成本原因 | Android 端若先行改造，将在范式未定时重复实现两次                                                                                   |
 | 保留范围 | `:app:android` 全部代码与功能**保留不删**、继续编译、测试保持通过；已交付的 P7 / P12.1.6 / P12.1.7 / P12.5 / P20-P3 / P20-P4 能力继续有效        |
-| 未来   | PC Novel IDE 完成后，Android 以 **Companion**（阅读 / 轻量编辑 / 状态查看 / 简单操作 + 精简 Context Projection）重新设计                  |
+| 未来   | PC 小说创作客户端完成后，Android 以 **Companion**（阅读 / 轻量编辑 / 状态查看 / 简单操作 + 精简 Context Projection）重新设计                  |
 
 ***
 
@@ -993,10 +1030,10 @@ RESTRICTION
 | `:agent:agents`（1 smoke 文件）        | Skills / Capabilities                                        | **占位 → 重新承载（非重写）**               | **实际为空壳**；五 Agent 在 `:application`（审计发现 A1）                                                                                                                         |
 | `:agent:orchestration`（1 smoke 文件） | Agent Lifecycle / Workflow Boundary                          | **占位 → 暂不处理**                    | 空壳；生命周期已由 `:application/workflow` 承担                                                                                                                                |
 | `:application`（165 文件）             | Use Cases / Application Services（唯一能力入口）                     | **REUSE + EXTEND +（局部）REFACTOR** | 17 子包覆盖全部既有能力；`writing` 编排用法需重构；UI 硬约束继续有效                                                                                                                          |
-| `:app:desktop`（23 文件）              | Novel IDE UI                                                 | **EXTEND → REFACTOR（UI 结构）**     | PC-1/PC-2 已把真实能力接上 Compose Desktop；三栏 IDE 属 UI 演进                                                                                                                   |
+| `:app:desktop`（23 文件）              | 小说创作客户端 UI                                              | **EXTEND → REFACTOR（UI 结构）**     | PC-1/PC-2 已把真实能力接上 Compose Desktop；界面演进依据 direction §1.5「客户端」，**不以三栏 IDE 为依据**                                                                                                                   |
 | `:app:android`（42 文件）              | Companion / Mobile Client                                    | **PAUSED**                       | 当前阶段不做；代码保留                                                                                                                                                         |
 | `:runtime`（1 smoke 文件）             | 运行时装配位（可承载 Session/Queue 运行时）                                | **占位 → 备用**                      | 空壳，可直接承载新组件                                                                                                                                                         |
-| `:test:e2e`（1 smoke 文件）            | 端到端验收位                                                       | **占位 → 备用**                      | 空壳；未来承载 Novel IDE E2E                                                                                                                                               |
+| `:test:e2e`（1 smoke 文件）            | 端到端验收位                                                       | **占位 → 备用**                      | 空壳；未来承载 PC 客户端 E2E                                                                                                                                               |
 
 ***
 
@@ -1038,7 +1075,7 @@ P20 FD-1…FD-10 全部
 :application/workflow         "step 内容由谁决定"这一层（机制不改）
 :agent:runtime                同步执行内核 → 支持异步/取消（**保留契约与错误语义**）
 :storage                      跨仓储事务边界（Unit-of-Work，P12.0.1 遗留 TODO）——§21 Commit 原子性前置
-:app:desktop                  UI 结构（页面 → 三栏 IDE；**不在本轮**）
+:app:desktop                  UI 结构（页面组织按「小说创作客户端」原则重设计，依据 direction §1.5；**不在本轮**）
 ```
 
 ### 38.4 未来可能重写（REWRITE，谨慎且定向）
@@ -1205,7 +1242,7 @@ Applied（可 Revert：以 Change 为单位的回退，见 §22）
 | I11 | **Novel Agent 编排 + Agent Plan 分级**     | 单入口 Agent：分类→计划→选择能力→执行→校验→提案                                  | I7–I10      | **高**（自由度最大）             |
 | I12 | **Project Index（结构/实体/事件/伏笔/关系）**      | 索引构建与查询；不含全文/语义                                                | I1, I6      | 中                        |
 | I13 | **Background Task / Queue（受 FD-2 约束）** | 队列 + 调度器（仅 Scheduler）+ 只读检查类后台任务                               | I4, I12     | 中高                       |
-| I14 | **Context Inspector + UI 演进（三栏 IDE）**  | 面板与 Inspector（UI 大改，单独阶段）                                      | I6, I9, I13 | 中高                       |
+| I14 | **「AI 这次看到了什么」+ 界面演进（以客户端为依据）**  | 小说语言呈现的对照与检视界面（UI 大改，单独阶段；**不做工程面板式 IDE 界面**）                                      | I6, I9, I13 | 中高                       |
 | I15 | **E2E 与新阶段收口**                         | 真实长篇场景 E2E + 文档/契约收口                                           | 全部          | 中                        |
 
 > 与旧路线的关系：旧 **PC-3…PC-9** 全部 `SUPERSEDED`；其未交付项（Reader/Story/Plan/Manage/Author/Book/Export/Provider 产品化）在新架构下**按上表现有次序重新落位**，不机械续做。

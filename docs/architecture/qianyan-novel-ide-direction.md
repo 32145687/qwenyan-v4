@@ -1,4 +1,12 @@
-# Qianyan Novel IDE — 产品方向与架构基线（PC FIRST）
+# Qianyan — 产品方向与架构基线（AI 小说创作客户端 · PC FIRST）
+
+> **产品定位（现行唯一）**：Qianyan 是**一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端**。
+> **不是** IDE、**不是** ChatGPT + 小说数据库、**不是** 传统小说后台、**不是** Agent Runtime 控制台、**也不是** DeepSeek Harness 的小说皮肤。
+> 标题与正文中出现的 `Novel IDE` / `Codex` 一律指**历史口径或内部架构思想与工程类比**，**不是**产品定义，**不是**用户界面形态。
+> 文件名保留 `qianyan-novel-ide-direction` 仅为历史链接稳定，不代表产品形态。
+>
+> **尚未确定（禁止擅自拍板）**：具体页面结构、导航结构、左右栏内容、一级页面数量、是否三栏、是否需要 Dashboard / Inspector / 固定 Chat 页。
+> 本文档只确定**产品形态与交互原则**（§1.1 / §1.5），不确定信息架构。
 
 > **状态**：`DESIGN PHASE`（本轮只建立方向与基线，**未实现**任何新架构代码）
 > **生效日期**：2026-09-28
@@ -12,17 +20,37 @@
 
 ## 1. Product Direction（产品方向）
 
-### 1.1 定位变更
+### 1.1 定位（2026-10-06 纠偏 · 现行唯一定义）
+
+> **Qianyan = 一个以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端。**
+
+用户打开 Qianyan 后应当感到：
+
+> **"我只需要告诉它我想做什么，它会帮我处理。"**
+> **"这是一个专门用来创作小说的软件，AI 是里面的创作助手。"**
+
+**它不是（五个都必须避免）**：
+
+| 不是 | 说明 |
+|---|---|
+| 不是 **IDE** | 不把 Explorer / File Tree / Editor / Terminal / Problems / Debug / Build / Run / Source Control / Project Tree 映射成主要 UI；不应看起来像 VS Code / Cursor / Codex |
+| 不是 **ChatGPT + 小说数据库** | 不是"一个聊天框 + 几个小说按钮"；聊天/Agent 是**任务入口**，**小说本身才是核心对象**（见 §1.5） |
+| 不是 **传统小说后台** | 不做「章节管理 / 人物管理 / 世界管理 / 词库管理 / 记忆管理 / 事件管理 / 伏笔管理 / AI 管理」每个对象一个后台页面的结构；这些对象可以存在于内部，但作者不应被迫用后台管理的方式使用它们 |
+| 不是 **Agent Runtime 控制台** | 不出现 Agent / Skill / Tool / Runtime / MCP / Sandbox / Session 的技术控制台与一级页面 |
+| 不是 **DeepSeek Harness 的小说皮肤** | 可以借鉴成熟客户端的**视觉与交互语言**（清爽、留白、侧栏可收缩、功能按需出现），但**不照搬其产品结构** |
+
+**本节是对 2026-09-28 定位的纠偏。** 该日曾写作：
 
 ```text
-以前：Qianyan = “让 AI 一次次生成小说”的工具
-现在：Qianyan = “像 Codex 一样，通过 Project + Workspace + Agent + Tool + 大上下文
-                 持续开发一部小说”的 AI 创作环境
+（旧表述，已废止为产品定义）Qianyan = "像 Codex 一样，通过 Project + Workspace + Agent + Tool + 大上下文
+                                        持续开发一部小说"的 AI 创作环境
+                            产品定位：AI Novel IDE
 ```
 
-**产品定位：AI Novel IDE。**
+`Novel IDE` / `Codex` / `IDE` **只作为历史口径或内部架构思想的类比**（下表与 §1.2、§1.4），
+**不作为最终产品 UI 定义**：它们描述"系统内部怎么组织"，**不描述"用户看到什么"**，因此**不得作为 UI 设计依据**。
 
-对照关系（借用但不照搬软件工程范式）：
+对照关系（**借用的是工程机制，不是界面形态**）：
 
 | 软件工程 | Qianyan |
 |---|---|
@@ -34,7 +62,9 @@
 | LLM 补全 | **LLM**（推理 / 规划 / 创作） |
 | 编译器 / 静态检查 | **Deterministic Engine**（确定性检查） |
 
-### 1.2 核心原则（本方向的第一性表述）
+### 1.2 核心原则（本方向的第一性表述 · **内部架构思想，不是用户界面词汇**）
+
+> 下列 7 条描述系统内部如何组织。作者不需要理解 Project / Workspace / Index / Agent / Tool 这些词就能使用 Qianyan。
 
 > Project 保存长期信息。
 > Workspace 提供创作环境。
@@ -52,6 +82,122 @@
 - **确定性优先**：能由程序确定检查的，不交给 LLM（见 §11）。
 - **凭证边界**：API Key 不进入 SQLite / Domain / Task / Checkpoint / Memory / Story State / Prompt / Log。
 
+### 1.4 产品结构分层（现行口径）
+
+```text
+        Qianyan Client（以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端）
+                              │
+                    作者用自然语言说出想完成什么   ← 统一任务入口
+                              │
+                              ↓
+                        Qianyan Agent
+                   （理解目标 · 自行判断需要什么 · 组织结果）
+                              │
+              ┌───────────────┼───────────────┐
+              ↓               ↓               ↓
+            Context         Skill           Tool
+              │
+              ↓  按任务需要**动态打开**小说内容（不要求用户先进入某个固定页面）
+   ┌──────────┴──────────────────────────────────────────────────┐
+   ↓      ↓      ↓      ↓      ↓          ↓          ↓           ↓
+  正文   阅读   故事   人物   世界       资料    修改/Diff    历史 / Proposal
+   └───────────────── 小说本身 = 产品核心对象 ─────────────────────┘
+                              │
+                              ↓
+                  结果 / 修改 / Proposal → 作者确认 → 小说得到更新
+                              │
+                              ↓
+              Runtime Adapter / Integration Contract
+                              │
+                              ↓
+                Runtime / DSH（候选底层 Agent Runtime）
+```
+
+> 注意这张图的读法：`小说创作 / 小说阅读 / 小说管理` 是**内容分区**，不是"用户必须先打开的页面清单"；
+> `Context / Skill / Tool` 是 **Agent 自己调用的内部能力**，不是用户菜单。
+
+**三句话边界（与既有审计结论一致）**
+
+- **Qianyan 负责小说业务**：小说是什么 + 小说发生了什么改变。
+- **Runtime 负责 AI 执行**：AI 怎么执行任务。
+- **两者只通过 Runtime Adapter / Integration Contract 连接**，不互相直接暴露内部对象。
+
+| 层 | 归属 | 概念清单 |
+|---|---|---|
+| Qianyan 领域层 | **小说业务** | Project · Novel · Chapter · Draft · Story · Character · World · World Model · Knowledge · Vocabulary · Context · Proposal · Diff · Change · Commit · History · Consistency · Novel Skills · Novel Tools |
+| Runtime Adapter / Integration Contract | **连接层** | 会话建立 · 任务下发 · 事件映射 · 权限应答翻译 |
+| Runtime / DSH | **AI 执行基础设施** | Agent Loop · Model Call · Tool Calling · Session · Permission · Sandbox · Skill Runtime · Subagent · MCP · Streaming · Activity/Event · Resume · Cancellation · Runtime State · LLM Provider / Model Runtime |
+
+**DSH / Runtime 是底层执行基础设施，不属于 Qianyan 小说业务层。**
+DSH 不应该知道章节、人物、伏笔、世界规则、Canonical Story、小说 Draft、小说 Commit——除非 Qianyan 通过自己定义好的 Tool / Context / Contract 主动提供给它。
+
+### 1.5 用户体验原则（入口 = 自然语言 / Agent；依据 = 小说创作客户端，**不是** IDE / 后台 / 聊天软件）
+
+**核心交互**：Qianyan 的核心不是"打开某个功能页面 → 找到某个按钮 → 执行某个功能"，
+而是**作者直接说出想完成什么，Agent 自己决定怎么做**。
+
+```text
+作者 → 用自然语言告诉 Qianyan 想完成什么 → Agent 理解目标 → Agent 自己判断需要什么
+    → Context / Skill / Tool → 读取小说相关信息 → 执行任务 → 检查结果
+    → 结果 / 修改 / Proposal / Change → 作者确认
+```
+
+作者**不应该**为了完成任务而被迫理解：`Agent` / `Skill` / `Tool` / `Workflow` / `Context` / `Runtime` —— 这些都是内部实现。
+
+典型任务（作者只需说一句话，不需要打开十几个页面）：
+
+| 类型 | 作者说的话 | Agent 自己处理的事 |
+|---|---|---|
+| 继续写 | "继续写第 89 章，接着现在这里写 3000 字。" | 找到第 89 章 → 读当前正文 → 读相关上下文 / 人物状态 / 故事信息 / 写作要求 → 写作 → 检查 → 给出结果 |
+| 修改 | "这一段太平了，帮我加强冲突，但不要改变后面的剧情。" | 判断当前章节 + 后续剧情 + 相关人物 + 已有事实 → 生成修改 → 显示修改结果 → 作者确认 |
+| 查询 | "沈昭第一次知道苏清身份是什么时候？" | 检索小说内容 → 回答 |
+| 检查 | "检查这一章有没有人物行为和前面冲突。" | 读取相关内容并分析 |
+| 规划 | "我准备让这一卷进入最终冲突，你帮我规划一下。" | 组织当前故事 + 人物状态 + 已有伏笔 + 后续目标 → 剧情规划 |
+
+**但聊天框不是所有 UI 的替代品。** 自然语言 Agent 是**统一任务入口**，小说内容仍是**核心对象**：
+
+```text
+聊天 / Agent → 按任务动态打开需要的内容 → 完成工作
+```
+
+需要正文时进入正文；需要修改时展示修改 / Diff；需要看故事时展示故事；需要资料时展示资料；执行中时展示 Agent 工作状态。
+**不是把所有内容永远同时显示**，也不是"把整个 Qianyan 做成一个 ChatGPT 页面"。
+
+作者应该看到（用小说语言，按需出现）：
+
+> 小说 · 正文 · 阅读 · 故事 · 人物 · 世界 · 资料 · 修改 / Diff · Proposal · 历史 · Agent 工作状态
+
+作者**不应该**看到（这些全部属于内部实现）：
+
+> Agent Runtime · Tool Runtime · Tool Registry · Skill Registry · Session Runtime · Execution Graph · Agent Loop · Sandbox · MCP · Runtime Dashboard · IDE 风格工程面板
+
+**视觉与交互取向**（借鉴成熟桌面客户端的"感觉"，不照搬产品结构）：
+
+- 干净 → 安静 → 低干扰 → 大量留白 → 不杂乱
+- 用户始终知道**当前主要操作是什么**；功能**按需出现**
+- **侧栏支持收缩**：展开看必要内容，收缩后主工作区扩大，让作者专注当前任务
+  （这比在屏幕上永久放置大量导航、数据和功能更重要）
+- 整体像一个成熟的桌面客户端，而不是数据库后台 / IDE / AI 控制台
+
+四种"感觉对了"的判据：
+
+> **干净。** ／ **安静。** ／ **我知道该在哪里告诉 Qianyan 我要做什么。** ／ **它真的能帮我完成小说工作。**
+
+**四类反例（都属于把内部复杂性暴露给作者，不得成为产品体验）**：
+
+```text
+① IDE 式：打开 Qianyan → 进入 Project → 选择 Agent → 选择 Skill → 选择 Tool
+          → 配置 Runtime → 执行 Agent
+② 后台式：小说管理 → 章节管理 / 人物管理 / 世界管理 / 词库管理 / 记忆管理
+          / 事件管理 / 伏笔管理 / AI 管理（每个对象一个独立后台页面）
+③ 纯聊天式：一个聊天窗口 + 几个小说管理按钮（= ChatGPT + 小说数据库）
+④ 皮肤式：照搬 DeepSeek Harness 的产品结构，只把文案换成小说词汇
+```
+
+> 说明：§1.4 表中列在 Qianyan 领域的 `Context` / `Change` / `History` 等既是内部能力也会以**小说语言**呈现给作者
+> （例如"这次修改"「历史记录」）；而 `Agent` / `Tool` / `Skill` / `Runtime` 即使命名于 Qianyan 领域，
+> 也**只作为实现概念存在**，不得升级为界面入口。
+
 ---
 
 ## 2. PC First Strategy（PC 优先）
@@ -59,7 +205,7 @@
 ```text
 PC
  ↓
-完整 Novel IDE
+完整小说创作客户端（内部实现借鉴 Novel IDE 架构思想）
  ↓
 验证新的小说创作范式
  ↓
@@ -405,14 +551,14 @@ Project State + Knowledge + Timeline + Character State + Foreshadowing
 
 ## 13. Existing Architecture Reuse（既有架构复用）
 
-> 表述纪律：**旧架构完成了 Qianyan 的核心工程基础；新的 Novel IDE 是产品层和 Agent/Context/Workspace 层的升级**——不是"之前架构全部错误"。
+> 表述纪律：**旧架构完成了 Qianyan 的核心工程基础；新的内部架构思想（Novel IDE 类比）是 Agent / Context / Workspace 层的升级，而产品层形态始终是「面向小说作者的 AI 小说创作客户端」**——不是"之前架构全部错误"。
 
 ```text
 P0～P20 已有工程基础
         ↓
 PC-1 Desktop Foundation / PC-2 Desktop Writer / PC-2.1 writer 收口
         ↓
-新的 Novel IDE Architecture（本文档）
+新的内部架构思想（Novel IDE 类比 · 本文档）
         ↓
 重新规划 PC 后续阶段
 ```
@@ -461,7 +607,7 @@ PC-8 Provider/Background  PAUSED / SUPERSEDED BY NEW ARCHITECTURE
 PC-9 E2E               PAUSED / SUPERSEDED BY NEW ARCHITECTURE
 ```
 
-> 这些阶段的**历史记录与既有设计不删除**；其未交付项将在新的 Novel IDE 架构下**重新规划**（不机械续做）。
+> 这些阶段的**历史记录与既有设计不删除**；其未交付项将在新的内部架构思想（Novel IDE 类比）下**重新规划**（不机械续做）。
 > 注：PC-1 / PC-2 / PC-2.1 = `IMPLEMENTED`，且作为新架构的 PC 基础**继续有效**。
 
 ### 14.2 其他状态
@@ -469,7 +615,7 @@ PC-9 E2E               PAUSED / SUPERSEDED BY NEW ARCHITECTURE
 | 项 | 状态 |
 |---|---|
 | `:app:android` 及全部既有 Android 功能 | `PAUSED`（**保留**，非删除、非取消） |
-| Android 后续阶段 | `PAUSED`（待 PC Novel IDE 完成后重新设计 Companion） |
+| Android 后续阶段 | `PAUSED`（待 PC 小说创作客户端完成后重新设计 Companion） |
 | `ui/desktop` 分支 | `PROTOTYPE`（保留参考，不删除、不再作为主线） |
 | P20 其余 Productization 项（富文本 / 全文搜索 / 后台调度 / Error Recovery UX / 凭证加密 / 章节重排批量） | `PAUSED`（FD-10 边界不变） |
 | RAG / Vector Memory / Multi-Agent / MCP / Cloud / 微调 | `DEFERRED`（保持 Local-first） |
@@ -488,7 +634,11 @@ D4  Task-level Context Projection（检索 → Context Builder 的确定性契�
 D5  Agent 任务编排（任务分类 → 能力选择 → 检查 → 写回；保留 DecisionPolicy / HITL 约束）
 D6  Product 级 Tool 清单与权限（read/search/edit/check/analyze）
 D7  Consistency Engine（跨要素确定性检查清单与优先级）
-D8  PC Novel IDE UI 结构（Project / Workspace / AI Agent 三栏）
+D8  PC 客户端 UI 结构（**入口 = 自然语言 / Agent**；内容 = 正文 / 阅读 / 故事 / 人物 / 世界 / 资料 /
+    修改 · Diff / Proposal / 历史，**按任务动态打开**）
+    —— 设计依据是 §1.5，**不是** IDE 三栏、**不是**后台管理页、**不是**纯聊天页；
+       Project / Workspace / Agent / Tool / Runtime 不得作为用户可见的主结构或入口。
+    ⚠ **本阶段只定原则，不定信息架构**：栏位数量、左右内容、一级页面清单均**尚未拍板**。
 ```
 
 ### 15.1 下一阶段的硬约束（不可违反）
@@ -499,6 +649,9 @@ D8  PC Novel IDE UI 结构（Project / Workspace / AI Agent 三栏）
 - 不新建第二套业务逻辑；UI 不得直连 Repository / SQLDelight / WorkflowOrchestrator。
 - DecisionPolicy 仍为**单次决定**（FD-4）；HITL 不可绕过；Original 只读与写保护触发器不变。
 - 五 Agent / 既有 Pipeline 保留，转化为能力，不删除。
+- **UI 设计依据只能是「以 Agent 为核心交互方式、面向小说作者的 AI 小说创作客户端」（§1.1 / §1.5）**；不得以 Novel IDE / Codex / 后台管理 / Agent 控制台 / Dashboard / 纯聊天页作为界面形态依据。
+- **不得替产品拍板信息架构**：栏位数量、左右栏内容、一级页面清单、是否需要 Dashboard / Inspector / 固定 Chat 页，目前**全部未确定**；任何原型只用于验证"客户端感觉对不对"，不为展示功能而堆内容。
+- **Qianyan 小说业务层与 Runtime 执行层不得混写**：`Agent Loop / Model Call / Tool Calling / Session / Permission / Sandbox / Skill Runtime / Subagent / MCP / Streaming / Resume / Cancellation / Runtime State` 属 Runtime / DSH 职责；Qianyan 侧只保留小说业务概念，两侧通过 Runtime Adapter / Integration Contract 连接。
 
 ### 15.2 本轮（文档同步轮）明确不做
 
@@ -510,8 +663,8 @@ D8  PC Novel IDE UI 结构（Project / Workspace / AI Agent 三栏）
 
 | 文档 | 作用 | 状态 |
 |---|---|---|
-| **本文档** `docs/architecture/qianyan-novel-ide-direction.md` | 产品方向与架构基线（上位方向文档） | `DESIGN PHASE` |
-| `docs/architecture/qianyan-novel-ide-architecture.md` | **Novel IDE 总架构设计**（Project / Workspace / Index / Context / Agent / Skill / Tool / Session / Working Draft / Validation / Diff / Canonical / Commit / History + 迁移矩阵 + 重写范围结论） | `DESIGN COMPLETE / NEEDS REVIEW` |
+| **本文档** `docs/architecture/qianyan-novel-ide-direction.md` | 产品方向与架构基线（上位方向文档）。产品形态 = **面向小说作者的 AI 小说创作客户端** | `DESIGN PHASE`（2026-10-06 定位纠偏） |
+| `docs/architecture/qianyan-novel-ide-architecture.md` | **总架构设计（内部架构思想，不是 UI 形态）**（Project / Workspace / Index / Context / Agent / Skill / Tool / Session / Working Draft / Validation / Diff / Canonical / Commit / History + 迁移矩阵 + 重写范围结论） | `DESIGN COMPLETE / NEEDS REVIEW` |
 | `docs/architecture/p20-architecture-freeze.md` | FD-1…FD-10 冻结规则 | `FROZEN`（继续有效） |
 | `docs/planning/qianyan-pc-ui-contract.md` | PC UI ↔ 后端能力契约（真实接线状态） | 现行（PC-3 起阶段已 `PAUSED`） |
 | `docs/planning/qianyan-master-plan.md` | 总体架构设计（历史规划） | 参考（见文首状态横幅） |
