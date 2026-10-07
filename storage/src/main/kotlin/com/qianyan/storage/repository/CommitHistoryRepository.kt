@@ -1,5 +1,6 @@
 package com.qianyan.storage.repository
 
+import com.qianyan.model.DraftId
 import com.qianyan.model.ProjectId
 import com.qianyan.model.change.ChangeArtifactId
 import com.qianyan.model.commit.CommitHistoryEntry
@@ -25,6 +26,12 @@ interface CommitHistoryRepository {
 
     /** 按来源 Artifact 读取（重复 Commit 检测）；无返回 null。 */
     fun getByArtifact(artifactId: ChangeArtifactId): CommitHistoryEntry?
+
+    /**
+     * 按"提交产物 Draft"读取（P1-01 只读扩展）：判定一条 Draft 是否为 Commit 产生的 Canonical 载体。
+     * 同一 Draft 在版本链上至多成为一次提交的产物 ⇒ 至多一条；无返回 null。
+     */
+    fun getByResultingDraftId(draftId: DraftId): CommitHistoryEntry?
 
     /** 某 Project 的全部历史（**插入序** = 真实发生时序；确定性，依赖 rowid 而非时间戳精度）。 */
     fun listByProject(projectId: ProjectId): List<CommitHistoryEntry>

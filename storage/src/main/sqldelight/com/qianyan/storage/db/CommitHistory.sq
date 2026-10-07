@@ -51,6 +51,10 @@ SELECT * FROM CommitHistory WHERE history_id = :history_id;
 getCommitHistoryByArtifactId:
 SELECT * FROM CommitHistory WHERE artifact_id = :artifact_id LIMIT 1;
 
+-- P1-01：按"提交产物 Draft"反查历史（判定一条 Draft 是否为 Commit 产生的 Canonical 载体）。
+getCommitHistoryByResultingDraftId:
+SELECT * FROM CommitHistory WHERE resulting_draft_id = :resulting_draft_id LIMIT 1;
+
 -- Project 内历史（**插入序** = 真实发生时序；不依赖时间戳精度，避免同毫秒平局）。
 listCommitHistoryByProject:
 SELECT * FROM CommitHistory WHERE project_id = :project_id ORDER BY rowid ASC;

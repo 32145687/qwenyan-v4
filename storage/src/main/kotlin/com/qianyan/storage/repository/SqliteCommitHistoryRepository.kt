@@ -1,5 +1,6 @@
 package com.qianyan.storage.repository
 
+import com.qianyan.model.DraftId
 import com.qianyan.model.ProjectId
 import com.qianyan.model.change.ChangeArtifactId
 import com.qianyan.model.commit.CommitHistoryEntry
@@ -38,6 +39,10 @@ class SqliteCommitHistoryRepository(
 
     override fun getByArtifact(artifactId: ChangeArtifactId): CommitHistoryEntry? =
         db.commitHistoryQueries.getCommitHistoryByArtifactId(artifactId.value).executeAsOneOrNull()
+            ?.let { StorageMappers.dbCommitHistory(it) }
+
+    override fun getByResultingDraftId(draftId: DraftId): CommitHistoryEntry? =
+        db.commitHistoryQueries.getCommitHistoryByResultingDraftId(draftId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbCommitHistory(it) }
 
     override fun listByProject(projectId: ProjectId): List<CommitHistoryEntry> =
