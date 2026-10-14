@@ -80,9 +80,12 @@ class WorkflowContinuationE2ETest {
         return ch.chapterId to wfId
     }
 
+    /** 章节所属 Novel（供 WorkingDraft 的 Project 归属解析）。 */
+    private fun novelIdOf(app: ApplicationContainer, chapterId: com.qianyan.model.ChapterId): NovelId =
+        app.chapterRepository.findById(chapterId)!!.novelId
+
     /** 用 Orchestrator 真实跑完 Chapter：Planning→Writing→Critique→Finalize→Confirmation→Approve→KU→COMPLETED。 */
-    private fun completeChapter(app: ApplicationContainer, wfId: WorkflowId) {
-        val r1 = app.workflowOrchestrator.runForward(wfId)
+    private fun completeChapter(app: ApplicationContainer, wfId: WorkflowId) {        val r1 = app.workflowOrchestrator.runForward(wfId)
         assertEquals(WorkflowStatus.WAITING_HUMAN, r1.status)
         val wf = app.workflowRepository.getWorkflow(wfId)!!
         val gate = app.workflowRepository.getGate(wf.pendingGateId!!)!!
@@ -131,9 +134,11 @@ class WorkflowContinuationE2ETest {
         assertEquals(com.qianyan.model.workflow.WorkflowStepStatus.COMPLETED, planStep.status)
         // P20-P5-fix：durable plan seam 升级为 PLANJSON2:<PlanningSnapshot>（携带 DecisionPolicy 快照）；旧 PLANJSON: 仅读取兼容。
         assertTrue(planStep.resultReference!!.startsWith("PLANJSON2:"))
-        // Ch2 Writing 真实执行 → Draft 绑定 Ch2
-        val ch2Draft = app.draftRepository.latestByChapter(ch2)!!
-        assertEquals(ch2, ch2Draft.chapterId)
+        // Ch2 Writing 真实执行 → 工作产物绑定 Ch2（P1-02c+d：AI 产出落 WorkingDraft，不写章节 Draft 表）
+        assertEquals(0, app.draftRepository.listByChapter(ch2).size, "AI 产出不得直写章节 Draft 表")
+        val ch2Working = app.workingDrafts.list(app.projects.projectOf(novelIdOf(app, ch2)).projectId)
+            .single { it.target.chapterId == ch2 && !it.status.isTerminal }
+        assertEquals(ch2, ch2Working.target.chapterId)
         // E6：Ch2 Planning 输入来自 durable continuation 且读回 Ch1 KU 事实
         val p2 = plannerInputs.last()
         assertTrue(p2.contains("【续篇来源】"), "Ch2 planner 输入应携带续篇来源（durable continuation 驱动）")

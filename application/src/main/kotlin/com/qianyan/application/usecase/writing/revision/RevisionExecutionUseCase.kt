@@ -64,6 +64,40 @@ class RevisionExecutionUseCase(
         return revised
     }
 
+    /**
+     * **P1-02c+d · AI 写作链的修订入口**：对 **WorkingDraft 正文**执行一次 Revision，返回修订后的正文。
+     *
+     * 与 [execute] 的差异：**不产生 / 不持久化章节 Draft**（AI 工作产物属 WorkingDraft）；本体不做持久化，
+     * 调用方（WorkflowOrchestrator）用返回值替换工作区正文。Gate（[RevisionGate] ≤3）与错误映射完全复用。
+     *
+     * @param workingDraftId 工作产物引用（WorkingDraftId），仅用于 Checkpoint 与输入渲染，**不当 DraftId 用**。
+     */
+    fun reviseWorking(
+        taskId: TaskId,
+        workingDraftId: String,
+        content: String,
+        critique: ValidationResult,
+        novelId: com.qianyan.model.NovelId,
+    ): String {
+        val task = taskManager.findById(taskId)
+        if (task.type != TaskType.WRITING) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行修订"),
+            )
+        }
+        // Gate：达上限 → RevisionNotAllowed，绝不进入修订/调用 LLM。
+        RevisionGate.requireAllowed(task)
+
+        val revisedContent = rewriter.reviseContent(workingDraftId, content, critique, novelId)
+        // 复用 WRITING 阶段快照的类型化工作引用（不含正文）；saveCheckpoint 自动 revisionCount+1（上限 3 兜底）。
+        taskManager.saveCheckpoint(
+            taskId,
+            REVISION_STAGE,
+            WritingSnapshot.encodeWorkingReference(workingDraftId),
+        )
+        return revisedContent
+    }
+
     /** P12.0.1 P4：Draft lineage scope 防御——修订稿必须与当前稿同 Novel/Variant/Chapter；否则跨实体污染 → 类型化拒绝。 */
     private fun ensureSameScope(current: Draft, revised: Draft) {
         val mismatches = buildList {

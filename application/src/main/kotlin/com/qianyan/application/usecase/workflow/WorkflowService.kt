@@ -38,8 +38,12 @@ class WorkflowService(
     private val taskManager: TaskManagerUseCases,
     private val confirmation: ConfirmationExecutionUseCase,
     private val knowledgeUpdate: KnowledgeUpdateExecutionUseCase,
+    private val workingDrafts: com.qianyan.application.usecase.draft.WorkingDraftUseCases,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
+
+    /** P1-02c+d：AI 工作产物引用前缀（单一来源：WritingSnapshot）。 */
+    private val WORKING_REF_PREFIX = com.qianyan.application.usecase.writing.WritingSnapshot.WORKING_REF_PREFIX
 
     /**
      * 单事务完成一个 Step 并固化结果引用（§8 Result Binding）。
@@ -123,7 +127,12 @@ class WorkflowService(
     }
 
     private fun approvePending(gate: WorkflowHumanGate): GateOutcome {
-        val wf = requireWorkflow(gate.workflowId)
+        // P1-01：独立 Human Gate（workflowId=null）没有 pendingGateId 可比对，本入口只处理 Workflow 绑定 Gate。
+        val gateWorkflowId = gate.workflowId
+            ?: throw ApplicationException(
+                ApplicationError.InvalidOperation("Gate ${gate.gateId.value} 是独立 Human Gate（未绑定 Workflow），不能经 Workflow 审批路径批准"),
+            )
+        val wf = requireWorkflow(gateWorkflowId)
         if (wf.pendingGateId != gate.gateId) {
             throw ApplicationException(ApplicationError.InvalidOperation("Gate ${gate.gateId.value} 不是 Workflow ${wf.workflowId.value} 的 pendingGate"))
         }
@@ -199,10 +208,34 @@ class WorkflowService(
         return resolved
     }
 
-    /** resultReference 必须能对应到真实持久化业务结果（本阶段按 DraftId 解读）。 */
+    /**
+     * `resultReference` 必须能对应到真实业务结果，否则不能标记完成（RECOVERY_ERROR）。
+     *
+     * P1-02c+d：**按类型解析** —— `WORKING:<workingDraftId>`（AI 工作产物）按 `WorkingDraft` 解析；
+     * 工作区是进程内存储，引用失效（如进程重启）时以明确的**不可恢复**结果结束（不回退到最新 Draft、
+     * 不重新构造内容不确定的工作产物）。其余引用保持既有 DraftId 语义不变。
+     */
     private fun validateResultReference(ref: String) {
+        if (ref.startsWith(WORKING_REF_PREFIX)) {
+            val id = com.qianyan.model.workingdraft.WorkingDraftId(ref.removePrefix(WORKING_REF_PREFIX))
+            val exists = try {
+                workingDrafts.get(id)
+                true
+            } catch (e: ApplicationException) {
+                false
+            }
+            if (!exists) {
+                throw ApplicationException(
+                    ApplicationError.InvalidOperation(
+                        "resultReference=$ref 指向的 AI 工作产物已不存在（工作区为进程内存储、不支持跨重启恢复），" +
+                            "不能标记完成（RECOVERY_ERROR）",
+                    ),
+                )
+            }
+            return
+        }
         val draftId = ref.removePrefix("PLAN:").removePrefix("KU:").removePrefix("CONT:")
-        // 按 DraftId 解读（WRITING 结果为 DraftId）；若读取失败 → 不能假设完成。
+        // 按 DraftId 解读（遗留 WRITING 结果为 DraftId）；若读取失败 → 不能假设完成。
         val d = draftRepository.getById(DraftId(draftId))
         if (d == null) {
             // 不允许"仅 resultReference 存在但结果消失"被当作完成。
@@ -245,4 +278,14 @@ data class ResumeOutcome(
 sealed interface GateOutcome {
     data object Approved : GateOutcome
     data object AlreadyApproved : GateOutcome
+}
+
+/**
+ * 失效轮次的显式作废结果（P1-02j A1）。
+ *
+ * 作废**不终止** Workflow：在同一 Workflow 上关闭失效轮次并开启新一轮（[round] = 新一轮编号）。
+ */
+sealed interface AbandonRoundOutcome {
+    /** 已作废失效轮次并在同一 Workflow 上开启新一轮。 */
+    data class Abandoned(val workflowId: WorkflowId, val round: Int) : AbandonRoundOutcome
 }

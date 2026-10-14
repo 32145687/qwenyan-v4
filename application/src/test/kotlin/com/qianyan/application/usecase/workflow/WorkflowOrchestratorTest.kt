@@ -165,9 +165,14 @@ class WorkflowOrchestratorTest {
             assertEquals(WorkflowAttemptStatus.COMPLETED, attempts[1].status)
             assertEquals(WorkflowStepStatus.COMPLETED, app.workflowRepository.getStep(step.stepId)!!.status)
             assertNotNull(step.resultReference)
-            assertEquals(1, app.draftRepository.latestByChapter(ch.chapterId)?.let { listOf(it) }?.size ?: 0)
-            // 不重复：只有一个 Draft
-            assertEquals(1, app.draftRepository.listByChapter(ch.chapterId).size)
+            // P1-02c+d：AI 产出不再直写章节 Draft 表（批准前 Draft 行 = 0）；「不重复」= 工作产物恰一份。
+            assertEquals(0, app.draftRepository.listByChapter(ch.chapterId).size, "AI 产出不得直接写入章节 Draft 表")
+            assertEquals(
+                1,
+                app.workingDrafts.list(app.projects.projectOf(novelId).projectId)
+                    .count { it.target.chapterId == ch.chapterId && !it.status.isTerminal },
+                "工作产物不重复",
+            )
 
             // 重启恢复：Attempt 历史保留；Step 保持 COMPLETED；Writer 不再被调用。
             closeAll(handles)
@@ -177,7 +182,12 @@ class WorkflowOrchestratorTest {
             val stepAfter = app.workflowRepository.listSteps(wfId).first { it.phase == WorkflowStepPhase.WRITING }
             assertEquals(2, app.workflowRepository.listAttempts(stepAfter.stepId).size)
             assertEquals(WorkflowStepStatus.COMPLETED, app.workflowRepository.getStep(stepAfter.stepId)!!.status)
-            assertEquals(1, app.draftRepository.listByChapter(ch.chapterId).size)
+            // 重启后内存工作区不可恢复 → resultReference 仍为类型化工作引用；恢复不得伪造 Draft。
+            assertEquals(
+                0,
+                app.draftRepository.listByChapter(ch.chapterId).size,
+                "恢复不得伪造 / 重建章节 Draft（工作产物属进程内工作区）",
+            )
             assertEquals(0, writerCalls) // 恢复不重调 Writer
         } finally {
             closeAll(handles)

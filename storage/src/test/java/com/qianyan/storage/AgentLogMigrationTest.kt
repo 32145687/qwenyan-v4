@@ -74,13 +74,19 @@ class AgentLogMigrationTest {
         // 2) 退化为 v19 形态
         first.driver.execute(null, "DROP TABLE ToolCallLog", 0)
         first.driver.execute(null, "DROP TABLE Activity", 0)
+        // v19 早于 v20（CommitHistory 引入）⇒ 真 v19 库无此表；移除以使 23.sqm(P1-02j) 的加列迁移可重放
+        first.driver.execute(null, "DROP TABLE CommitHistory", 0)
+        // P1-02j.2：降级到 v24 之前必须真实摘除 round_no（24.sqm 的 ADD COLUMN 不幂等）
+        first.driver.execute(null, "ALTER TABLE WorkflowStep DROP COLUMN round_no", 0)
+        // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
+        first.driver.dropWorldModelV27Columns()
         first.driver.execute(null, "PRAGMA user_version = 19", 0)
         first.driver.close()
 
         // 3) 经同一入口重开 → 自动迁移 v19 → 最新版本
         val second = QianyanDbFactory.open(url)
-        assertEquals(22L, QianyanDb.Schema.version, "新增 19.sqm~21.sqm 后 schema 版本应为 22")
-        assertEquals(22L, userVersion(second.driver), "旧 v19 库应自动迁移到最新版本")
+        assertEquals(27L, QianyanDb.Schema.version, "新增 19.sqm~24.sqm 后 schema 版本应为 27")
+        assertEquals(27L, userVersion(second.driver), "旧 v19 库应自动迁移到最新版本")
         assertTrue(tableExists(second.driver, "Activity"), "迁移后应有 Activity 表")
         assertTrue(tableExists(second.driver, "ToolCallLog"), "迁移后应有 ToolCallLog 表")
 
@@ -98,7 +104,7 @@ class AgentLogMigrationTest {
         // 4) 重复初始化幂等
         DatabaseInitializer.initializeDatabase(second.driver)
         DatabaseInitializer.initializeDatabase(second.driver)
-        assertEquals(22L, userVersion(second.driver))
+        assertEquals(27L, userVersion(second.driver))
         assertEquals("迁移书 I4", SqliteNovelRepository(second.db).getNovel(novelId)?.title)
         second.driver.close()
     }

@@ -501,7 +501,7 @@ class NovelAgent(
     ): SkillOutcome = when (skill.skillId) {
         CoreSkills.WRITING.skillId -> generateNewContent(skill, request, project, intent, activityId, state)
         CoreSkills.REWRITE_REVISION.skillId -> reviseExistingContent(skill, request, activityId, state)
-        CoreSkills.STORY_PLANNING.skillId -> planChapter(request, project, intent)
+        CoreSkills.STORY_PLANNING.skillId -> planChapter(request, project, intent, activityId)
         CoreSkills.ANALYSIS_CRITIQUE.skillId -> analyzeChapter(skill, request, activityId, state)
         else -> throw RunAbort(
             NovelAgentErrorCodes.SKILL_NOT_EXECUTABLE,
@@ -523,7 +523,7 @@ class NovelAgent(
         val baseDraftId = latestCanonicalDraftId(skill, request, chapter.chapterId, activityId, state)
         val context = planningContexts.assemble(writingRequest(request, project, chapter, intent))
         // 既有 Planner → 既有 Writer（复用其 Prompt / Parser 语义）；plan.chapterId 绑定到焦点章节（纯数据，不落库、不建章）
-        val plan = planner.plan(context, emptyList()).copy(
+        val plan = planner.plan(context, emptyList(), activityId).copy(
             chapterId = chapter.chapterId,
             novelId = chapter.novelId,
             variantId = chapter.variantId,
@@ -550,11 +550,17 @@ class NovelAgent(
         return SkillOutcome.Draft(content = revised.content, baseDraftId = baseDraftId, chapterId = chapter.chapterId)
     }
 
-    /** 规划（PLAN）：既有 Planner 产出 ChapterPlan；**不创建章节、不落库**（I11 不直接改 Canonical）。 */
-    private fun planChapter(request: NovelAgentRequest, project: Project, intent: NovelIntentAnalysis): SkillOutcome {
+    /** 规划（PLAN）：既有 Planner 产出 ChapterPlan；**不创建章节、不落库**（I11 不直接改 Canonical）。
+     *  activityId 供 Planner 的只读工具调用走既有调度链（权限 + 审计 + 作用域）。 */
+    private fun planChapter(
+        request: NovelAgentRequest,
+        project: Project,
+        intent: NovelIntentAnalysis,
+        activityId: ActivityId,
+    ): SkillOutcome {
         val chapter = requireFocusChapter(request)
         val context = planningContexts.assemble(writingRequest(request, project, chapter, intent))
-        val plan = planner.plan(context)
+        val plan = planner.plan(context, emptyList(), activityId)
         return SkillOutcome.Plan(chapterId = chapter.chapterId, chapterPlanId = plan.chapterPlanId)
     }
 

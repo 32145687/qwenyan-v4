@@ -43,6 +43,7 @@ class ChapterWritingViewModelTest {
         override fun resume(chapterId: ChapterId): ChapterWorkflowProgress { calls += "resume"; return current }
         override fun getChapterProgress(chapterId: ChapterId): ChapterWorkflowProgress { calls += "progress"; return current }
         override fun approve(chapterId: ChapterId): ChapterWorkflowProgress { calls += "approve"; return current }
+        override fun abandonRound(chapterId: ChapterId): ChapterWorkflowProgress { calls += "abandon"; return current }
         override fun continueToNextChapter(chapterId: ChapterId): ChapterWorkflowProgress { calls += "continue"; return nextTarget }
     }
 

@@ -4,13 +4,18 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
+import com.qianyan.application.usecase.draft.WorkingDraftUseCases
+import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.model.TaskId
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.task.Checkpoint
 import com.qianyan.model.task.TaskType
+import com.qianyan.model.workingdraft.WorkingDraft
+import com.qianyan.model.workingdraft.WorkingDraftTarget
 import com.qianyan.model.writing.Draft
 import com.qianyan.storage.repository.DraftRepository
 
@@ -39,15 +44,97 @@ class WritingExecutionUseCase(
     private val contextAssembly: PlanningContextAssembly,
     private val writer: WriterAgent,
     private val draftRepository: DraftRepository,
+    private val workingDrafts: WorkingDraftUseCases,
+    private val projects: ProjectUseCases,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
     /**
-     * 执行一个 WRITING Task 到 COMPLETED / FAILED，并返回产出 [Draft]。
-     * Task 类型非 WRITING → [ApplicationError.InvalidOperation]；不存在 → TaskNotFound。
+     * **P1-02c+d · AI 写作链的生产入口**：AI 产出写入 **WorkingDraft**（I8 工作区），**不写章节 Draft 表**。
      *
-     * P20-P5（FD-4）：[decisionPolicies] 必须是 **Planning 阶段同一份** [com.qianyan.model.decision.DecisionPolicy]
-     * （由 Application orchestration 传入）。**Writer 绝不重新 decide**；null → 按空政策处理（不决定）。
+     * ```
+     * writer.write（内存产出）
+     *   → WorkingDraftUseCases.create（独立 WorkingDraftId；base = 章节当前 Draft，只读取得 → Diff 基线）
+     *   → WRITING Checkpoint（类型化工作引用：workingDraftId，**不是** draftId）
+     * ```
+     * 目标类型与 Project 归属全部来自既有 [ChapterPlan]（novel / chapter / variant）与既有 ProjectUseCases；
+     * 不新建模型、不伪造 DraftId、不改 Canonical。后续 CRITIQUE / FINALIZE / CONFIRMATION / COMMIT
+     * 都以本 WorkingDraft 为工作产物（见 [com.qianyan.application.usecase.workflow.WorkflowOrchestrator]）。
+     *
+     * @throws ApplicationError.EntityNotFound Project / Chapter / 基线 Draft 不存在或越界。
+     */
+    fun executeIntoWorkingDraft(
+        taskId: TaskId,
+        request: UserWritingRequest,
+        plan: ChapterPlan,
+        decisionPolicies: List<DecisionPolicy> = emptyList(),
+    ): WorkingDraft {
+        val task = taskManager.findById(taskId)
+        if (task.type != TaskType.WRITING) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行写作"),
+            )
+        }
+        requirePlanMatchesRequest(request, plan)
+        // P1-02c+d：AI 工作产物必须落到具体章节（WorkingDraft.target.chapterId 非空）；未绑定 → 类型化拒绝（不伪造）。
+        val chapterId = plan.chapterId
+            ?: throw ApplicationException(
+                ApplicationError.InvalidOperation(
+                    "ChapterPlan ${plan.chapterPlanId.value} 未绑定 Chapter，无法建立 AI 工作产物（WorkingDraft）",
+                ),
+            )
+
+        taskManager.start(taskId)
+        try {
+            // 工作产物归属需要 Project 运行态（WorkingDraftUseCases.create 按 ProjectId 校验 Project）；
+            // openProject 幂等（已存在则不写），与 I1「IDE 打开项目」语义一致。
+            val project = guard { projects.openProject(plan.novelId) }
+            val context = contextAssembly.assemble(request)
+            // writer 产出仍是内存 Draft 值（正文来源），**不落 DraftRepository**（P1-02c+d）。
+            val produced = writer.write(context, plan, decisionPolicies)
+            val baseDraftId = guard { draftRepository.latestByChapter(chapterId) }?.draftId
+            val working = guard {
+                workingDrafts.create(
+                    projectId = project.projectId,
+                    target = WorkingDraftTarget(plan.novelId, chapterId, plan.variantId),
+                    content = produced.content,
+                    baseDraftId = baseDraftId,
+                )
+            }
+            taskManager.saveCheckpoint(
+                taskId,
+                WritingSnapshot.STAGE,
+                WritingSnapshot.encodeWorking(working, decisionPolicies),
+            )
+            taskManager.complete(taskId)
+            return working
+        } catch (e: ApplicationException) {
+            taskManager.fail(taskId, describe(e.error))
+            throw e
+        } catch (t: Throwable) {
+            val mapped = errorMapper.map(t)
+            taskManager.fail(taskId, describe(mapped.error))
+            throw mapped
+        }
+    }
+
+    /**
+     * P1-02c+d：从 WRITING Checkpoint 恢复 AI 工作产物（**只认类型化工作引用**；无该键 → null）。
+     * 工作区是进程内存储：引用已失效（如进程重启）→ 调用方必须按"引用失效"处理，不得当作恢复成功。
+     */
+    fun workingDraftFrom(checkpoint: Checkpoint): WorkingDraft? {
+        val id = WritingSnapshot.decodeWorkingReference(checkpoint.snapshot) ?: return null
+        return try {
+            workingDrafts.get(id)
+        } catch (e: ApplicationException) {
+            null
+        }
+    }
+
+    /**
+     * **遗留入口（非生产可达）**：仅 [com.qianyan.application.usecase.task.TaskRunner] 与
+     * 孤立会话 [com.qianyan.application.usecase.chapter.ChapterWritingSession] 使用；AI 写作生产链
+     * **不再**经此入口（改用 [executeIntoWorkingDraft]）。保留其既有 Draft 行为与测试，属后续清理项。
      */
     fun execute(
         taskId: TaskId,

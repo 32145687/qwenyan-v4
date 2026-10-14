@@ -96,6 +96,12 @@ class ReadingProgressMigrationTest {
         // GUARD_DDL 的 variant_base_must_be_original 触发器引用 NovelVariant，骨架必须包含该表
         "CREATE TABLE NovelVariant (variant_id TEXT NOT NULL PRIMARY KEY, base_novel_id TEXT)",
         "CREATE TABLE Workflow (workflow_id TEXT NOT NULL PRIMARY KEY)",
+        // P1-02j.2：24.sqm 对 WorkflowStep 加列，fixture 需含 v24 前的 WorkflowStep（无 round_no）
+        "CREATE TABLE WorkflowStep (step_id TEXT NOT NULL PRIMARY KEY, workflow_id TEXT NOT NULL, logical_step_key TEXT NOT NULL)",
+
+        // P1-02h：v23 迁移（22.sqm）重建 WorkflowHumanGate（骨架表，仅需存在）。
+
+        "CREATE TABLE WorkflowHumanGate (gate_id TEXT NOT NULL PRIMARY KEY, workflow_id TEXT NOT NULL, step_id TEXT, draft_id TEXT, gate_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL, decision TEXT NOT NULL, created_at INTEGER NOT NULL, resolved_at INTEGER, resolved_by TEXT)",
         "CREATE TABLE NarrativeState (narrative_state_id TEXT NOT NULL PRIMARY KEY)",
         "CREATE TABLE Reveal (reveal_id TEXT NOT NULL PRIMARY KEY)",
         "CREATE TABLE StoryFoundation (novel_id TEXT NOT NULL PRIMARY KEY)",
@@ -104,6 +110,10 @@ class ReadingProgressMigrationTest {
         "CREATE TABLE AuthorCoreEvidenceLink (link_id TEXT NOT NULL PRIMARY KEY, provenance_novel_id TEXT)",
         "CREATE TABLE AuthorObservation (observation_id TEXT NOT NULL PRIMARY KEY)",
         "CREATE TABLE AuthorDnaVersion (dna_id TEXT NOT NULL PRIMARY KEY)",
+        // P2 v27 前置（v3.1 §11.9）：v5 起真实存在的 Story State 三表（26.sqm 会对其加列；旧形态 = 无新增 17 列）
+        "CREATE TABLE Character (character_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, personality TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        "CREATE TABLE CharacterState (state_id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, timeline_position TEXT, snapshot_type TEXT NOT NULL, physical TEXT NOT NULL DEFAULT '{}', emotional TEXT NOT NULL DEFAULT '{}', current_goal TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        "CREATE TABLE Event (event_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 5, when_json TEXT, who TEXT NOT NULL DEFAULT '[]', chapter_id TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
     )
 
     private fun JdbcSqliteDriver.exec(sql: String) = execute(null, sql, 0)
@@ -122,6 +132,8 @@ class ReadingProgressMigrationTest {
             "INSERT INTO ChapterDraft(draft_id, novel_id, variant_id, scope, chapter_id, chapter_plan_id, previous_draft_id, content, format, status, source_model, created_at, updated_at) " +
                 "VALUES ('rp-d1', 'rp-novel', NULL, 'ORIGINAL', 'rp-ch1', NULL, NULL, '旧正文', NULL, 'WRITTEN', 'mock-v1', 1000, 1000)",
         )
+        // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
+        driver.dropWorldModelV27Columns()
         driver.exec("PRAGMA user_version = 16")
     }
 
@@ -159,7 +171,7 @@ class ReadingProgressMigrationTest {
             val driver = h.driver as JdbcSqliteDriver
             try {
                 assertTrue(tableExists(driver, "ReadingProgress"), "migration 后应存在 ReadingProgress 表")
-                assertEquals(22L, userVersion(driver), "migration 后 user_version 应为 22")
+                assertEquals(27L, userVersion(driver), "migration 后 user_version 应为 27")
 
                 // 3) 旧数据原样保留（经既有 Repository 读回）
                 val novels = SqliteNovelRepository(h.db)
@@ -190,7 +202,7 @@ class ReadingProgressMigrationTest {
                 // 5) 重复初始化幂等安全
                 DatabaseInitializer.initializeDatabase(driver)
                 DatabaseInitializer.initializeDatabase(driver)
-                assertEquals(22L, userVersion(driver))
+                assertEquals(27L, userVersion(driver))
                 assertTrue(tableExists(driver, "ReadingProgress"))
             } finally {
                 driver.getConnection().close()
@@ -205,7 +217,7 @@ class ReadingProgressMigrationTest {
         val h = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY)
         val driver = h.driver as JdbcSqliteDriver
         assertTrue(tableExists(driver, "ReadingProgress"), "全新库应直接建出 ReadingProgress 表")
-        assertEquals(22L, userVersion(driver), "全新库 user_version 应为 22")
+        assertEquals(27L, userVersion(driver), "全新库 user_version 应为 27")
         driver.getConnection().close()
     }
 }

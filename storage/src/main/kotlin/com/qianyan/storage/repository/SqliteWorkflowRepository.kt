@@ -59,7 +59,8 @@ class SqliteWorkflowRepository(
         step_id = s.stepId.value, workflow_id = s.workflowId.value, chapter_id = s.chapterId.value,
         phase = s.phase.name, logical_step_key = s.logicalStepKey, status = s.status.name,
         current_attempt_no = s.currentAttemptNo?.toLong(), current_task_id = s.currentTaskId,
-        result_reference = s.resultReference, created_at = s.createdAt.toEpochMilliseconds(),
+        result_reference = s.resultReference, round_no = s.roundNo?.toLong(),
+        created_at = s.createdAt.toEpochMilliseconds(),
         completed_at = s.completedAt?.toEpochMilliseconds(),
     )
 
@@ -97,7 +98,7 @@ class SqliteWorkflowRepository(
     )
 
     override fun createGate(g: WorkflowHumanGate) = db.workflowQueries.insertGate(
-        gate_id = g.gateId.value, workflow_id = g.workflowId.value, step_id = g.stepId?.value,
+        gate_id = g.gateId.value, workflow_id = g.workflowId?.value, step_id = g.stepId?.value,
         draft_id = g.draftId?.value, gate_key = g.gateKey, status = g.status.name,
         decision = g.decision.name, created_at = g.createdAt.toEpochMilliseconds(),
         resolved_at = g.resolvedAt?.toEpochMilliseconds(), resolved_by = g.resolvedBy,
@@ -162,6 +163,7 @@ class SqliteWorkflowRepository(
         currentAttemptNo = r.current_attempt_no?.toInt(),
         currentTaskId = r.current_task_id,
         resultReference = r.result_reference,
+        roundNo = r.round_no?.toInt(),
         createdAt = Instant.fromEpochMilliseconds(r.created_at),
         completedAt = r.completed_at?.let { Instant.fromEpochMilliseconds(it) },
     )
@@ -180,7 +182,7 @@ class SqliteWorkflowRepository(
 
     private fun dbGate(r: com.qianyan.storage.db.WorkflowHumanGate) = WorkflowHumanGate(
         gateId = WorkflowHumanGateId(r.gate_id),
-        workflowId = WorkflowId(r.workflow_id),
+        workflowId = r.workflow_id?.let { WorkflowId(it) },
         stepId = r.step_id?.let { WorkflowStepId(it) },
         draftId = r.draft_id?.let { DraftId(it) },
         gateKey = r.gate_key,

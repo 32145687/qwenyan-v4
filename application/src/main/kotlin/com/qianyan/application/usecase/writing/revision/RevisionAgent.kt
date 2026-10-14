@@ -57,13 +57,62 @@ class RevisionAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(REVISION_AGENT, renderInput(currentDraft, critique))
+            val result = runtime.run(REVISION_AGENT, renderInput(currentDraft.draftId.value, currentDraft.content, critique))
             val raw = result.answer
                 ?: throw RevisionException.InvalidOutput("revision returned no answer")
             val parsed = parseRevisionDraft(raw, structure)
             // DraftParser 固定产出 WRITTEN；修订产物显式标记 REVISED，draftId 已是新 id（原 Draft 保留）；
             // P1-1：previousDraftId = 当前 Draft，建立 A→B→C 版本链（不新增第二套 revision counter）。
             parsed.copy(status = DraftStatus.REVISED, previousDraftId = currentDraft.draftId)
+        } catch (e: ApplicationException) {
+            throw e
+        } catch (e: RevisionException) {
+            throw errorMapper.map(e)
+        } catch (e: ProviderException) {
+            throw when (e) {
+                is ProviderException.InvalidResponse,
+                is ProviderException.MalformedOutput,
+                -> ApplicationException(ApplicationError.InvalidRevisionOutput(e.message ?: "revision output malformed"))
+                else -> errorMapper.map(e)
+            }
+        } catch (e: AgentException) {
+            throw ApplicationException(ApplicationError.RevisionFailed(e.message ?: "agent runtime failed"))
+        } catch (e: ToolException) {
+            throw ApplicationException(ApplicationError.RevisionFailed(e.message ?: "tool failed"))
+        }
+    }
+
+    /**
+     * **P1-02c+d**：对 **AI 工作产物正文**（WorkingDraft 内容，无章节 Draft 行）执行一次 Revision，
+     * 返回修订后的**正文**（不产生 Draft 行、不占用 DraftId）。
+     *
+     * 与 [revise] 使用同一 Agent / Parser / 输入模板与同一错误映射：解析所需的 `DraftStructure` 仅是
+     * **进程内解析脚手架**（id 随机生成后立即丢弃，不落库、不作为任何对象身份）；返回值只取正文。
+     *
+     * @param workingRef 工作产物引用（WorkingDraftId），仅用于渲染输入首行的「原草稿」标识。
+     * @param novelId 目标 Novel（来自既有 Workflow / Plan，用于解析脚手架的合法作用域；不落库）。
+     */
+    fun reviseContent(
+        workingRef: String,
+        content: String,
+        critique: ValidationResult,
+        novelId: com.qianyan.model.NovelId,
+    ): String {
+        val scaffold = DraftStructure(
+            draftId = java.util.UUID.randomUUID().toString(),
+            novelId = novelId,
+            variantId = null,
+            scope = com.qianyan.model.VariantScope.ORIGINAL,
+            chapterId = null,
+            planId = null,
+            sourceModel = model.id,
+            now = Clock.System.now(),
+        )
+        return try {
+            val result = runtime.run(REVISION_AGENT, renderInput(workingRef, content, critique))
+            val raw = result.answer
+                ?: throw RevisionException.InvalidOutput("revision returned no answer")
+            parseRevisionDraft(raw, scaffold).content
         } catch (e: ApplicationException) {
             throw e
         } catch (e: RevisionException) {
@@ -91,10 +140,10 @@ class RevisionAgent(
         }
 
     /** 构造供 Revision LLM 使用的输入文本（原正文 + 评审意见 + 修订指令）。 */
-    private fun renderInput(currentDraft: Draft, critique: ValidationResult): String = buildString {
-        appendLine("【原草稿】${currentDraft.draftId.value}")
-        if (currentDraft.content.isNotBlank()) {
-            appendLine(currentDraft.content.take(REVISION_INPUT_CONTENT_LIMIT))
+    private fun renderInput(sourceRef: String, content: String, critique: ValidationResult): String = buildString {
+        appendLine("【原草稿】$sourceRef")
+        if (content.isNotBlank()) {
+            appendLine(content.take(REVISION_INPUT_CONTENT_LIMIT))
         } else {
             appendLine("（空正文）")
         }

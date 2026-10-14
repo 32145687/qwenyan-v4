@@ -1,5 +1,6 @@
 package com.qianyan.app.android.ui.novel
 
+import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.txt.TxtUseCases
@@ -290,5 +291,40 @@ class NovelListViewModelTest {
         assertIs<TxtImportUiState.Error>(import)
         assertEquals("无法读取所选文件", import.message)
         Dispatchers.resetMain()
+    }
+
+    /* U2：导入失败与"已导入但初始化未完成"的文案可区分（类型化 cause，不经 String 判断）。 */
+
+    @Test
+    fun `init incomplete message names the import fact cause and retry path`() {
+        val msg = novelImportErrorMessage(
+            ApplicationError.TxtCanonicalInitIncomplete(
+                TxtDocumentId("doc-1"),
+                ApplicationError.ChapterSourceConflict("Novel n 已有 1 个不属于目标集合的章节"),
+            ),
+        )
+        assertTrue(msg.contains("TXT 已导入"), "必须先说明 TXT 已导入：$msg")
+        assertTrue(msg.contains("章节初始化未完成"), msg)
+        assertTrue(msg.contains("其他来源的章节"), "F2 冲突必须显示具体原因：$msg")
+        assertTrue(msg.contains("重新导入同一文件"), "必须给出重试路径：$msg")
+    }
+
+    @Test
+    fun `init incomplete with storage cause stays distinguishable`() {
+        val msg = novelImportErrorMessage(
+            ApplicationError.TxtCanonicalInitIncomplete(
+                TxtDocumentId("doc-1"),
+                ApplicationError.UnknownStorage(RuntimeException("boom")),
+            ),
+        )
+        assertTrue(msg.contains("TXT 已导入"), msg)
+        assertTrue(msg.contains("存储错误"), msg)
+    }
+
+    @Test
+    fun `plain import failure does not claim the file was imported`() {
+        val msg = novelImportErrorMessage(ApplicationError.EmptyDocument("文件内容为空"))
+        assertFalse(msg.contains("TXT 已导入"), "导入失败不得声称已导入：$msg")
+        assertEquals("文件内容为空，没有可导入的内容", msg)
     }
 }

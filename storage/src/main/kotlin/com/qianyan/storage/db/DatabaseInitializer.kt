@@ -90,6 +90,21 @@ object DatabaseInitializer {
     /** v21（I10：CommitHistory）→ v22（I13：TaskQueueItem 后台任务调度条目）迁移起点。 */
     private const val V21 = 21L
 
+    /** v22（I13：TaskQueueItem）→ v23（P1-01：WorkflowHumanGate.workflow_id 放宽为可空）迁移起点。 */
+    private const val V22 = 22L
+
+    /** v23（P1-01）→ v24（P1-02j：CommitHistory 加可空 gate_id 列 + 反查索引）迁移起点。 */
+    private const val V23 = 23L
+
+    /** v24（P1-02j）→ v25（P1-02j.2：WorkflowStep 加可空 round_no 列）迁移起点。 */
+    private const val V24 = 24L
+
+    /** v25（P1-02j.2）→ v26（Phase 1：CommitHistory 加可空 previous_format / resulting_format 列）迁移起点。 */
+    private const val V25 = 25L
+
+    /** v26（Phase 1）→ v27（Phase 2：World Model 字段补全，Character 3 + CharacterState 7 + Event 7 列）迁移起点。 */
+    private const val V26 = 26L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -265,6 +280,48 @@ object DatabaseInitializer {
                 QianyanDb.Schema.migrate(driver, V21, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
+
+            columnIsNotNull(driver, "WorkflowHumanGate", "workflow_id") -> withTransaction(driver) {
+                // v22 → v23：WorkflowHumanGate.workflow_id 放宽为可空（P1-01：NULL = 独立 Human Gate /
+                // Writer"保存即批准"；非空既有 Gate 语义与外键不变；见 22.sqm）。列已可空则跳过（幂等）。
+                QianyanDb.Schema.migrate(driver, V22, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !columnExists(driver, "CommitHistory", "gate_id") -> withTransaction(driver) {
+                // v23 → v24：CommitHistory 加可空 gate_id 列 + 反查索引（P1-02j B1：Gate ↔ Commit 持久关联；
+                // 历史旧行 gate_id = NULL，不回填；见 23.sqm）。列已存在则跳过（幂等）。
+                QianyanDb.Schema.migrate(driver, V23, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !columnExists(driver, "WorkflowStep", "round_no") -> withTransaction(driver) {
+                // v24 → v25：WorkflowStep 加可空 round_no 列（P1-02j.2：轮次编号，轮次级修订预算；
+                // 历史旧行 round_no = NULL，按首轮 0 解释、不回填；见 24.sqm）。列已存在则跳过（幂等）。
+                QianyanDb.Schema.migrate(driver, V24, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !columnExists(driver, "CommitHistory", "previous_format") ||
+                !columnExists(driver, "CommitHistory", "resulting_format") -> withTransaction(driver) {
+                // v25 → v26：CommitHistory 加可空 previous_format / resulting_format 列（Phase 1 revert 格式契约；
+                // 值域 'markdown:controlled:v1' / 'legacy' / 'none' / NULL=未知，不对旧行猜测性回填；
+                // 仅做可证明回填：resulting 侧载体行存在 ⇒ 读行 format；previous 侧仅 previous_draft_id 非空且行存在 ⇒
+                // 读行 format；首个 COMMIT ⇒ 'none'；同 row 旧行保持 NULL（未知）；见 25.sqm）。列已存在则跳过（幂等）。
+                QianyanDb.Schema.migrate(driver, V25, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !columnExists(driver, "Character", "goals") ||
+                !columnExists(driver, "CharacterState", "source") ||
+                !columnExists(driver, "Event", "fact_level") -> withTransaction(driver) {
+                // v26 → v27：World Model 字段补全（Phase 2，v3.1 §11.9）：Character +3（goals/fears/description）、
+                // CharacterState +7（location/current_motivation/relationships/known_facts/unknown_facts/abilities/source）、
+                // Event +7（what/where_json/cause/consequence/participants/evidence/fact_level）。
+                // 全部 additive；新列 DEFAULT 与领域默认值一致，旧行无需回填（字段此前从未持久化）；见 26.sqm。
+                QianyanDb.Schema.migrate(driver, V26, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
         }
         GUARD_DDL.forEach { driver.execute(null, it, 0) }
     }
@@ -290,6 +347,18 @@ object DatabaseInitializer {
         driver.executeQuery(
             null,
             "SELECT 1 FROM pragma_table_info('$table') WHERE name='$column' LIMIT 1",
+            { cursor -> QueryResult.Value(cursor.next().value) },
+            0,
+        ).value
+
+    /**
+     * 判断某表某列是否仍为 `NOT NULL`（用于"约束放宽为可空"迁移分支判定，如 WorkflowHumanGate.workflow_id）。
+     * 表或列不存在时返回 false（此类库由更早的建表分支处理）。
+     */
+    private fun columnIsNotNull(driver: SqlDriver, table: String, column: String): Boolean =
+        driver.executeQuery(
+            null,
+            "SELECT 1 FROM pragma_table_info('$table') WHERE name='$column' AND \"notnull\" = 1 LIMIT 1",
             { cursor -> QueryResult.Value(cursor.next().value) },
             0,
         ).value

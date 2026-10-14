@@ -13,6 +13,9 @@ CREATE TABLE Character (
     scope         TEXT NOT NULL,             -- VariantScope 枚举名
     name          TEXT NOT NULL,
     personality   TEXT NOT NULL DEFAULT '[]',-- JSON List<String>
+    goals         TEXT NOT NULL DEFAULT '[]',-- v27：JSON List<String>（此前丢弃）
+    fears         TEXT NOT NULL DEFAULT '[]',-- v27：JSON List<String>
+    description   TEXT NOT NULL DEFAULT '',  -- v27：String（默认空串）
     created_at    INTEGER NOT NULL,          -- epoch 毫秒
     updated_at    INTEGER NOT NULL,
     FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
@@ -30,6 +33,13 @@ CREATE TABLE CharacterState (
     physical           TEXT NOT NULL DEFAULT '{}', -- PhysicalState(label/details) JSON
     emotional          TEXT NOT NULL DEFAULT '{}', -- EmotionalState(label/intensity) JSON
     current_goal       TEXT,
+    location           TEXT,                  -- v27：LocationId?（NULL=未定位）
+    current_motivation TEXT,                  -- v27：String?（NULL=无）
+    relationships      TEXT NOT NULL DEFAULT '[]', -- v27：JSON List<RelationshipSnapshot>
+    known_facts        TEXT NOT NULL DEFAULT '[]', -- v27：JSON List<KnowledgeId>
+    unknown_facts      TEXT NOT NULL DEFAULT '[]', -- v27：JSON List<KnowledgeId>
+    abilities          TEXT NOT NULL DEFAULT '[]', -- v27：JSON List<AbilitySnapshot>
+    source             TEXT NOT NULL DEFAULT 'INFERRED', -- v27：StateSource 枚举名
     created_at         INTEGER NOT NULL,
     FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
 );
@@ -56,6 +66,13 @@ CREATE TABLE Event (
     importance  INTEGER NOT NULL DEFAULT 5,
     when_json   TEXT,                        -- TimelinePosition JSON 或 NULL
     who         TEXT NOT NULL DEFAULT '[]',  -- JSON List<CharacterId>
+    what        TEXT NOT NULL DEFAULT '',    -- v27：String（默认空串）
+    where_json  TEXT NOT NULL DEFAULT '[]',  -- v27：JSON List<LocationId>（领域 where；SQL 保留字 → _json）
+    cause       TEXT NOT NULL DEFAULT '[]',  -- v27：JSON List<EventId>
+    consequence TEXT NOT NULL DEFAULT '[]',  -- v27：JSON List<EventId>
+    participants TEXT NOT NULL DEFAULT '[]', -- v27：JSON List<EventParticipant>
+    evidence    TEXT NOT NULL DEFAULT '[]',  -- v27：JSON List<Evidence>
+    fact_level  TEXT NOT NULL DEFAULT 'EXPLICIT', -- v27：FactLevel 枚举名
     chapter_id  TEXT,
     status      TEXT NOT NULL,               -- EventStatus 枚举名
     created_at  INTEGER NOT NULL,            -- epoch 毫秒
@@ -111,8 +128,8 @@ CREATE INDEX IF NOT EXISTS idx_event_scope ON Event(novel_id, variant_id);
 CREATE INDEX IF NOT EXISTS idx_foreshadow_scope ON Foreshadow(novel_id, variant_id);
 CREATE INDEX IF NOT EXISTS idx_timeline_scope ON TimelineEntry(novel_id, variant_id);
 insertCharacter:
-INSERT OR REPLACE INTO Character(character_id, novel_id, variant_id, scope, name, personality, created_at, updated_at)
-VALUES (:character_id, :novel_id, :variant_id, :scope, :name, :personality, :created_at, :updated_at);
+INSERT OR REPLACE INTO Character(character_id, novel_id, variant_id, scope, name, personality, goals, fears, description, created_at, updated_at)
+VALUES (:character_id, :novel_id, :variant_id, :scope, :name, :personality, :goals, :fears, :description, :created_at, :updated_at);
 
 getCharacterById:
 SELECT * FROM Character WHERE character_id = :character_id;
@@ -124,8 +141,8 @@ SELECT * FROM Character WHERE novel_id = :novel_id AND variant_id IS :variant_id
 -- CharacterState
 -- ============================================================
 insertCharacterState:
-INSERT OR REPLACE INTO CharacterState(state_id, character_id, novel_id, variant_id, scope, chapter_id, timeline_position, snapshot_type, physical, emotional, current_goal, created_at)
-VALUES (:state_id, :character_id, :novel_id, :variant_id, :scope, :chapter_id, :timeline_position, :snapshot_type, :physical, :emotional, :current_goal, :created_at);
+INSERT OR REPLACE INTO CharacterState(state_id, character_id, novel_id, variant_id, scope, chapter_id, timeline_position, snapshot_type, physical, emotional, current_goal, location, current_motivation, relationships, known_facts, unknown_facts, abilities, source, created_at)
+VALUES (:state_id, :character_id, :novel_id, :variant_id, :scope, :chapter_id, :timeline_position, :snapshot_type, :physical, :emotional, :current_goal, :location, :current_motivation, :relationships, :known_facts, :unknown_facts, :abilities, :source, :created_at);
 
 getCharacterStateById:
 SELECT * FROM CharacterState WHERE state_id = :state_id;
@@ -150,8 +167,8 @@ SELECT * FROM WorldRule WHERE novel_id = :novel_id AND variant_id IS :variant_id
 -- Event
 -- ============================================================
 insertEvent:
-INSERT OR REPLACE INTO Event(event_id, novel_id, variant_id, scope, name, description, type, importance, when_json, who, chapter_id, status, created_at)
-VALUES (:event_id, :novel_id, :variant_id, :scope, :name, :description, :type, :importance, :when_json, :who, :chapter_id, :status, :created_at);
+INSERT OR REPLACE INTO Event(event_id, novel_id, variant_id, scope, name, description, type, importance, when_json, who, what, where_json, cause, consequence, participants, evidence, fact_level, chapter_id, status, created_at)
+VALUES (:event_id, :novel_id, :variant_id, :scope, :name, :description, :type, :importance, :when_json, :who, :what, :where_json, :cause, :consequence, :participants, :evidence, :fact_level, :chapter_id, :status, :created_at);
 
 getEventById:
 SELECT * FROM Event WHERE event_id = :event_id;

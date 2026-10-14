@@ -5,6 +5,7 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.chapter.ChapterUseCases
+import com.qianyan.application.usecase.commit.CommitUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.workflow.ChapterPhase
 import com.qianyan.application.usecase.workflow.ChapterWorkflowGateway
@@ -38,12 +39,15 @@ import com.qianyan.storage.repository.NovelRepository
  */
 class WriterFacade(
     private val chapters: ChapterUseCases,
+    private val projects: com.qianyan.application.usecase.project.ProjectUseCases,
     private val novelRepository: NovelRepository,
     private val drafts: WriterUseCases,
     private val workflow: ChapterWorkflowGateway,
     private val critique: CritiqueExecutionUseCase,
     private val revision: RevisionExecutionUseCase,
     private val taskManager: TaskManagerUseCases,
+    private val commits: CommitUseCases,
+    private val workingDrafts: com.qianyan.application.usecase.draft.WorkingDraftUseCases,
     errorMapper: ErrorMapper,
 ) : WriterGateway, UseCase(errorMapper) {
 
@@ -58,11 +62,26 @@ class WriterFacade(
             chapterTitle = chapter.title,
             draft = drafts.latestDraft(chapterId),
             phase = workflow.getChapterProgress(chapterId).phase,
+            // P1-02c+d：AI 待审工作产物（WorkingDraft）——按 Project 内的章节工作产物投影；
+            // 它是 WorkingDraftId（非 DraftId），只投影**正文**，不伪装成 Draft。
+            pendingWorkingContent = pendingWorkingContent(guard { projects.projectOf(novelId) }.projectId, chapterId),
         )
     }
 
-    /** 保存用户编辑后的正文（身份 / lineage / status / format 不变）。 */
-    override fun saveContent(draftId: DraftId, content: String): Draft = drafts.saveContent(draftId, content)
+    /** 该章节当前 AI 待审工作产物正文（无 / 已丢弃 → null）。 */
+    private fun pendingWorkingContent(projectId: com.qianyan.model.ProjectId, chapterId: ChapterId): String? =
+        guard { workingDrafts.list(projectId) }
+            .lastOrNull { it.target.chapterId == chapterId && !it.status.isTerminal }
+            ?.content
+
+    /** **作者手动保存正文**（P1-01f「保存即批准」）：保存后经既有 [CommitUseCases] 形成 **Canonical Commit**
+     *  （同一 DB 事务：正文与 Canonical 一起成功或一起回滚）。
+     *  AI 产出**不走**本入口（continue / rewrite 走既有 Workflow / Critique+Revision），因此不会被自动 Canonical 化。 */
+    override fun saveContent(draftId: DraftId, content: String): Draft {
+        commits.commitAuthorSave(draftId, content)
+        return drafts.draft(draftId)
+            ?: throw ApplicationException(ApplicationError.EntityNotFound("Draft 不存在: ${draftId.value}"))
+    }
 
     /**
      * AI 继续写：驱动既有章节 Workflow 前进（PLANNING → WRITING → …），返回进度投影。
@@ -106,6 +125,12 @@ data class WriterChapterContext(
     val draft: Draft?,
     /** durable Workflow 阶段投影（[ChapterPhase]；无 Workflow → NOT_STARTED）。 */
     val phase: ChapterPhase,
+    /**
+     * P1-02c+d：AI **待审工作产物**正文（WorkingDraft）。
+     * 它不是章节 Draft（无 DraftId、不可直接保存）；作者批准（人工门）后经正式 Commit 才产生 Canonical 载体 Draft。
+     * 无待审工作产物 → null。
+     */
+    val pendingWorkingContent: String? = null,
 )
 
 /**

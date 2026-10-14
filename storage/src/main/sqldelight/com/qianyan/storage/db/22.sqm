@@ -1,0 +1,29 @@
+-- P1-01 · Schema v23（22.sqm：v22 → v23）
+-- 目标：WorkflowHumanGate.workflow_id 的 NOT NULL 约束放宽为可空。
+--   NULL  = 独立 Human Gate（不挂在任何 Workflow 上；P1-01 Writer 手动保存"保存即批准"）；
+--   非空  = 既有 Workflow 绑定 Gate，语义与外键完全不变。
+--
+-- SQLite 不支持 ALTER COLUMN，按标准流程重建表：建新表 → 原样拷贝 → 删旧表 → 改名。
+-- 不删除任何列、不修改任何既有数据语义；workflow_id 非空的既有 Gate 行为与数据原样保留。
+-- 幂等由 DatabaseInitializer 的 pragma_table_info(notnull) 分支判定包裹（列已可空则跳过）。
+
+CREATE TABLE WorkflowHumanGate_v22 (
+    gate_id             TEXT NOT NULL PRIMARY KEY,
+    workflow_id         TEXT,
+    step_id             TEXT,
+    draft_id            TEXT,
+    gate_key            TEXT NOT NULL UNIQUE,
+    status              TEXT NOT NULL,               -- PENDING / RESOLVED
+    decision            TEXT NOT NULL,               -- HumanDecision 枚举名
+    created_at          INTEGER NOT NULL,
+    resolved_at         INTEGER,
+    resolved_by         TEXT,
+    FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id)
+);
+
+INSERT INTO WorkflowHumanGate_v22 (gate_id, workflow_id, step_id, draft_id, gate_key, status, decision, created_at, resolved_at, resolved_by)
+SELECT gate_id, workflow_id, step_id, draft_id, gate_key, status, decision, created_at, resolved_at, resolved_by
+FROM WorkflowHumanGate;
+
+DROP TABLE WorkflowHumanGate;
+ALTER TABLE WorkflowHumanGate_v22 RENAME TO WorkflowHumanGate;

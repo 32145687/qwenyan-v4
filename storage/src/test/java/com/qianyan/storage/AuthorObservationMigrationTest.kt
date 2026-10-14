@@ -24,6 +24,10 @@ class AuthorObservationMigrationTest {
         """CREATE TABLE Chapter (chapter_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, order_no INTEGER NOT NULL, title TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES "Novel"(novel_id))""",
         """CREATE TABLE Foreshadow (foreshadow_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, content TEXT NOT NULL, resolved INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'PLANTED', updated_at INTEGER NOT NULL DEFAULT 0, last_transition_reason TEXT, payoff_chapter_id TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES "Novel"(novel_id))""",
         """CREATE TABLE Workflow (workflow_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, kind TEXT NOT NULL, definition_version TEXT NOT NULL DEFAULT 'P12.2-v1', status TEXT NOT NULL, active_chapter_id TEXT, current_step_id TEXT, pending_gate_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""",
+        // P1-02j.2：24.sqm 对 WorkflowStep 加列，fixture 需含 v24 前的 WorkflowStep（无 round_no）
+        """CREATE TABLE WorkflowStep (step_id TEXT NOT NULL PRIMARY KEY, workflow_id TEXT NOT NULL, chapter_id TEXT NOT NULL, phase TEXT NOT NULL, logical_step_key TEXT NOT NULL, status TEXT NOT NULL, current_attempt_no INTEGER, current_task_id TEXT, result_reference TEXT, created_at INTEGER NOT NULL, completed_at INTEGER, UNIQUE (workflow_id, logical_step_key), FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id))""",
+        // P1-02h：v23 迁移（22.sqm）重建 WorkflowHumanGate；fixture 缺该表会让批量迁移失败（原失败被删除异常掩盖）。
+        """CREATE TABLE WorkflowHumanGate (gate_id TEXT NOT NULL PRIMARY KEY, workflow_id TEXT NOT NULL, step_id TEXT, draft_id TEXT, gate_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL, decision TEXT NOT NULL, created_at INTEGER NOT NULL, resolved_at INTEGER, resolved_by TEXT, FOREIGN KEY (workflow_id) REFERENCES Workflow(workflow_id))""",
         """CREATE TABLE NarrativeState (narrative_state_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, main_goal TEXT NOT NULL DEFAULT '', current_conflict TEXT, open_threads TEXT NOT NULL DEFAULT '[]', character_stages TEXT NOT NULL DEFAULT '{}', relationship_deltas TEXT NOT NULL DEFAULT '[]', foreshadow_pressures TEXT NOT NULL DEFAULT '[]', current_pacing TEXT, last_chapter_delta TEXT NOT NULL DEFAULT '', updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES "Novel"(novel_id))""",
         """CREATE TABLE Reveal (reveal_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, information_id TEXT NOT NULL, occurred_at INTEGER NOT NULL, reason TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES "Novel"(novel_id))""",
         """CREATE TABLE StoryFoundation (novel_id TEXT NOT NULL PRIMARY KEY, base_novel_id TEXT NOT NULL, scope TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 0, genre TEXT NOT NULL DEFAULT '[]', direction TEXT NOT NULL DEFAULT '{}', audience TEXT NOT NULL DEFAULT '{}', policy TEXT NOT NULL DEFAULT '{}', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES "Novel"(novel_id))""",
@@ -36,6 +40,10 @@ class AuthorObservationMigrationTest {
         """CREATE TABLE AuthorCoreCandidate (candidate_id TEXT NOT NULL PRIMARY KEY, pattern_key TEXT NOT NULL, statement TEXT NOT NULL DEFAULT '', condition TEXT, scope TEXT NOT NULL, novel_id TEXT, positive_evidence INTEGER NOT NULL DEFAULT 0, negative_evidence INTEGER NOT NULL DEFAULT 0, observation_count INTEGER NOT NULL DEFAULT 0, weighted_score REAL NOT NULL DEFAULT 0, consistency REAL NOT NULL DEFAULT 0, recency REAL NOT NULL DEFAULT 0, contradiction_count INTEGER NOT NULL DEFAULT 0, confidence REAL NOT NULL DEFAULT 0, status TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)""",
         """CREATE TABLE AuthorCoreEvidenceLink (link_id TEXT NOT NULL PRIMARY KEY, core_pattern_key TEXT NOT NULL, evidence_id TEXT NOT NULL, created_at INTEGER NOT NULL)""",
         """CREATE TABLE AuthorCoreLearning (singleton_id TEXT NOT NULL PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0)""",
+        // P2 v27 前置（v3.1 §11.9）：v5 起真实存在的 Story State 三表（26.sqm 会对其加列；旧形态 = 无新增 17 列）
+        "CREATE TABLE Character (character_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, personality TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        "CREATE TABLE CharacterState (state_id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, timeline_position TEXT, snapshot_type TEXT NOT NULL, physical TEXT NOT NULL DEFAULT '{}', emotional TEXT NOT NULL DEFAULT '{}', current_goal TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        "CREATE TABLE Event (event_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 5, when_json TEXT, who TEXT NOT NULL DEFAULT '[]', chapter_id TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
     )
 
     private fun JdbcSqliteDriver.exec(sql: String) { execute(null, sql, 0) }
@@ -59,6 +67,8 @@ class AuthorObservationMigrationTest {
         try {
             val v12 = JdbcSqliteDriver(url)
             V12_MINIMAL_DDL.forEach { v12.exec(it) }
+            // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
+            v12.dropWorldModelV27Columns()
             v12.exec("PRAGMA user_version = 12")
             v12.exec(
                 "INSERT INTO Novel(novel_id, project_id, title, source, genre, synopsis, scope, status, created_at, updated_at) " +
@@ -75,7 +85,7 @@ class AuthorObservationMigrationTest {
             val driver = h.driver as JdbcSqliteDriver
             try {
                 assertTrue(tableExists(driver, "AuthorObservation"), "migration 后应存在 AuthorObservation（P18-A）")
-                assertEquals(22L, userVersion(driver), "migration 后 user_version 应为 21+1（I13 Schema v22）")
+                assertEquals(27L, userVersion(driver), "migration 后 user_version 应为最新版本 27（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27）")
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"))
                 assertEquals("GLOBAL", scalar(driver, "SELECT scope FROM AuthorCore WHERE core_id='c-legacy'"), "P17 AuthorCore 旧数据保持")
                 DatabaseInitializer.initializeDatabase(driver)

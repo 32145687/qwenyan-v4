@@ -193,6 +193,8 @@ internal fun messageFor(error: Throwable): String = when (error) {
         is ApplicationError.RevisionLimitExceeded -> "任务检查点已达上限"
         is ApplicationError.TaskNotFound -> "任务不存在：${e.detail}"
         is ApplicationError.InvalidOperation -> "操作被拒绝：${e.detail}"
+        is ApplicationError.ChapterSourceConflict -> "该作品已存在其他来源的章节，已拒绝导入初始化"
+        is ApplicationError.TxtCanonicalInitIncomplete -> "TXT 已导入，但章节初始化未完成：${messageFor(ApplicationException(e.cause))}"
         is ApplicationError.UnknownStorage -> "存储错误，请重试"
         else -> "操作失败，请重试"
     }

@@ -106,7 +106,10 @@ class StoryFoundationDecisionUseCases(
      */
     fun confirmFoundation(gateId: WorkflowHumanGateId, novelId: NovelId): ConfirmedFoundation {
         val gate = requireGate(gateId)
-        val workflow = requireWorkflow(gate.workflowId)
+        // P1-01：独立 Human Gate（workflowId=null）不参与任何 Workflow 流程；Foundation 确认只发生在 Workflow 内。
+        val gateWorkflowId = gate.workflowId
+            ?: throw Operation("Gate ${gate.gateId.value} 未绑定 Workflow（独立 Human Gate），不能用于 Story Foundation 确认")
+        val workflow = requireWorkflow(gateWorkflowId)
 
         if (gate.status == HumanGateStatus.RESOLVED) {
             return when (gate.decision) {

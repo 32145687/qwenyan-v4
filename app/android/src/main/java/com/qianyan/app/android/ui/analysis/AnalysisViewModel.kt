@@ -147,6 +147,8 @@ class AnalysisViewModel(
         is ApplicationError.InvalidOperation -> "操作不被允许：${error.detail}"
         is ApplicationError.VariantMismatch -> "上下文不匹配：${error.detail}"
         is ApplicationError.TxtImportFailed -> "导入数据异常：${error.detail}"
+        is ApplicationError.ChapterSourceConflict -> "该作品已存在其他来源的章节，已阻止导入初始化"
+        is ApplicationError.TxtCanonicalInitIncomplete -> "TXT 已导入，但章节初始化未完成，可重新导入同一文件补齐"
         is ApplicationError.ImmutableOriginal -> "无法写入：该内容受保护"
         is ApplicationError.VariantBaseInvalid -> "Variant 基座无效"
         is ApplicationError.DuplicateTarget -> "内容重复：${error.detail}"

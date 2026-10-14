@@ -25,7 +25,16 @@ object QianyanDbFactory {
      */
     fun open(url: String = JdbcSqliteDriver.IN_MEMORY): QianyanDbHandle {
         val driver = JdbcSqliteDriver(url)
-        DatabaseInitializer.initializeDatabase(driver)
+        try {
+            DatabaseInitializer.initializeDatabase(driver)
+        } catch (t: Throwable) {
+            // P1-02h：初始化失败必须释放驱动/连接 —— 否则泄漏文件句柄（Windows 下该 .db 永久无法删除），
+            // 且会让调用方 finally 中的删除异常**掩盖**真实迁移错误。
+            // 实测（storage 测试探针 A/D 对比 H）：不释放 ⇒ 删除永久失败；显式释放 ⇒ 删除成功。
+            runCatching { driver.getConnection().close() }
+            runCatching { driver.close() }
+            throw t
+        }
         return QianyanDbHandle(QianyanDb(driver), driver)
     }
 }

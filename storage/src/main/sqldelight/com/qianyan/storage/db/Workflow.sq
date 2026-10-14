@@ -30,6 +30,7 @@ CREATE TABLE WorkflowStep (
     current_attempt_no  INTEGER,
     current_task_id     TEXT,
     result_reference    TEXT,                        -- 引用 ID（draftId / continuationId / tasks），非正文
+    round_no            INTEGER,                     -- 创作轮次编号（P1-02j.2）；NULL = 兼容历史，按首轮 0 解释
     created_at          INTEGER NOT NULL,
     completed_at        INTEGER,
     UNIQUE (workflow_id, logical_step_key),
@@ -53,9 +54,11 @@ CREATE TABLE WorkflowStepAttempt (
 );
 
 -- WorkflowHumanGate：HITL 决策独立持久化。gateKey 唯一；decision 绑定具体 draftId。
+-- P1-01：workflow_id 可空 —— NULL = 独立 Human Gate（不挂在任何 Workflow 上，如 Writer 手动保存的
+-- "保存即批准"）；非空时外键仍指向 Workflow，既有语义不变（v23 放宽，见 22.sqm）。
 CREATE TABLE WorkflowHumanGate (
     gate_id             TEXT NOT NULL PRIMARY KEY,
-    workflow_id         TEXT NOT NULL,
+    workflow_id         TEXT,
     step_id             TEXT,
     draft_id            TEXT,
     gate_key            TEXT NOT NULL UNIQUE,
@@ -96,8 +99,8 @@ UPDATE Workflow SET status = :status, active_chapter_id = :active_chapter_id, cu
   pending_gate_id = :pending_gate_id, updated_at = :updated_at WHERE workflow_id = :workflow_id;
 
 insertStep:
-INSERT OR REPLACE INTO WorkflowStep(step_id, workflow_id, chapter_id, phase, logical_step_key, status, current_attempt_no, current_task_id, result_reference, created_at, completed_at)
-VALUES (:step_id, :workflow_id, :chapter_id, :phase, :logical_step_key, :status, :current_attempt_no, :current_task_id, :result_reference, :created_at, :completed_at);
+INSERT OR REPLACE INTO WorkflowStep(step_id, workflow_id, chapter_id, phase, logical_step_key, status, current_attempt_no, current_task_id, result_reference, round_no, created_at, completed_at)
+VALUES (:step_id, :workflow_id, :chapter_id, :phase, :logical_step_key, :status, :current_attempt_no, :current_task_id, :result_reference, :round_no, :created_at, :completed_at);
 
 getStepById:
 SELECT * FROM WorkflowStep WHERE step_id = :step_id;

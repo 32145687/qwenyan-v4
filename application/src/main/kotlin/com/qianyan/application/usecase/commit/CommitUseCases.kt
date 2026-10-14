@@ -22,6 +22,7 @@ import com.qianyan.model.change.ChangeArtifactStatus
 import com.qianyan.model.change.TextDiffer
 import com.qianyan.model.commit.CommitApproval
 import com.qianyan.model.commit.CommitErrorCodes
+import com.qianyan.model.commit.CommitFormatHistory
 import com.qianyan.model.commit.CommitHistoryEntry
 import com.qianyan.model.commit.CommitHistoryId
 import com.qianyan.model.commit.CommitId
@@ -32,10 +33,13 @@ import com.qianyan.model.commit.RevertProposal
 import com.qianyan.model.commit.RevertResult
 import com.qianyan.model.workingdraft.WorkingDraft
 import com.qianyan.model.workingdraft.WorkingDraftBase
+import com.qianyan.model.workingdraft.WorkingDraftTarget
 import com.qianyan.model.writing.Draft
+import com.qianyan.model.writing.DraftFormat
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.HumanGateStatus
+import com.qianyan.model.workflow.WorkflowHumanGateId
 import com.qianyan.storage.repository.CommitHistoryRepository
 import com.qianyan.storage.repository.WorkflowRepository
 import kotlinx.datetime.Clock
@@ -174,6 +178,7 @@ class CommitUseCases(
                 projectId = projectId,
                 operation = CommitOperation.COMMIT,
                 artifactId = artifact.artifactId,
+                gateId = approval?.gateId,
                 target = artifact.change.target,
                 previousDraftId = base?.draftId,
                 resultingDraftId = created.draftId,
@@ -181,6 +186,9 @@ class CommitUseCases(
                 resultingContent = draft.content,
                 summary = artifact.change.summary,
                 revertedHistoryId = null,
+                previousFormat = base?.let { CommitFormatHistory.ofDraftFormat(it.format) }
+                    ?: CommitFormatHistory.NONE,
+                resultingFormat = CommitFormatHistory.ofDraftFormat(created.format),
                 createdAt = now,
             )
             history.append(entry)
@@ -200,6 +208,183 @@ class CommitUseCases(
         // 提交成功后经 I8 既有能力收尾 Working Draft（终态 DISCARDED；不改 AgentSession / Workflow / Task）
         workingDrafts.discard(draft.workingDraftId)
         return result
+    }
+
+    /* ---------------- 作者手改保存（P1-01f：保存即批准） ---------------- */
+
+    /**
+     * **作者手动保存 → Canonical**（v3.1 §4.1「作者手工编辑 → 允许直接保存」）。
+     *
+     * 与 [commit] 的区别：输入是**作者正在编辑的 Draft + 即将保存的正文**，而非 Change Artifact。
+     * 作者点击保存 = 作者明确批准当前正文 ⇒ **不经** Working Draft / Change / Proposal / Human Gate；
+     * 但 Canonical 的写入仍**只经本类**（`CommitHistory.append` 的唯一入口，不新建第二套 Canonical 入口）。
+     *
+     * 语义要点：
+     *  - **基线取已提交的 Canonical 事实**（该章节最后一条 `CommitHistory`），**不是** `latestByChapter`
+     *    —— 未提交 Draft 不等于已发生事实（R3 §23B）；
+     *  - **原子性**：编辑稿保存 + History 追加在**同一 DB 事务**（复用 [WorkflowRepository.inTransaction]），
+     *    不会出现"正文已保存但 Canonical 未提交"或反之；
+     *  - **作者编辑稿自身就是 Canonical 正文载体**，不另建 Draft 行：载体若另建，它会成为 `latestByChapter`
+     *    的返回值 ⇒ Writer 编辑区被换成新身份，且 legacy（`format = null`）章节会被静默迁移为受控 Markdown
+     *    （违反 FD-1 与"保存必须复用同一 Draft 身份 / status / format"契约）。历史快照内容由
+     *    [CommitHistoryEntry.resultingContent] 自身承载，不依赖载体行不被改写；
+     *  - **仅限作者路径**：AI 产出**不得**经本入口进入 Canonical（AI 必须走 Change Artifact → Gate，见 [commit]）。
+     *
+     * @throws ApplicationError.EntityNotFound Draft 不存在。
+     * @throws ApplicationError.InvalidOperation Draft 未落到 Chapter（INVALID_TARGET）。
+     */
+    fun commitAuthorSave(draftId: DraftId, content: String): CommitHistoryEntry =
+        commitSameRowCanonical(draftId, content, summary = "作者手动保存（保存即批准）")
+
+    /**
+     * **TXT 导入初始化 → Canonical**（Phase 1 §10.12：`作者 TXT → Import → Chapter → Canonical 初始化`，不走 AI 变更链）。
+     *
+     * 与 [commitAuthorSave] 复用**同一类** ChapterDraft / CommitHistory “same-row 载体”语义
+     * （`resultingDraftId = draftId`、`operation=COMMIT`、`artifactId=null`、`gateId=null`），
+     * **不经** WorkingDraft / Change / Human Gate —— 作者已有内容导入即视为**已确认的正典初始化**。
+     * 来源语义仅以 [CommitHistoryEntry.summary] 区分（“TXT 导入初始化…”）。
+     *
+     * 硬边界（与 [commitAuthorSave] 相同）：不新建第二套 Canonical 入口 / 不新增字段 / 不改 P19 / P2 契约 /
+     * 不迁移 `format`（导入正文保持 `format = null`，不擅自转受控 Markdown）。
+     *
+     * @throws ApplicationError.EntityNotFound Draft 不存在。
+     * @throws ApplicationError.InvalidOperation Draft 未落到 Chapter（INVALID_TARGET）。
+     */
+    fun commitImportedCanonical(draftId: DraftId, content: String): CommitHistoryEntry =
+        commitSameRowCanonical(draftId, content, summary = "TXT 导入初始化（Canonical 初始化，不经变更链）")
+
+    /**
+     * **same-row Canonical 写入**（唯一逻辑实现）：作者手改保存与 TXT 导入初始化两路**共用**，
+     * 仅 [summary] 区分来源。行为与字段语义与既有 `commitAuthorSave` 完全一致（不改契约）。
+     */
+    private fun commitSameRowCanonical(draftId: DraftId, content: String, summary: String): CommitHistoryEntry {
+        val draft = guard { drafts.draft(draftId) }
+            ?: throw ApplicationException(ApplicationError.EntityNotFound("Draft 不存在: ${draftId.value}"))
+        val chapterId = draft.chapterId
+            ?: throw invalid(
+                CommitErrorCodes.INVALID_TARGET,
+                "Draft 未落到 Chapter，不能成为 Canonical: ${draftId.value}",
+            )
+        val projectId = guard { projects.projectOf(draft.novelId) }.projectId
+
+        var committed: CommitHistoryEntry? = null
+        workflows.inTransaction {
+            // 基线：该章节**已提交**的 Canonical 事实（`listByProject` = 插入序 ⇒ 末条为最新）
+            val baseEntry = history.listByProject(projectId).lastOrNull { it.target.chapterId == chapterId }
+
+            // 1) 载体落库（同事务）：只改 content + updatedAt，身份 / status / format 保持不变
+            guard { drafts.saveContent(draftId, content) }
+
+            // 2) Canonical 事实记录（唯一写入点）
+            val now = Instant.fromEpochMilliseconds(clock.now().toEpochMilliseconds())
+            val entry = CommitHistoryEntry(
+                historyId = CommitHistoryId(nextId()),
+                commitId = CommitId(nextId()),
+                projectId = projectId,
+                operation = CommitOperation.COMMIT,
+                artifactId = null, // 无 Change Artifact（作者手改 / TXT 导入初始化）
+                target = WorkingDraftTarget(draft.novelId, chapterId, draft.variantId),
+                // 同一 Draft 重复保存不自链
+                previousDraftId = baseEntry?.resultingDraftId?.takeUnless { it == draftId },
+                resultingDraftId = draftId,
+                previousContent = baseEntry?.resultingContent.orEmpty(),
+                resultingContent = content,
+                summary = summary,
+                revertedHistoryId = null,
+                // 格式历史：previous = 承载上一版内容的载体行 format（同 row ⇒ 本行，format 对行不可变）；
+                // resulting = 本行实际 format（saveContent 不改 format）
+                previousFormat = carrierFormat(baseEntry),
+                resultingFormat = CommitFormatHistory.ofDraftFormat(draft.format),
+                createdAt = now,
+            )
+            history.append(entry)
+            committed = entry
+        }
+        // 事务成功即已赋值（失败则事务已回滚并抛出）
+        return committed!!
+    }
+
+    /* ---------------- AI 主写作链提交（P1-02：人工门批准后的 Final Draft） ---------------- */
+
+    /**
+     * **AI 主写作链的正式提交**（P1-02）：经既有 Human Gate 批准的 Final Draft → Canonical。
+     *
+     * 与 [commit] 的区别：输入是**章节最新的 Final Draft**（AI 写作链的产物，经 CONFIRMATION 人工门批准后
+     * 已 `CONFIRMED`），而不是 Change Artifact。生产调用者只有 [com.qianyan.application.usecase.workflow.WorkflowOrchestrator]
+     * 的人工门批准路径；Canonical 的写入仍**只经本类**（`CommitHistory.append` 的唯一入口）。
+     *
+     * 语义要点：
+     *  - **人工确认不可省**：`COMMIT_CANONICAL` 在 I2 恒为 `NeedsHuman` ⇒ 必须提供**既有** Workflow Human Gate
+     *    的 `RESOLVED + APPROVED` 凭据（[CommitApproval]）；本类不新建 Gate、不弱化策略；
+     *  - **只有经确认的结果可提交**：Draft 必须已 `CONFIRMED`（由既有 [com.qianyan.application.usecase.writing.confirmation.ConfirmationExecutionUseCase]
+     *    在门批准时置位），未确认的中间产出（WRITTEN / FINAL / REVISED…）一律拒绝；
+     *  - **身份不变**：被批准的 Draft 自身即 Canonical 正文载体（不另建 Draft 行、不改 `status` / `format`
+     *    —— legacy `format = null` 不被静默迁移）；基线取该章节**已提交的 Canonical 事实**（`CommitHistory`）；
+     *  - **幂等**：同一 Draft 内容已提交过 → 复用既有历史，不追加第二条（重试 / 重复批准不产生重复 Commit）；
+     *  - **原子性**：History 追加在既有 [WorkflowRepository.inTransaction] 内；失败即回滚，不产生半成品 Canonical。
+     *
+     * @throws ApplicationError.EntityNotFound Draft / Project 不存在或越界。
+     * @throws ApplicationError.InvalidOperation 见 [CommitErrorCodes]（INVALID_TARGET / HUMAN_APPROVAL_REQUIRED）。
+     */
+    fun commitApprovedDraft(draftId: DraftId, approval: CommitApproval): CommitHistoryEntry {
+        val draft = guard { drafts.draft(draftId) }
+            ?: throw ApplicationException(ApplicationError.EntityNotFound("Draft 不存在: ${draftId.value}"))
+        val chapterId = draft.chapterId
+            ?: throw invalid(CommitErrorCodes.INVALID_TARGET, "Draft 未落到 Chapter，不能成为 Canonical: ${draftId.value}")
+        val projectId = guard { projects.projectOf(draft.novelId) }.projectId
+
+        // I2：恒 NeedsHuman ⇒ 必须有既有 Workflow Human Gate 的 RESOLVED + APPROVED 凭据
+        requireApproval(
+            actionPolicy.evaluate(
+                AgentAction(
+                    kind = AgentActionKind.COMMIT_CANONICAL,
+                    target = "${draft.novelId.value}/${chapterId.value}",
+                    note = "AI 写作 Draft ${draftId.value}",
+                ),
+            ),
+            approval,
+            "Commit AI Draft ${draftId.value}",
+        )
+        // 只有经人工门确认的结果才能进入正式 Canonical（中间产出 WRITTEN / FINAL / REVISED 一律拒绝）
+        if (draft.status != DraftStatus.CONFIRMED) {
+            throw invalid(
+                CommitErrorCodes.HUMAN_APPROVAL_REQUIRED,
+                "Draft ${draftId.value} 状态 ${draft.status.name} 未经人工确认（需 CONFIRMED），不可进入 Canonical",
+            )
+        }
+
+        var committed: CommitHistoryEntry? = null
+        workflows.inTransaction {
+            val baseEntry = history.listByProject(projectId).lastOrNull { it.target.chapterId == chapterId }
+            // 幂等：同一 Draft 的**同一内容**已提交 → 复用既有历史，不重复 append
+            if (baseEntry != null && baseEntry.resultingDraftId == draftId && baseEntry.resultingContent == draft.content) {
+                committed = baseEntry
+                return@inTransaction
+            }
+            val now = Instant.fromEpochMilliseconds(clock.now().toEpochMilliseconds())
+            val entry = CommitHistoryEntry(
+                historyId = CommitHistoryId(nextId()),
+                commitId = CommitId(nextId()),
+                projectId = projectId,
+                operation = CommitOperation.COMMIT,
+                artifactId = null, // AI 主链：人工门批准（非 Change Artifact 路径）
+                gateId = approval.gateId,
+                target = WorkingDraftTarget(draft.novelId, chapterId, draft.variantId),
+                previousDraftId = baseEntry?.resultingDraftId?.takeUnless { it == draftId },
+                resultingDraftId = draftId,
+                previousContent = baseEntry?.resultingContent.orEmpty(),
+                resultingContent = draft.content,
+                summary = "AI 写作（人工门批准后正式提交）",
+                revertedHistoryId = null,
+                previousFormat = carrierFormat(baseEntry),
+                resultingFormat = CommitFormatHistory.ofDraftFormat(draft.format),
+                createdAt = now,
+            )
+            history.append(entry)
+            committed = entry
+        }
+        // 事务成功即已赋值（失败则事务已回滚并抛出）
+        return committed!!
     }
 
     /* ---------------- History ---------------- */
@@ -222,7 +407,14 @@ class CommitUseCases(
         return entry
     }
 
-    /* ---------------- Revert ---------------- */
+    /**
+     * 某 Human Gate 是否已产生**正式提交**（P1-02j B1：持久的 Gate ↔ Commit 关联）。
+     *
+     * 无关联（历史旧行 / REVERT / 作者手改保存）→ null。恢复路径据此判据收敛，**不**再依赖
+     * "正文内容相等"启发式（该启发式在逐字相同的多轮次下会误判）。
+     */
+    @Synchronized
+    fun committedByGate(gateId: WorkflowHumanGateId): CommitHistoryEntry? = guard { history.getByGate(gateId) }
 
     /**
      * 预备回退：确认当前 Canonical 仍与该历史记录的"修改后"状态一致（**只读**，不改动任何数据）。
@@ -268,6 +460,19 @@ class CommitUseCases(
         approval: CommitApproval? = null,
     ): RevertResult {
         val proposal = prepareRevert(projectId, historyId)
+
+        // 格式契约（Phase 1）：被恢复版本的格式必须来自被回退历史的 previousFormat——不猜测、不升级。
+        // UNKNOWN ⇒ 类型化拒绝；此刻尚未进入事务，未创建任何 Draft / History ⇒ 零写入。
+        val restoreFormat = when (proposal.history.previousFormat) {
+            CommitFormatHistory.KNOWN_LEGACY -> null
+            CommitFormatHistory.NONE -> null // 首个 COMMIT：恢复目标语义明确为 legacy（空正文）
+            CommitFormatHistory.KNOWN_CONTROLLED_MARKDOWN -> DraftFormat.CONTROLLED_MARKDOWN
+            CommitFormatHistory.UNKNOWN -> throw invalid(
+                CommitErrorCodes.FORMAT_UNKNOWN,
+                "被回退历史 ${historyId.value} 缺少格式信息（previous_format 未知），拒绝猜测性恢复",
+            )
+        }
+
         requireApproval(evaluateRevert(proposal.history), approval, "Revert History ${historyId.value}")
 
         var reverted: RevertResult? = null
@@ -280,7 +485,9 @@ class CommitUseCases(
             }
 
             val now = nextCreatedAt(latest)
-            val created = drafts.stampControlledMarkdown(
+            // 格式契约（Phase 1）：恢复载体**直接携带**被恢复版本的格式（legacy ⇒ format=null），
+            // 不经 stampControlledMarkdown 升级；CM 恢复则显式携带受控 Markdown（与原 stamp 结果一致）。
+            val created = drafts.save(
                 Draft(
                     draftId = DraftId(nextId()),
                     novelId = proposal.history.target.novelId,
@@ -290,6 +497,7 @@ class CommitUseCases(
                     planId = latest.planId,
                     previousDraftId = latest.draftId,
                     content = proposal.restoreContent,
+                    format = restoreFormat,
                     status = DraftStatus.WRITTEN,
                     sourceModel = "",
                     createdAt = now,
@@ -309,6 +517,8 @@ class CommitUseCases(
                 resultingContent = proposal.restoreContent,
                 summary = proposal.summary,
                 revertedHistoryId = proposal.history.historyId,
+                previousFormat = CommitFormatHistory.ofDraftFormat(latest.format),
+                resultingFormat = CommitFormatHistory.ofDraftFormat(restoreFormat),
                 createdAt = now,
             )
             history.append(entry)
@@ -491,6 +701,17 @@ class CommitUseCases(
 
     private fun scopeOf(variantId: com.qianyan.model.VariantId?): VariantScope =
         if (variantId == null) VariantScope.ORIGINAL else VariantScope.VARIANT
+
+    /**
+     * [baseEntry] 所述"上一版内容"的格式历史：读其载体行（[CommitHistoryEntry.resultingDraftId]）的实际 format。
+     * 依据：`Draft.format` 对行不可变（唯一写入点只作用于新建 Draft）⇒ 行现值即该行全部历史版本的格式。
+     * baseEntry 为 null（章节首条历史）⇒ [CommitFormatHistory.NONE]；载体行缺失（异常状态）⇒ UNKNOWN。
+     */
+    private fun carrierFormat(baseEntry: CommitHistoryEntry?): CommitFormatHistory {
+        if (baseEntry == null) return CommitFormatHistory.NONE
+        val carrier = guard { drafts.draft(baseEntry.resultingDraftId) } ?: return CommitFormatHistory.UNKNOWN
+        return CommitFormatHistory.ofDraftFormat(carrier.format)
+    }
 
     /**
      * 新 Canonical 正文载体的时间戳：**严格晚于**当前正文载体。

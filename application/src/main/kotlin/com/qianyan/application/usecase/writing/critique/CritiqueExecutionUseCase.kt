@@ -53,4 +53,22 @@ class CritiqueExecutionUseCase(
 
     /** 从 CRITIQUE Checkpoint 恢复 [ValidationResult]（只读恢复上下文，不重新执行）。 */
     fun critiqueFrom(checkpoint: Checkpoint): ValidationResult? = CritiqueSnapshot.decode(checkpoint.snapshot)
+
+    /**
+     * **P1-02c+d**：对 **AI 工作产物正文**（WorkingDraft 内容）执行一次 Critique，返回 [ValidationResult]。
+     *
+     * 与 [execute] 行为一致（同一 Task 校验 / Agent / Checkpoint），只把评审对象从 `Draft` 换成正文，
+     * 用于 AI 产出尚未成为章节 Draft 行的生产链（不伪造 DraftId）。
+     */
+    fun execute(taskId: TaskId, content: String, planId: com.qianyan.model.ChapterPlanId? = null): ValidationResult {
+        val task = taskManager.findById(taskId)
+        if (task.type != TaskType.WRITING) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行评审"),
+            )
+        }
+        val result = critic.critiqueContent(content, planId)
+        taskManager.saveCheckpoint(taskId, CritiqueSnapshot.STAGE, CritiqueSnapshot.encode(result))
+        return result
+    }
 }

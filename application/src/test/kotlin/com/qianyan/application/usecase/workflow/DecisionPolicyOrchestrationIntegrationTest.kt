@@ -42,6 +42,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -134,10 +135,13 @@ class DecisionPolicyOrchestrationIntegrationTest {
             planning = planning,
             critique = app.critique,
             revision = app.revision,
-            confirmation = app.confirmations,
             knowledgeUpdate = app.knowledgeUpdate,
             draftRepository = app.draftRepository,
             chapterRepository = app.chapterRepository,
+            commits = app.commits,
+            workingDrafts = app.workingDrafts,
+            changes = app.changes,
+            canonicalRead = app.canonicalRead,
             errorMapper = app.errorMapper,
         )
 
@@ -303,7 +307,9 @@ class DecisionPolicyOrchestrationIntegrationTest {
             h.writerInputs.last().contains("决策 Decision Policy"),
             "旧 payload → 空政策（既不重新决定，也不伪造）",
         )
-        assertNotNull(h.app.draftRepository.latestByChapter(ch))
+        // P1-02c+d：AI 产出落 WorkingDraft（P1-02c+d）——章节 Draft 表不被写，工作产物存在。
+        assertNull(h.app.draftRepository.latestByChapter(ch))
+        assertNotNull(h.app.workingDrafts.list(h.app.projects.projectOf(novelId).projectId).firstOrNull { it.target.chapterId == ch && !it.status.isTerminal })
     }
 
     // ---------------- 5. ChapterWriting：plan → write 透传 ----------------

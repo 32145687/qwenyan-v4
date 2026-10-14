@@ -1,21 +1,31 @@
 package com.qianyan.app.android.ui.reader
 
+import com.qianyan.application.usecase.canonical.CanonicalReadUseCases
 import com.qianyan.application.usecase.reading.ReadingUseCases
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.engine.markdown.MarkdownBlock
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
+import com.qianyan.model.ProjectId
 import com.qianyan.model.VariantId
 import com.qianyan.model.VariantScope
+import com.qianyan.model.commit.CommitHistoryEntry
+import com.qianyan.model.commit.CommitHistoryId
+import com.qianyan.model.commit.CommitId
+import com.qianyan.model.commit.CommitOperation
+import com.qianyan.model.core.Novel
 import com.qianyan.model.reading.ReadingProgress
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.story.ChapterStatus
+import com.qianyan.model.workingdraft.WorkingDraftTarget
 import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftFormat
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.storage.repository.ChapterRepository
+import com.qianyan.storage.repository.CommitHistoryRepository
 import com.qianyan.storage.repository.DraftRepository
+import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.ReadingProgressRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,6 +36,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -94,9 +105,63 @@ class ReaderViewModelTest {
         override fun get(chapterId: ChapterId): ReadingProgress? = saved[chapterId]
     }
 
+    /** NovelRepository 最小替身：CanonicalRead 只需 `getNovel`（其余成员本测试不使用）。 */
+    private class FakeNovelRepository(private val novels: List<Novel>) : NovelRepository {
+        override fun getNovel(novelId: NovelId): Novel? = novels.firstOrNull { it.novelId == novelId }
+        override fun createOriginal(novel: Novel): NovelId = error("unused")
+        override fun listOriginals(): List<Novel> = error("unused")
+        override fun createVariant(variant: com.qianyan.model.core.NovelVariant): VariantId = error("unused")
+        override fun getVariant(variantId: VariantId): com.qianyan.model.core.NovelVariant? = error("unused")
+        override fun getVariantsOfNovel(novelId: NovelId): List<com.qianyan.model.core.NovelVariant> = error("unused")
+        override fun saveVariantData(variant: com.qianyan.model.core.NovelVariant) = error("unused")
+        override fun saveOverride(override: com.qianyan.model.core.EntityOverride) = error("unused")
+        override fun getOverride(variantId: VariantId, targetId: String): com.qianyan.model.core.EntityOverride? = error("unused")
+        override fun getOverrides(variantId: VariantId): List<com.qianyan.model.core.EntityOverride> = error("unused")
+        override fun deleteOverride(variantId: VariantId, targetId: String) = error("unused")
+        override fun replaceOverride(override: com.qianyan.model.core.EntityOverride) = error("unused")
+        override fun resolveOverride(
+            variantId: VariantId,
+            targetId: String,
+            originalValue: kotlinx.serialization.json.JsonElement?,
+        ): kotlinx.serialization.json.JsonElement? = error("unused")
+    }
+
+    /** CommitHistoryRepository 最小替身：只支持追加与按 Project 读取（CanonicalRead 的读取面）。 */
+    private class FakeCommitHistoryRepository : CommitHistoryRepository {
+        val entries = mutableListOf<CommitHistoryEntry>()
+
+        override fun append(entry: CommitHistoryEntry) {
+            entries += entry
+        }
+
+        override fun getById(historyId: CommitHistoryId): CommitHistoryEntry? =
+            entries.firstOrNull { it.historyId == historyId }
+
+        override fun getByArtifact(artifactId: com.qianyan.model.change.ChangeArtifactId): CommitHistoryEntry? =
+            entries.firstOrNull { it.artifactId == artifactId }
+
+        override fun getByResultingDraftId(draftId: DraftId): CommitHistoryEntry? =
+            entries.firstOrNull { it.resultingDraftId == draftId }
+
+        override fun getByGate(gateId: com.qianyan.model.workflow.WorkflowHumanGateId): CommitHistoryEntry? =
+            entries.firstOrNull { it.gateId == gateId }
+
+        override fun listByProject(projectId: ProjectId): List<CommitHistoryEntry> =
+            entries.filter { it.projectId == projectId }
+    }
+
     // ---------------- fixtures ----------------
 
     private val novelId = NovelId("n1")
+
+    /** CanonicalRead 需要 chapter → novel → projectId（P1-01c 接线）。 */
+    private val novel = Novel(
+        novelId = novelId,
+        projectId = ProjectId("p1"),
+        title = "书A",
+        createdAt = Clock.System.now(),
+        updatedAt = Clock.System.now(),
+    )
 
     private fun chapter(id: String, order: Int, title: String = "第${order}章"): Chapter = Chapter(
         chapterId = ChapterId(id),
@@ -121,12 +186,45 @@ class ReaderViewModelTest {
         updatedAt = Clock.System.now(),
     )
 
-    private class Fixture {
+    private inner class Fixture {
         val chapters = FakeChapterRepository()
         val drafts = FakeDraftRepository()
         val progress = FakeReadingProgressRepository()
-        val reading = ReadingUseCases(chapters, drafts, progress, ErrorMapper)
+        val novels = FakeNovelRepository(listOf(novel))
+        val history = FakeCommitHistoryRepository()
+        val reading = ReadingUseCases(
+            chapters,
+            CanonicalReadUseCases(chapters, novels, history, drafts, ErrorMapper),
+            progress,
+            ErrorMapper,
+        )
     }
+
+    /** 保存一份 Draft **并**写入对应 Commit 历史 ⇒ 该章节获得已提交的 Canonical 正文。 */
+    private fun Fixture.seedCommitted(chapterId: String, content: String, format: String?) {
+        drafts.save(draft(chapterId, content, format))
+        history.append(committedEntry(chapterId, DraftId("d-$chapterId")))
+    }
+
+    /** 仅追加 Commit 历史（Draft 已存在）⇒ 使其成为 Canonical 载体。 */
+    private fun Fixture.commitDraft(chapterId: String) {
+        history.append(committedEntry(chapterId, DraftId("d-$chapterId")))
+    }
+
+    private fun committedEntry(chapterId: String, draftId: DraftId): CommitHistoryEntry = CommitHistoryEntry(
+        historyId = CommitHistoryId("h-$chapterId-${draftId.value}"),
+        commitId = CommitId("commit-$chapterId"),
+        projectId = ProjectId("p1"),
+        operation = CommitOperation.COMMIT,
+        target = WorkingDraftTarget(novelId, ChapterId(chapterId)),
+        resultingDraftId = draftId,
+        previousContent = "",
+        resultingContent = "",
+        summary = "reader-test commit",
+        previousFormat = com.qianyan.model.commit.CommitFormatHistory.KNOWN_CONTROLLED_MARKDOWN,
+        resultingFormat = com.qianyan.model.commit.CommitFormatHistory.KNOWN_CONTROLLED_MARKDOWN,
+        createdAt = Clock.System.now(),
+    )
 
     private fun TestScope.viewModel(fixture: Fixture, chapterId: String = "c1"): ReaderViewModel {
         val dispatcher = StandardTestDispatcher(testScheduler)
@@ -146,12 +244,10 @@ class ReaderViewModelTest {
     fun `VM1 loads chapter and parses controlled markdown blocks`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1, "开端"))
-        f.drafts.save(
-            draft(
-                "c1",
-                "# 第一章 标题\n\n正文第一段，含**加粗**与*斜体*。\n\n- 列表项一\n\n> 引用一句\n\n| a | b |\n| --- | --- |\n",
-                DraftFormat.CONTROLLED_MARKDOWN,
-            ),
+        f.seedCommitted(
+            "c1",
+            "# 第一章 标题\n\n正文第一段，含**加粗**与*斜体*。\n\n- 列表项一\n\n> 引用一句\n\n| a | b |\n| --- | --- |\n",
+            DraftFormat.CONTROLLED_MARKDOWN,
         )
         val vm = viewModel(f)
         advanceUntilIdle()
@@ -182,7 +278,7 @@ class ReaderViewModelTest {
     fun `VM2 legacy plain text renders as single plain block`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
-        f.drafts.save(draft("c1", "# 这不是标题\n\n第二段 **不是加粗**", format = null))
+        f.seedCommitted("c1", "# 这不是标题\n\n第二段 **不是加粗**", format = null)
         val vm = viewModel(f)
         advanceUntilIdle()
 
@@ -196,15 +292,17 @@ class ReaderViewModelTest {
     // ---------------- 3. 无 Draft ----------------
 
     @Test
-    fun `VM3 chapter without draft yields no blocks and no error`() = runTest {
+    fun `VM3 chapter without canonical content yields no blocks and no fallback to draft`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
+        // 存在未提交 Draft（P1-01c 后不是 Canonical）——Reader 不得据此显示正文
+        f.drafts.save(draft("c1", "# 未提交草稿\n\n正文", DraftFormat.CONTROLLED_MARKDOWN))
         val vm = viewModel(f)
         advanceUntilIdle()
 
         val state = vm.uiState.value
-        assertFalse(state.hasDraft)
-        assertTrue(state.blocks.isEmpty())
+        assertFalse(state.hasDraft, "未提交 Draft 不得被 Reader 当作正文")
+        assertTrue(state.blocks.isEmpty(), "无 Canonical → 空块（**不 fallback 到最新 Draft**）")
         assertNull(state.error)
         Dispatchers.resetMain()
     }
@@ -270,7 +368,7 @@ class ReaderViewModelTest {
     fun `VM5 scroll position is persisted`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
-        f.drafts.save(draft("c1", "# H\n\n段落\n", DraftFormat.CONTROLLED_MARKDOWN))
+        f.seedCommitted("c1", "# H\n\n段落\n", DraftFormat.CONTROLLED_MARKDOWN)
         val vm = viewModel(f)
         advanceUntilIdle()
 
@@ -286,7 +384,7 @@ class ReaderViewModelTest {
     fun `VM6 persisted position is restored on reopen`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
-        f.drafts.save(draft("c1", "段落一\n\n段落二\n\n段落三", DraftFormat.CONTROLLED_MARKDOWN))
+        f.seedCommitted("c1", "段落一\n\n段落二\n\n段落三", DraftFormat.CONTROLLED_MARKDOWN)
         f.progress.save(
             ReadingProgress(novelId = novelId, chapterId = ChapterId("c1"), position = 2, updatedAt = Clock.System.now()),
         )
@@ -303,7 +401,7 @@ class ReaderViewModelTest {
     fun `VM7 without progress starts at default position`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
-        f.drafts.save(draft("c1", "段落", DraftFormat.CONTROLLED_MARKDOWN))
+        f.seedCommitted("c1", "段落", DraftFormat.CONTROLLED_MARKDOWN)
         val vm = viewModel(f)
         advanceUntilIdle()
 
@@ -317,8 +415,8 @@ class ReaderViewModelTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
         f.chapters.save(chapter("c2", 2))
-        f.drafts.save(draft("c1", "A1\n\nA2\n\nA3", DraftFormat.CONTROLLED_MARKDOWN))
-        f.drafts.save(draft("c2", "B1\n\nB2\n\nB3\n\nB4", DraftFormat.CONTROLLED_MARKDOWN))
+        f.seedCommitted("c1", "A1\n\nA2\n\nA3", DraftFormat.CONTROLLED_MARKDOWN)
+        f.seedCommitted("c2", "B1\n\nB2\n\nB3\n\nB4", DraftFormat.CONTROLLED_MARKDOWN)
         f.progress.save(ReadingProgress(novelId, ChapterId("c1"), 2, Clock.System.now()))
         f.progress.save(ReadingProgress(novelId, ChapterId("c2"), 1, Clock.System.now()))
 
@@ -337,7 +435,7 @@ class ReaderViewModelTest {
     fun `VM9 same position is not persisted twice`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
-        f.drafts.save(draft("c1", "A\n\nB\n\nC", DraftFormat.CONTROLLED_MARKDOWN))
+        f.seedCommitted("c1", "A\n\nB\n\nC", DraftFormat.CONTROLLED_MARKDOWN)
         val vm = viewModel(f)
         advanceUntilIdle()
 
@@ -354,7 +452,7 @@ class ReaderViewModelTest {
     fun `VM10 position beyond block count is clamped for display`() = runTest {
         val f = Fixture()
         f.chapters.save(chapter("c1", 1))
-        f.drafts.save(draft("c1", "A\n\nB", DraftFormat.CONTROLLED_MARKDOWN))
+        f.seedCommitted("c1", "A\n\nB", DraftFormat.CONTROLLED_MARKDOWN)
         f.progress.save(ReadingProgress(novelId, ChapterId("c1"), 99, Clock.System.now()))
 
         val vm = viewModel(f)
@@ -363,6 +461,40 @@ class ReaderViewModelTest {
         assertEquals(2, vm.uiState.value.blocks.size)
         assertEquals(1, vm.uiState.value.safePosition, "超出块数时展示层钳制，不视为错误")
         assertNull(vm.uiState.value.error)
+        Dispatchers.resetMain()
+    }
+
+    // ---------------- 11. Canonical / Draft 分离（P1-01c） ----------------
+
+    @Test
+    fun `VM11 reader shows committed canonical even when a newer uncommitted draft exists`() = runTest {
+        val f = Fixture()
+        f.chapters.save(chapter("c1", 1))
+        f.seedCommitted("c1", "已提交正文", DraftFormat.CONTROLLED_MARKDOWN)
+        // 更新的未提交 Draft：latestByChapter 会选中它，但 Reader 必须仍显示 Canonical
+        val latest = Instant.fromEpochMilliseconds(Long.MAX_VALUE)
+        f.drafts.save(
+            draft("c1", "未提交草稿", DraftFormat.CONTROLLED_MARKDOWN).copy(
+                draftId = DraftId("d-c1-newer"),
+                createdAt = latest,
+                updatedAt = latest,
+            ),
+        )
+        assertEquals(
+            DraftId("d-c1-newer"),
+            f.drafts.latestByChapter(ChapterId("c1"))?.draftId,
+            "前置：最新 Draft 应为未提交草稿",
+        )
+
+        val vm = viewModel(f)
+        advanceUntilIdle()
+
+        assertTrue(vm.uiState.value.hasDraft)
+        assertEquals(
+            listOf(MarkdownBlock.Paragraph("已提交正文")),
+            vm.uiState.value.blocks,
+            "Reader 必须读已提交 Canonical，而不是最新未提交 Draft",
+        )
         Dispatchers.resetMain()
     }
 }

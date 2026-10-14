@@ -6,6 +6,7 @@ import com.qianyan.model.change.ChangeArtifactId
 import com.qianyan.model.workingdraft.WorkingDraftId
 import com.qianyan.model.workingdraft.WorkingDraftTarget
 import com.qianyan.model.workflow.WorkflowHumanGateId
+import com.qianyan.model.writing.DraftFormat
 import kotlinx.datetime.Instant
 import kotlinx.serialization.Serializable
 
@@ -62,6 +63,67 @@ enum class CommitOperation {
 }
 
 /**
+ * CommitHistory 侧的**格式历史**（Phase 1 · revert 格式契约）。
+ *
+ * 值域与存储编码（`CommitHistory.previous_format` / `resulting_format`，v26 起）：
+ *  - [KNOWN_LEGACY] ⇔ 存储 `'legacy'`：该版本**明确**为 legacy（`Draft.format == null`）；
+ *  - [KNOWN_CONTROLLED_MARKDOWN] ⇔ 存储 `'markdown:controlled:v1'`：该版本明确为受控 Markdown；
+ *  - [NONE] ⇔ 存储 `'none'`：该侧**不存在版本**（仅首个 COMMIT 的 previous 侧）；
+ *  - [UNKNOWN] ⇔ 存储 `NULL`：**历史格式未知**（v26 之前写入的旧行）。**不得解释为 legacy**，
+ *    也不得用正文内容或当前 Draft 推断；消费方（如 revert）必须显式处理（类型化拒绝）。
+ */
+@Serializable
+enum class CommitFormatHistory {
+    KNOWN_LEGACY,
+    KNOWN_CONTROLLED_MARKDOWN,
+    NONE,
+    UNKNOWN;
+
+    companion object {
+        const val LEGACY_STORAGE: String = "legacy"
+        const val NONE_STORAGE: String = "none"
+
+        /** 存储值 → 领域值。`null` 与未识别值一律 [UNKNOWN]（绝不解释为 legacy）。 */
+        fun fromStorage(raw: String?): CommitFormatHistory = when (raw) {
+            null -> UNKNOWN
+            LEGACY_STORAGE -> KNOWN_LEGACY
+            DraftFormat.CONTROLLED_MARKDOWN -> KNOWN_CONTROLLED_MARKDOWN
+            NONE_STORAGE -> NONE
+            else -> UNKNOWN
+        }
+
+        /** 领域值 → 存储值（[UNKNOWN] ⇒ `NULL`）。 */
+        fun toStorage(value: CommitFormatHistory): String? = when (value) {
+            KNOWN_LEGACY -> LEGACY_STORAGE
+            KNOWN_CONTROLLED_MARKDOWN -> DraftFormat.CONTROLLED_MARKDOWN
+            NONE -> NONE_STORAGE
+            UNKNOWN -> null
+        }
+
+        /** 由 Draft 行的实际 `format` 推导（`null` ⇒ legacy；受控 Markdown ⇒ CM；其他未知值 ⇒ UNKNOWN）。 */
+        fun ofDraftFormat(format: String?): CommitFormatHistory = when (format) {
+            null -> KNOWN_LEGACY
+            DraftFormat.CONTROLLED_MARKDOWN -> KNOWN_CONTROLLED_MARKDOWN
+            else -> UNKNOWN
+        }
+
+        /**
+         * 该格式历史对应的 `Draft.format`（[KNOWN_LEGACY] / [NONE] ⇒ `null`；受控 Markdown ⇒ CM）。
+         * [UNKNOWN] **没有**任何合法的 `Draft.format`：直接抛出，迫使调用方先显式拒绝（FORMAT_UNKNOWN），
+         * 绝不静默当作 legacy 的 `null`。
+         */
+        fun toDraftFormat(value: CommitFormatHistory): String? = when (value) {
+            KNOWN_LEGACY, NONE -> null
+            KNOWN_CONTROLLED_MARKDOWN -> DraftFormat.CONTROLLED_MARKDOWN
+            UNKNOWN -> throw IllegalStateException(
+                "CommitFormatHistory.UNKNOWN 没有对应的 Draft.format：" +
+                    "调用方必须先显式拒绝（FORMAT_UNKNOWN），不得把未知格式当作 legacy",
+            )
+        }
+    }
+}
+
+/**
  * 一条 Commit History 记录：**回答 Canonical 为什么发生了变化**（§8）。
  *
  * 能回答：谁（[operation] / [artifactId]）基于什么（[artifactId]）改了什么（[summary]）、
@@ -69,7 +131,9 @@ enum class CommitOperation {
  * 属于哪个 Project（[projectId]）、Target 是什么（[target]）、是否来自 Revert（[operation] / [revertedHistoryId]）。
  *
  * [previousContent] / [resultingContent] 是**恢复所必需**的最小快照（§9）：没有它们，Revert 无法重建
- * "该历史之前的 Canonical 内容"。它们不复制 Draft 元数据（lineage / status / format 仍以 ChapterDraft 为唯一事实来源）。
+ * "该历史之前的 Canonical 内容"。它们不复制 Draft 元数据（lineage / status 仍以 ChapterDraft 为唯一事实来源）；
+ * **format 例外**：v26 起 [previousFormat] / [resultingFormat] 把每版正文的格式语义固化进历史
+ * （此前 revert 无法在不猜测的前提下恢复 legacy 格式），载体行仍是 Draft.format 的现行事实来源。
  */
 @Serializable
 data class CommitHistoryEntry(
@@ -79,6 +143,13 @@ data class CommitHistoryEntry(
     val operation: CommitOperation,
     /** 触发本次提交的 Change Artifact；[CommitOperation.REVERT] 时无 Artifact（为 null）。 */
     val artifactId: ChangeArtifactId? = null,
+    /**
+     * 批准本次提交的**既有** Workflow Human Gate（P1-02j B1：持久的 Gate ↔ Commit 关联）。
+     *
+     * COMMIT 由人工门批准产生 → 该 Gate id；作者手改保存 / [CommitOperation.REVERT] / 无 Gate 关联 → null。
+     * 关联值来自真实批准上下文（[CommitApproval]），**不**由章节 / 正文相等 / "最近一条 Gate" 推测。
+     */
+    val gateId: WorkflowHumanGateId? = null,
     /** Canonical 目标（复用 I8 target；不新建 target 模型）。 */
     val target: WorkingDraftTarget,
     /** 提交前的 Canonical 正文载体（无 → null）。 */
@@ -93,6 +164,14 @@ data class CommitHistoryEntry(
     val summary: String,
     /** [CommitOperation.REVERT] 时：本次回退针对哪一条历史；[CommitOperation.COMMIT] 时为 null。 */
     val revertedHistoryId: CommitHistoryId? = null,
+    /**
+     * [previousContent] 所属版本的格式历史（Phase 1 · revert 格式契约）。
+     * revert 恢复的正是这一版 ⇒ [revert] 依据它决定恢复载体的 `Draft.format`；
+     * [CommitFormatHistory.UNKNOWN] ⇒ 不得猜测，revert 必须类型化拒绝（[CommitErrorCodes.FORMAT_UNKNOWN]）。
+     */
+    val previousFormat: CommitFormatHistory,
+    /** [resultingContent] 所属版本的格式历史（与本条历史产生的载体 Draft 的实际 format 一致）。 */
+    val resultingFormat: CommitFormatHistory,
     val createdAt: Instant,
 )
 
@@ -199,6 +278,10 @@ object CommitErrorCodes {
 
     /** 仅 [CommitOperation.COMMIT] 历史可被回退（回退一条 Revert 记录需另立语义，本阶段不定义）。 */
     const val INVALID_REVERT_TARGET: String = "INVALID_REVERT_TARGET"
+
+    /** 被回退历史缺少格式信息（v26 之前的旧行，`previous_format = NULL` / [CommitFormatHistory.UNKNOWN]）：
+     *  revert 拒绝猜测性恢复，零写入；恢复格式需待格式信息可用后重试。 */
+    const val FORMAT_UNKNOWN: String = "FORMAT_UNKNOWN"
 
     /** I2 ActionPolicy 判定为 `Denied`：当前范围不允许该动作。 */
     const val ACTION_DENIED: String = "ACTION_DENIED"

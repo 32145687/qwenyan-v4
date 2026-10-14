@@ -1,0 +1,16 @@
+-- P1-02j · Schema v24（23.sqm：v23 → v24）
+-- additive migration：CommitHistory 新增**可空** gate_id 列 + 反查索引。
+--   目的（P1-02j B1）：建立持久的 Gate ↔ Commit 关联，使跨进程重启后
+--   "某 Human Gate 是否已产生正式提交"可**直接反查**，不再依赖"正文相等"启发式。
+--   语义：
+--     COMMIT 由人工门批准产生 → gate_id = 该 WorkflowHumanGate 的 gate_id；
+--     作者手改保存（commitAuthorSave）/ REVERT / 无 Gate 关联 → gate_id = NULL。
+--
+-- 边界（FD-9 additive）：只加列，不修改任何既有列 / 语义 / 既有数据；
+--   历史旧行升级后 gate_id = NULL（正常历史状态，**不回填、不猜测**）；
+--   不改变 UNIQUE(artifact_id)（唯一索引仍只约束 artifact_id）。
+-- 幂等由 DatabaseInitializer 的 !columnExists("CommitHistory","gate_id") 分支包裹（列已存在则跳过）。
+
+ALTER TABLE CommitHistory ADD COLUMN gate_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_commit_history_gate ON CommitHistory(gate_id);

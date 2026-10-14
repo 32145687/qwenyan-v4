@@ -4,6 +4,7 @@ import com.qianyan.application.usecase.draft.SeededWorld
 import com.qianyan.application.usecase.draft.WorkingDraftFixture
 import com.qianyan.application.usecase.draft.countRows
 import com.qianyan.application.usecase.writing.WriterUseCases
+import com.qianyan.model.DraftId
 import com.qianyan.model.ProjectId
 import com.qianyan.model.change.ChangeArtifactId
 import com.qianyan.model.commit.CommitHistoryEntry
@@ -192,6 +193,8 @@ class CommitTransactionTest {
 
         override fun getById(historyId: CommitHistoryId): CommitHistoryEntry? = delegate.getById(historyId)
         override fun getByArtifact(artifactId: ChangeArtifactId): CommitHistoryEntry? = delegate.getByArtifact(artifactId)
+        override fun getByResultingDraftId(draftId: DraftId): CommitHistoryEntry? = delegate.getByResultingDraftId(draftId)
+        override fun getByGate(gateId: com.qianyan.model.workflow.WorkflowHumanGateId): CommitHistoryEntry? = delegate.getByGate(gateId)
         override fun listByProject(projectId: ProjectId): List<CommitHistoryEntry> = delegate.listByProject(projectId)
     }
 }

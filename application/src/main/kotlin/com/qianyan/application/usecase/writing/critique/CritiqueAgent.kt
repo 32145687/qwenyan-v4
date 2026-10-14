@@ -39,9 +39,23 @@ class CritiqueAgent(
      * 对 [Draft] 执行一次 Critique（同步，无网络除非装配方注入真实 Provider）。
      * 返回 [ValidationResult]；失败抛类型化 [ApplicationException]。
      */
-    fun critique(draft: Draft): ValidationResult {
+    fun critique(draft: Draft): ValidationResult = runCritique(renderInput(draft))
+
+    /**
+     * **P1-02c+d**：对 **AI 工作产物正文**（WorkingDraft 内容，无章节 Draft 行）执行一次 Critique。
+     *
+     * 与 [critique] 行为完全一致（同一 Agent / Parser / 输入模板 / 错误映射），只是输入来源改为
+     * 「正文 + 可选计划引用」，避免为 WorkingDraft 伪造 DraftId 或让它冒充 Draft。
+     */
+    fun critiqueContent(
+        content: String,
+        planId: com.qianyan.model.ChapterPlanId? = null,
+        sourceModel: String = "",
+    ): ValidationResult = runCritique(renderInput(content, planId, sourceModel))
+
+    private fun runCritique(input: String): ValidationResult {
         return try {
-            val result = runtime.run(CRITIC_AGENT, renderInput(draft))
+            val result = runtime.run(CRITIC_AGENT, input)
             val raw = result.answer
                 ?: throw CritiqueException.InvalidOutput("critic returned no answer")
             CritiqueParser.parse(raw)
@@ -64,17 +78,24 @@ class CritiqueAgent(
     }
 
     /** 构造供 Critic LLM 使用的输入文本（正文 + 关联信息）。 */
-    private fun renderInput(draft: Draft): String = buildString {
+    private fun renderInput(draft: Draft): String =
+        renderInput(draft.content, draft.planId, draft.sourceModel)
+
+    /** 构造供 Critic LLM 使用的输入文本（正文 + 关联信息）；Draft 与 WorkingDraft 共用同一模板。 */
+    private fun renderInput(
+        content: String,
+        planId: com.qianyan.model.ChapterPlanId?,
+        sourceModel: String,
+    ): String = buildString {
         appendLine("【草稿正文】")
-        if (draft.content.isNotBlank()) {
+        if (content.isNotBlank()) {
             // 正文可能很长，评审重点是结构性与方向性意见，截取前段足以覆盖评审意图。
-            appendLine(draft.content.take(CRITIC_INPUT_CONTENT_LIMIT))
+            appendLine(content.take(CRITIC_INPUT_CONTENT_LIMIT))
         } else {
             appendLine("（空正文）")
         }
-        val planId = draft.planId
         if (planId != null) appendLine("chapterPlanId: ${planId.value}")
-        if (draft.sourceModel.isNotBlank()) appendLine("sourceModel: ${draft.sourceModel}")
+        if (sourceModel.isNotBlank()) appendLine("sourceModel: $sourceModel")
         appendLine()
         appendLine("请按 JSON 输出评审结果：" +
             "{\"passed\":<true|false>,\"issues\":[{\"field\":\"...\",\"severity\":\"ERROR|WARNING|INFO\",\"message\":\"...\"}]}")

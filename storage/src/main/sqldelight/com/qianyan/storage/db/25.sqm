@@ -1,0 +1,44 @@
+-- Phase 1 · revert 格式契约（v25 → v26，additive）
+-- 目标：让 revert 能在**不猜测**的前提下恢复"被回退版本"的 Draft.format 语义。
+--
+-- 新增两列（可空，无默认值）：
+--   previous_format  / resulting_format
+-- 值域（与 CommitFormatHistory 对应）：
+--   'markdown:controlled:v1' = 明确受控 Markdown；'legacy' = 明确 format=null；
+--   'none' = 该侧不存在版本（仅首个 COMMIT 的 previous 侧）；NULL = **未知**（v26 之前的旧行，不得解释为 legacy）。
+--
+-- 可证明回填（仅利用既存事实，不伪造历史）：
+--   · ChapterDraft 行的 format 一经创建不再被改写（唯一写入点 stampControlledMarkdown 只作用于新建 Draft），
+--     且无删除 API ⇒ "该行现存 format" 是其**全部历史版本**的可靠格式判据；
+--   · resulting 侧：resulting_draft_id 行存在 ⇒ 可证明回填（含 REVERT 行）；
+--   · previous 侧：previous_draft_id 非空且行存在 ⇒ 可证明回填；
+--     previous_draft_id 为 NULL 且 previous_content = '' ⇒ 该侧不存在版本 ⇒ 'none'；
+--     previous_draft_id 为 NULL 且 previous_content 非空（同 row 提交，"不自链"设计）⇒ 保持 NULL（未知，
+--     按冻结规则不使用当前 Draft 推断；运行时 revert 对 UNKNOWN 类型化拒绝 FORMAT_UNKNOWN）。
+-- 历史旧行语义：两列 NULL = 未知；不把 NULL 当作 legacy。
+
+ALTER TABLE CommitHistory ADD COLUMN previous_format TEXT;
+ALTER TABLE CommitHistory ADD COLUMN resulting_format TEXT;
+
+-- 可证明回填 ①：resulting 侧（载体行存在即成立；COALESCE 处理行内 format=NULL=legacy）
+UPDATE CommitHistory
+SET resulting_format = CASE
+    WHEN EXISTS (SELECT 1 FROM ChapterDraft d WHERE d.draft_id = CommitHistory.resulting_draft_id)
+        THEN COALESCE(
+            (SELECT d.format FROM ChapterDraft d WHERE d.draft_id = CommitHistory.resulting_draft_id),
+            'legacy')
+    ELSE NULL
+END;
+
+-- 可证明回填 ②：previous 侧（仅 previous_draft_id 非空且载体行存在；首个 COMMIT ⇒ 'none'；同 row 旧行保持未知）
+UPDATE CommitHistory
+SET previous_format = CASE
+    WHEN previous_draft_id IS NOT NULL
+         AND EXISTS (SELECT 1 FROM ChapterDraft d WHERE d.draft_id = CommitHistory.previous_draft_id)
+        THEN COALESCE(
+            (SELECT d.format FROM ChapterDraft d WHERE d.draft_id = CommitHistory.previous_draft_id),
+            'legacy')
+    WHEN previous_draft_id IS NULL AND previous_content = ''
+        THEN 'none'
+    ELSE NULL
+END;

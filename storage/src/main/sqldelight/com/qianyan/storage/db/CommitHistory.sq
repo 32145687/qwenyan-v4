@@ -11,6 +11,12 @@
 --   · artifact_id 唯一（非空时）⇒ 同一 Artifact 不可能被成功提交两次（重复 Commit 的存储级兜底）；
 --   · previous_content / resulting_content 是 Revert 恢复所必需的最小快照（§9），不是第二套正文模型；
 --   · operation 只区分 COMMIT / REVERT（CommitOperation 枚举名），不是第二套状态机。
+--   · gate_id（Schema v24，P1-02j B1）：记录**由哪个 Human Gate 批准**了这次提交，
+--     建立持久的 Gate ↔ Commit 关联（替代"正文相等"的启发式恢复判据）。
+--     COMMIT 由人工门产生 → 该 Gate id；作者手改保存 / REVERT / 未关联 → NULL。
+--   · previous_format / resulting_format（Schema v26，Phase 1 revert 格式契约）：记录每版正文的**格式语义**，
+--     值域：'markdown:controlled:v1' | 'legacy'（明确 format=null）| 'none'（该侧不存在版本，仅首个 COMMIT 的
+--     previous 侧）| NULL（**未知**：v26 之前写入的旧行；不得解释为 legacy，revert 须类型化拒绝）。
 
 CREATE TABLE CommitHistory (
     history_id          TEXT NOT NULL PRIMARY KEY,
@@ -18,6 +24,7 @@ CREATE TABLE CommitHistory (
     project_id          TEXT NOT NULL,
     operation           TEXT NOT NULL,            -- CommitOperation 枚举名（COMMIT / REVERT）
     artifact_id         TEXT,                     -- COMMIT：源 Change Artifact；REVERT：NULL
+    gate_id             TEXT,                     -- 批准本次提交的 WorkflowHumanGate；无 → NULL（revert 见 23.sqm）
     novel_id            TEXT NOT NULL,            -- target.novelId
     chapter_id          TEXT NOT NULL,            -- target.chapterId
     variant_id          TEXT,                     -- target.variantId（NULL = Original）
@@ -27,6 +34,8 @@ CREATE TABLE CommitHistory (
     resulting_content   TEXT NOT NULL,            -- 提交后正文
     summary             TEXT NOT NULL,
     reverted_history_id TEXT,                     -- REVERT：被回退的历史；COMMIT：NULL
+    previous_format     TEXT,                     -- previousContent 版本的格式历史（v26；NULL=未知，见头注）
+    resulting_format    TEXT,                     -- resultingContent 版本的格式历史（v26；NULL=未知，见头注）
     created_at          INTEGER NOT NULL          -- epoch 毫秒
 );
 
@@ -36,13 +45,18 @@ CREATE UNIQUE INDEX idx_commit_history_artifact ON CommitHistory(artifact_id);
 -- Project 作用域查询（历史时序）。
 CREATE INDEX idx_commit_history_project ON CommitHistory(project_id, created_at);
 
+-- P1-02j B1：Gate ↔ Commit 关联反查（gate_id 可空；NULL 不参与，故历史旧行 / REVERT 不受影响）。
+CREATE INDEX idx_commit_history_gate ON CommitHistory(gate_id);
+
 insertCommitHistory:
-INSERT OR REPLACE INTO CommitHistory(history_id, commit_id, project_id, operation, artifact_id, novel_id, chapter_id,
+INSERT OR REPLACE INTO CommitHistory(history_id, commit_id, project_id, operation, artifact_id, gate_id, novel_id, chapter_id,
                                      variant_id, previous_draft_id, resulting_draft_id, previous_content,
-                                     resulting_content, summary, reverted_history_id, created_at)
-VALUES (:history_id, :commit_id, :project_id, :operation, :artifact_id, :novel_id, :chapter_id,
+                                     resulting_content, summary, reverted_history_id, previous_format,
+                                     resulting_format, created_at)
+VALUES (:history_id, :commit_id, :project_id, :operation, :artifact_id, :gate_id, :novel_id, :chapter_id,
         :variant_id, :previous_draft_id, :resulting_draft_id, :previous_content,
-        :resulting_content, :summary, :reverted_history_id, :created_at);
+        :resulting_content, :summary, :reverted_history_id, :previous_format,
+        :resulting_format, :created_at);
 
 getCommitHistoryById:
 SELECT * FROM CommitHistory WHERE history_id = :history_id;
@@ -54,6 +68,10 @@ SELECT * FROM CommitHistory WHERE artifact_id = :artifact_id LIMIT 1;
 -- P1-01：按"提交产物 Draft"反查历史（判定一条 Draft 是否为 Commit 产生的 Canonical 载体）。
 getCommitHistoryByResultingDraftId:
 SELECT * FROM CommitHistory WHERE resulting_draft_id = :resulting_draft_id LIMIT 1;
+
+-- P1-02j B1：按批准 Gate 反查正式提交（跨重启恢复的持久判据；至多一条）。无关联 → 空。
+getCommitHistoryByGateId:
+SELECT * FROM CommitHistory WHERE gate_id = :gate_id LIMIT 1;
 
 -- Project 内历史（**插入序** = 真实发生时序；不依赖时间戳精度，避免同毫秒平局）。
 listCommitHistoryByProject:

@@ -22,7 +22,9 @@ import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -86,7 +88,13 @@ class ChapterWorkflowFacadeTest {
         assertEquals(ChapterPhase.WAITING_CONFIRMATION, after.phase)
         assertTrue(after.waitingForUser)
         assertEquals(0, after.revisionCount)
-        assertTrue(after.draftId != null)
+        // P1-02c+d：AI 待审期间章节无 Draft（产出在 WorkingDraft）；待审对象存在。
+        assertNull(after.draftId, "AI 待审期间不得投影出章节 Draft")
+        assertEquals(
+            1,
+            c.workingDrafts.list(c.projects.projectOf(novel).projectId).count { it.target.chapterId == chapter && !it.status.isTerminal },
+            "待审工作产物存在",
+        )
 
         val read = c.workflowFacade.getChapterProgress(chapter)
         assertEquals(after, read) // 只读投影一致
@@ -139,14 +147,13 @@ class ChapterWorkflowFacadeTest {
             c.workflowFacade.startChapter(novel, null, chapter)
             c.workflowFacade.advance(chapter) // → WAITING_HUMAN（已完成 planning/writing）
             assertEquals(ChapterPhase.WAITING_CONFIRMATION, c.workflowFacade.getChapterProgress(chapter).phase)
-            val draftBefore = c.draftRepository.latestByChapter(chapter)!!.draftId
+            assertNull(c.draftRepository.latestByChapter(chapter), "AI 待审期间章节无 Draft")
             closeAll(handles)
 
             c = openFile("jdbc:sqlite:$tmp", handles)
             val resumed = c.workflowFacade.resume(chapter) // durable 恢复，不重跑已完成步骤
             assertEquals(ChapterPhase.WAITING_CONFIRMATION, resumed.phase)
-            assertEquals(draftBefore, c.draftRepository.latestByChapter(chapter)!!.draftId)
-            assertEquals(1, c.draftRepository.listByChapter(chapter).size) // 未因恢复产生重复 Draft
+            assertEquals(0, c.draftRepository.listByChapter(chapter).size, "恢复不得伪造 / 新增章节 Draft")
         } finally {
             closeAll(handles)
             Files.deleteIfExists(Path(tmp))

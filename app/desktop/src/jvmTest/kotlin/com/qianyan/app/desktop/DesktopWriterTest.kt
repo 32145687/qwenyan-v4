@@ -10,6 +10,7 @@ import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.writing.Draft
+import com.qianyan.model.workingdraft.WorkingDraftStatus
 import com.qianyan.model.writing.DraftFormat
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.provider.InMemoryProviderCredentialStore
@@ -152,6 +153,11 @@ class DesktopWriterTest {
         assertEquals(generated.draftId, reread.uiState.value.draftId, "保存必须复用同一 Draft 身份")
         assertEquals(generated.status.name, reread.uiState.value.draftStatus, "保存不得改变 Draft.status")
         assertEquals(generated.format, reread.uiState.value.draftFormat, "保存不得改变 Draft.format")
+
+        // P1-01f：真实 Desktop 保存入口（WriterController.save）即产生 Canonical，Reader 侧可读到同一正文
+        assertEquals("雪停了。他改了开头这一行。", c.canonicalRead.committedContent(chapterId), "保存即 Canonical")
+        // P1-02c+d:驱动到 Draft 的路径含「人工门批准 → 正式 Commit」（1 条），本次作者保存再追加 1 条。
+        assertEquals(2, c.commits.history(c.projects.projectOf(novelId).projectId).size, "AI 提交 + 作者保存各一条")
     }
 
     // ---------- 3. Continue Writing ----------
@@ -202,6 +208,94 @@ class DesktopWriterTest {
         assertNull(after.error, "人工通过不应失败")
         assertFalse(after.isApproving)
         assertFalse(after.waitingForUser, "人工通过后不应再停在人工门")
+    }
+
+    /**
+     * P0-3 · 「通过确认」必须真的决议 Human Gate，并让 Workflow 继续向前，且不重复命中同一个闸门。
+     *
+     * 修复前：按钮走 `continueWriting → advance → runForward`，命中同一 PENDING gate 后再次
+     * WAITING_HUMAN —— 点击无副作用（死循环）。修复后：按钮走 `approveGate`。
+     */
+    @Test
+    fun `confirming the human gate resolves it and lets the workflow proceed without recreating the gate`() {
+        val (c, _) = openContainer()
+        val (novelId, chapterId) = seedChapter(c)
+
+        var guard = 0
+        while (guard++ < 12 && !c.workflowFacade.getChapterProgress(chapterId).waitingForUser) {
+            c.writerGateway.continueWriting(novelId, null, chapterId)
+        }
+        val before = c.workflowFacade.getChapterProgress(chapterId)
+        assertTrue(before.waitingForUser, "前置：流程必须停在人工门")
+        assertEquals(ChapterPhase.WAITING_CONFIRMATION, before.phase)
+        // P1-02c+d：人工门绑定的待审对象是 AI 工作产物（WorkingDraft），章节 Draft 表此刻为空；
+        // Gate 不把 WorkingDraftId 冒充 DraftId。
+        assertNull(before.draftId, "AI 待审期间章节无 Draft")
+        assertEquals(0, c.draftRepository.listByChapter(chapterId).size, "AI 产出不得直写章节 Draft 表")
+        val pendingGate = assertNotNull(
+            c.workflowRepository.getWorkflowByActiveChapter(chapterId)?.pendingGateId?.let { c.workflowRepository.getGate(it) },
+        )
+        assertNull(pendingGate.draftId, "工作产物 Gate 不绑 Draft")
+        val working = c.workingDrafts.list(c.projects.projectOf(novelId).projectId)
+            .single { it.target.chapterId == chapterId && !it.status.isTerminal }
+
+        val controller = controllerFor(c, novelId, chapterId)
+        controller.load()
+        assertTrue(controller.uiState.value.canApprove)
+
+        // ① 决议：走既有 approveGate（不是 advance）
+        controller.approveGate()
+        val afterApprove = controller.uiState.value
+        assertNull(afterApprove.error)
+        assertFalse(afterApprove.waitingForUser, "批准后不得再停在人工门")
+        // 批准 = 经 I9/I10 正式提交：产生 Canonical 载体 Draft 并标记 CONFIRMED
+        val carrier = assertNotNull(c.draftRepository.latestByChapter(chapterId), "批准后产生 Canonical 载体")
+        assertEquals(DraftStatus.CONFIRMED, carrier.status, "批准后 Canonical 载体为 CONFIRMED")
+        assertEquals(WorkingDraftStatus.DISCARDED, c.workingDrafts.get(working.workingDraftId).status, "工作产物提交后收尾")
+
+        // P1-02：批准 = 人工明确批准该 AI 正文 ⇒ 经 I10 唯一入口形成 Canonical Commit（Desktop 真实 seam）
+        val committed = assertNotNull(c.canonicalRead.committedContent(chapterId), "批准后该章节必须有 Canonical 正文")
+        assertEquals(carrier.content, committed, "Canonical 正文 = 已批准（提交）的正文")
+        assertEquals(1, c.commits.history(c.projects.projectOf(novelId).projectId).size, "只追加一条 CommitHistory")
+
+        // ② 不重复创建同一个闸门：重复批准是**幂等**的（既有 Gate 已 RESOLVED，不产生新闸门、不回到等待）
+        val second = c.workflowFacade.approve(chapterId)
+        assertFalse(second.waitingForUser, "重复批准必须幂等：不得重新进入等待人工确认，也不得新建闸门")
+
+        // ③ 继续推进：不得再次命中同一个 gate，也不得再产生新的待确认闸门
+        controller.continueWriting()
+        val afterAdvance = c.workflowFacade.getChapterProgress(chapterId)
+        assertFalse(afterAdvance.waitingForUser, "批准后再推进不得重新停在同一人工门")
+        assertNotEquals(ChapterPhase.WAITING_CONFIRMATION, afterAdvance.phase)
+        assertFalse(controller.uiState.value.isApproving)
+    }
+
+    /**
+     * P0-3 · 接线守卫：桌面「通过确认」必须绑定 `approveGate`，**不得**绑定 `continueWriting`。
+     *
+     * 沿用仓库既有的"读源码断言 token"守卫范式（见 §3.1 那批 boundary 测试）：
+     * Compose 按钮的回调绑定无法用无 GUI 的 JVM 测试驱动，因此把"接错线"这一缺陷本身钉死。
+     */
+    @Test
+    fun `confirm button is wired to approveGate and not to advance`() {
+        val page = File("src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/WritePage.kt")
+        assertTrue(page.isFile, "找不到桌面正文页源码：$page")
+        val code = page.readText()
+
+        // 该文案在 Composable 的 kdoc 里也出现，故必须定位到真正声明按钮的那一行
+        val confirmLine = code.lines().first { "通过确认" in it && "ActionButton" in it }
+        assertTrue("onApprove" in confirmLine, "「通过确认」必须绑定 onApprove，实际：$confirmLine")
+        assertFalse("onContinue" in confirmLine, "「通过确认」不得绑定 onContinue（那只会 advance，命中同一 PENDING gate 而无副作用）")
+
+        assertTrue(
+            "onApprove = { controller?.approveGate() }" in code,
+            "onApprove 必须接到既有 WriterController.approveGate()（不新建接口、不直接改 status）",
+        )
+        assertTrue("onApprove: () -> Unit" in code, "ChapterBar 必须显式接收 onApprove 回调")
+        assertTrue(
+            "ActionButton(\"继续写\", ActionLevel.PRIMARY, ui.canGenerate, onContinue)" in code,
+            "「继续写」仍应绑定 onContinue（两个动作不得合并成同一个回调）",
+        )
     }
 
     @Test
@@ -370,8 +464,11 @@ class DesktopWriterTest {
         }
         assertEquals(emptyList(), violations, "Desktop UI 层不得直连 Repository / Orchestrator / Decision / SQLDelight")
 
-        // 正向断言：Worker UI 必须经既有 Writer seam + 既有 Workflow 用户层 seam 接线
-        val writeSources = sources.filter { it.parentFile.name == "write" }.joinToString("\n") { it.readText() }
+        // 正向断言：Writer UI 必须经既有 Writer seam + 既有 Workflow 用户层 seam 接线
+        // （I14-UI 收敛后，正文页位于 ui/pages/WritePage.kt；ui/write 保留 WriterController / UiState / RewriteDialog）
+        val writeSources = sources
+            .filter { it.parentFile.name == "write" || it.name == "WritePage.kt" }
+            .joinToString("\n") { it.readText() }
         assertTrue(writeSources.contains("writerGateway"), "Writer UI 必须经 container.writerGateway 接线")
         assertTrue(writeSources.contains("workflowFacade"), "Writer UI 必须经 container.workflowFacade 读取 HITL / 阶段")
     }

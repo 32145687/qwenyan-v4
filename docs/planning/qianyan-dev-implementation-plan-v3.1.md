@@ -48,6 +48,7 @@
 | 每 Phase Completion Gate | §9–§19 各 Phase 第 12 项 |
 | R1 升级评估条件（FD-10 重新评估） | §23A |
 | R3 读策略 | §23B |
+| Draft / WorkingDraft / Canonical 语义裁决 | §23C |
 | 词库归属 | §11A |
 
 ---
@@ -323,6 +324,10 @@ Git baseline 确认 → 构建成功 → 测试基线可判定（每项失败有
 
 **13. 下一 Phase 的输入**：可信的构建 / 测试基线 + 未提交工作边界 → Phase 1 可以在干净基线上动 Change Layer。
 
+> **基线更新指针（2026-10-13）**：本节 §9.3「当前代码真实状态」（HEAD `b738086` / 工作树 38 项）为 Phase 0 当时记录，**保持原样不覆盖**。
+> 后续实测基线（HEAD、工作树清点与归属登记、`Schema.version`、全量测试基线、A/B/C/D 分类、Phase 0 事后追认）见
+> [`qianyan-phase0-baseline-register.md`](qianyan-phase0-baseline-register.md)。
+
 ---
 
 ## 10. Phase 1 — Change Layer（建立 Canonical）
@@ -346,6 +351,8 @@ Git baseline 确认 → 构建成功 → 测试基线可判定（每项失败有
 本 Phase（导入后 AI 修改）：AI → Working Draft → Diff → Change → Human Gate → Commit → Canonical
 ```
 
+> **术语以 §23C 为唯一裁决**：本节图中的 `Working Draft` 即 §23C.2 的 `WorkingDraft`（代码实际类型名），与架构基线中抽象的「Draft」的关系见 §23C.2 / §23C.3。
+
 **6. 不做什么**：
 - 不做 Change Layer 的"高级能力"（多提案并行、部分接受、跨章重构、Revert 全链）
 - 不做 World Model Update（Phase 3）
@@ -368,6 +375,14 @@ Git baseline 确认 → 构建成功 → 测试基线可判定（每项失败有
 - **本 Phase 建立的是"最小闭环"**：Draft → Diff → Change → Gate → Commit → Canonical，高级能力后置。
 - **新增正式读取入口 `CanonicalRead`**：Reader / Writer / Application / UI 取正典一律经 `CanonicalRead`；`latestByChapter` **仅限** Draft / Working Draft 查询，**不得**再被当作 Canonical 正文来源（**具体场景读取策略见 §23B；R3 已 FINALIZED**）。
 - **TXT 导入语义 = Canonical 初始化**：作者已有内容 `TXT → Import → Chapter → Canonical 初始化`，**不走** `AI Draft → Diff → Human Gate → Commit`；导入后 AI 的修改才走变更链。
+- **TXT 多来源边界（R1–R5，2026-10-13 已裁决；多 TXT 合并功能未实现）**：
+  **R1** 一个 Novel 的 Canonical 章节序列当前只允许**单一来源**（一份 TXT 文档或 AI 写作链），不自动混合；
+  **R2** 存在不属于本次初始化目标集合的 Chapter ⇒ 维持 `ChapterSourceConflict` 拒绝（不得放宽）；
+  **R3** 单文档初始化保持全有或全无，重试遵守既有确定性 ID 与幂等规则；
+  **R4** 未来多来源合并必须经**显式合并 UseCase**（携带全书顺序决策 + 来源引用；所需 additive 字段另行裁决）；
+  **R5** **禁止**把"自动接尾"作为默认行为。
+  规则只冻结边界与未来扩展约束，不代表多 TXT 能力已实现；证据与方案比较见
+  [`qianyan-phase0-baseline-register.md`](qianyan-phase0-baseline-register.md) 附录 B。
 
 **9. Storage / Migration**：**不需要新表**。复用 `CommitHistory.resulting_draft_id`（已有只读查询）。若需要"哪些 Draft 已 Commit"的判定，用现成查询即可。
 
@@ -1250,6 +1265,119 @@ R3 FINALIZED  ≠  读取行为已实现
 
 ---
 
+## 23C. Draft / WorkingDraft / Canonical 语义裁决（P1-02b）
+
+> **性质**：本节是**文档裁决**（P1-02b），用于消除架构基线与本计划之间的术语歧义。
+> 本节**不新增**任何 Canonical 语义、不修改 R3 / §23B、**不修改任何代码 / 测试 / schema / migration**；仅在文档层面统一「架构基线的抽象 `Draft`」与「本计划的 `WorkingDraft`」的关系。
+> 本节所有陈述都必须落在下列四类之一，不得混写：
+> **① 已冻结架构契约** ｜ **② 当前代码事实** ｜ **③ 尚未完成的目标流程** ｜ **④ 后续实施计划**
+
+### 23C.1 Canonical 的定义（① 冻结契约，与 §23B 一致）
+
+| 规则 | 内容 |
+|---|---|
+| 事实来源 | **`CommitHistory` 是 Canonical 的唯一事实来源**。Canonical = 「被正式 Commit（或合法 Revert）历史所指向的结果」 |
+| `Draft` 的地位 | `Draft`（`com.qianyan.model.writing.Draft`，持久化于章节 Draft 表）是**正文内容的存储载体**；它**不因**存在于 Draft 表、**不因**成为最新 Draft（`latestByChapter`）、**不因**处于某个 `DraftStatus` 而自动成为 Canonical |
+| 判定与读取入口 | `CanonicalReadUseCases`（`committedDraft` / `committedContent`）是**唯一**正式 Canonical 阅读入口：`CommitHistory.resultingDraftId → DraftRepository.getById` |
+| 禁止 | **不允许**用 `latestByChapter` 替代 Canonical 查询；`latestByChapter` 只用于 Draft / Working Draft 查询（作者编辑、AI 写作、Diff 基线、索引条目）—— 细则见 §23B.5 |
+| Reader / 正式阅读 | 一律经 `CanonicalReadUseCases`（场景表见 §23B.1） |
+
+### 23C.2 Draft 与 WorkingDraft 的关系（② 以代码实际模型为准）
+
+二者**不是**同一种对象，不得互相替代；本节保留实际类型名与字段名，**不虚构字段**。
+
+**`Draft`（现有章节正文存储模型）**
+- 用途：作者编辑稿；已提交正文的**存储载体**；既有兼容路径（legacy `format = null`）。
+- 归属：章节（`chapterId` 可空）；由 `DraftRepository` 持久化。
+- 事实边界：**不能**仅凭 `DraftId`、`latestByChapter` 顺序或 `DraftStatus`（`DRAFTING / WRITTEN / REVISED / FINAL / PENDING_CONFIRMATION / CONFIRMED`）认定其为 Canonical。
+
+**`WorkingDraft`（AI 尚未正式提交的工作产物）**
+- 身份：`WorkingDraftId` —— **独立于 `DraftId`**。
+- 生命周期：`WorkingDraftStatus`：`WORKING → VALIDATED / INVALID`；任意非终态 → `DISCARDED`（终态）。
+- 基线：`WorkingDraftBase{ baseDraftId, baseDraftStatus, baseDraftUpdatedAt, baseChapterStatus }` —— 只引用既有标识与字段，**不新建版本号体系**。
+- 归属：`projectId` + `target: WorkingDraftTarget{ novelId, chapterId, variantId }`（可选 `sessionId` / `activityId` 引用）。
+- 管理入口：`WorkingDraftUseCases`（`create / get / list / replace / edit / discard / validate`）。
+- 下游：`ChangeUseCases.prepare` → `ChangeArtifact`（`ChangeArtifactStatus`：`READY / NO_CHANGES / INVALID`）→ ActionPolicy / Human Gate → `CommitUseCases`。
+- 事实边界：AI 生成过程中**不应**把 `WorkingDraft` 写进章节 Draft 表（目标流程见 23C.3；现状见 23C.4）。
+
+**映射原则**：`Draft` 与 `WorkingDraft` **没有**字段级一一对应；二者通过 `WorkingDraftBase.baseDraftId`（引用）与 Commit 时的载体创建建立**引用关系**，而**不是同一身份**。本文档中「Working Draft / 工作草稿」一律指 `WorkingDraft`。
+
+### 23C.3 统一的 AI 写作目标流程（③ 尚未完成的目标流程）
+
+```text
+AI 写作 / 修订
+    ↓
+WorkingDraft
+    ↓
+Diff
+    ↓
+Change / Proposal
+    ↓
+Validation
+    ↓
+Human Gate / ActionPolicy
+    ↓
+CommitUseCases
+    ↓
+CommitHistory
+    ↓
+CanonicalReadUseCases
+    ↓
+Reader
+```
+
+> **这是目标架构流程，不得表述为当前生产链已全部接通。** 当前生产链的实际形态与差距见 23C.4。
+> 与架构基线的关系：架构基线 §12 / §13 / §21 边界二 中的抽象 `Draft` 指**「Draft 类目」**（作者编辑稿与 AI 工作产物的统称），分层与流向不变；其中 **AI 侧的落点**由本计划规定为 `WorkingDraft`（架构基线已追加非实质性术语对齐说明，未改节点与流向）。
+
+### 23C.4 当前代码事实与目标流程的差距（② 必须显式登记）
+
+| 项 | 当前事实（代码位置） |
+|---|---|
+| AI 主链落点 | AI 产出**当前仍直接写章节 Draft 表**：`WritingExecutionUseCase:71`、`RevisionExecutionUseCase:61`、`ConfirmationExecutionUseCase:80`、`WorkflowOrchestrator:266`（FINALIZE）、`WriterUseCases:54/65`（`saveContent` 原地写 / `stampControlledMarkdown` 打标）；另有孤立用例 `ChapterWritingUseCases:188` |
+| AI 提交入口（过渡实现） | P1-02 新增 `CommitUseCases.commitApprovedDraft`：人工门批准后把**已 `CONFIRMED` 的同一 Draft 行**作为 Canonical 载体提交（same-row），凭据要求为既有 `WorkflowHumanGate` 的 `RESOLVED + APPROVED` |
+| `WorkingDraft` / `Change` 生产写入者 | **0**（唯一非测试调用者是休眠的 `NovelAgent`：`WorkingDraftUseCases.create` ← `NovelAgent:593`；`ChangeUseCases.prepare` ← `NovelAgent:607`） |
+| `getByResultingDraftId` | 已有只读查询（`CommitHistoryRepository`），**生产调用者 0** |
+| 直写 `DraftRepository` 的生产路径 | **≠ 0**（上表 6 处） ⇒ §10.12 的 Completion Gate「直写 = 0」**尚未达成** |
+
+### 23C.5 作者手动保存与 AI 写作的分离（① 保留既有裁决）
+
+| 路径 | 语义 | 状态 |
+|---|---|---|
+| 作者手动编辑 → 保存 | `WriterGateway.saveContent` → `CommitUseCases.commitAuthorSave`：**作者即人类决策者**、「保存即批准」；**same-row 载体**（作者编辑稿自身成为 Canonical 载体，不另建 Draft 行），**不打**受控 Markdown | **冻结**（P1-01f；§4.1）—— 本阶段不得修改其语义 |
+| AI 产出 | **必须**经 `WorkingDraft`（目标流程；现状见 23C.4） | 目标（§4.2 / §4.3 / §10.5） |
+
+- `WriterUseCases.saveContent` **不得**成为 AI 产出写入 Canonical 的快捷通道（§4.3 硬约束）。
+- **不得**把作者手动保存与 AI Proposal 合并成同一种业务操作：两者的决策者、Gate 需求与载体语义不同。
+
+### 23C.6 Commit 与 Stale 校验原则（① 冻结 + ④ 后续）
+
+- 现有 `CommitUseCases.validateForCommit` + `requireCurrentCanonical`（`STALE_ARTIFACT`）保护的不变量：Artifact 重复提交、**基线内容漂移**、**新载体出现**、target 变更、Working Draft 终态 / `NO_CHANGES` / `INVALID`、以及**事务内 TOCTOU 重检**（故障注入覆盖见 `CommitTransactionTest`）。
+- **本阶段不改变**该校验的代码与测试期望（不得删除、不得放宽）。
+- **优先路径（④）**：让 AI 产出不再写入章节 Draft 表（23C.3），使「章节最新 Draft = 变更前 Canonical 载体」这一**既有假设重新成立** ⇒ 现有 stale 校验与既有测试**无需修改**。
+- 若未来确实需要支持不同基线语义（例如以 `CommitHistory` 为基线的另一分支），**必须**另行设计、**保留并发保护**（含事务内重检）并**新增**对应测试；不得以放宽现校验为代价。
+
+### 23C.7 WorkingDraft / Artifact 的持久化边界（② 现状 + ④ 后续）
+
+| 对象 | 当前实现 | 边界 |
+|---|---|---|
+| `WorkingDraft` | **内存**（`WorkingDraftUseCases` 进程级 store，应用级单实例） | 不落库、不加表、不加迁移；**不可跨进程 / 跨重启恢复** |
+| `ChangeArtifact` | **内存**（`ChangeUseCases` 进程级 store；`isSuperseded` 按当前 Working Draft 重算指纹） | 同上；Artifact 是**冻结的提案数据**，不是执行命令 |
+| `CommitHistory` | **持久化**（`CommitHistory` 表，只追加 + 只读） | Canonical 的唯一事实记录（见 23C.1） |
+
+- 本阶段**不新增数据库表、不修改 Storage、不新增 migration**（与 §10.9 一致）。
+- 「当前进程内的最小闭环」**不得**被表述为已支持跨进程恢复。
+- 后续代码阶段必须在**不改变 FD-9 边界**的前提下，明确「未提交工作流」（`WorkingDraft` / `Artifact`）在 crash / 重启后的恢复行为（含 `Workflow` 的 `resultReference` 语义）。
+
+### 23C.8 待后续代码清理项（不编造章节号）
+
+| 项 | 位置 | 处置 |
+|---|---|---|
+| 代码注释中的架构章节引用可能已过期 | `WorkingDraftModels.kt:17`（"architecture §17"）、`ChangeModels.kt:15`（"architecture §19 / §26"） | **本阶段不改代码**；列入后续代码清理，届时以当时文档实际编号为准，**不臆造新章节号** |
+| 代码注释把「章节最新 Draft」表述为「Canonical 正文载体」 | `CommitUseCases.kt:551`（`requireCurrentCanonical` 的 KDoc）与同函数的 `latestDraft` 用法 | 与 §23C.1「最新 Draft ≠ Canonical」的**表述**不一致（其**校验动作**本身在 23C.6 保留）；**本阶段不改代码**，列入后续代码清理，清理时不得顺带放宽 stale 校验 |
+| 术语对齐说明 | 架构基线 §12 / §21 边界二 | 已追加**非实质性**说明（未改节点、流向与分层） |
+
+---
+
 ## 24. 测试验收规则（A / B / C / D）
 
 **废弃**："测试通过，除了允许的失败" 与"exemption"式长期红灯。
@@ -1336,6 +1464,11 @@ Phase 10  Product UI                         ← 前置：Prototype 结论
 
 **Preflight 出口门**：六项完成；A 类失败 = 0；B/C/D 有登记与归属 ⇒ 才进入 Phase 1。
 
+> **Phase 0 关闭记录（2026-10-13，有条件的事后追认）**：本节六项出口条件中 **0-1…0-5** 已由实测材料覆盖（基线 / 未提交工作登记 / 编译与 schema / 测试基线 / 失败分类，A 类 = 0）；
+> **0-6「本阶段不开始产品能力」已因后续阶段提前落地而失效**，故 Phase 0 以**有条件的事后追认**关闭，**不得**描述为"严格满足原始全部历史条件"。
+> 未核实事项（远程一致性、部分工作归属）继续标 **未验证 / 待确认**。完整记录见
+> [`qianyan-phase0-baseline-register.md`](qianyan-phase0-baseline-register.md)（A1–A4）。
+
 **Phase 1 的第一个可执行单元**（预告，不启动）：把 `WritingExecutionUseCase` 的产出从"直写 `DraftRepository`"改为"入 `WorkingDraftUseCases`"，并**加上"AI 产出无法经 `saveContent` 进入 Canonical"的负向断言**。
 
 ---
@@ -1389,8 +1522,8 @@ Phase 10  Product UI                         ← 前置：Prototype 结论
 
 ## 附：文档纪律
 
-- 本计划**不修改架构总图**（唯一基线见 §2）。
+- 本计划**不修改架构总图**（唯一基线见 §2）——唯一例外：P1-02b 在总图 §12 / §21 边界二 追加**非实质性术语对齐说明**（未改节点、流向与分层），并把裁决落在本文档 **§23C**。
 - 所有 `module / package / 文件` 路径均来自**已实际验证存在**的路径或目录；未编造文件名。
 - 承接 v2 的全部代码审计结论；本次只做**对齐修正 + 约束补充**。
-- 未决项（**R7**）**不替产品决定**，保持显式标记；**R1 已 FINALIZED**（升级评估条件见 §23A，**FD-10 未解封**）；**R3 已 FINALIZED**（读策略见 §23B）。
+- 未决项（**R7**）**不替产品决定**，保持显式标记；**R1 已 FINALIZED**（升级评估条件见 §23A，**FD-10 未解封**）；**R3 已 FINALIZED**（读策略见 §23B）；**Draft / WorkingDraft / Canonical 语义已裁决**（见 §23C）——三者均**不等于已实现**，实现状态见 §23C.4。
 - 任何新功能若无法说明连接路径（总图 §20 七问），不进入正式开发（总图 §23）。

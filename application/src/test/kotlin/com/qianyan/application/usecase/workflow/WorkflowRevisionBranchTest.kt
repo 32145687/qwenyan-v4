@@ -2,6 +2,7 @@ package com.qianyan.application.usecase.workflow
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.qianyan.application.di.ApplicationContainer
+import com.qianyan.application.error.ApplicationException
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
@@ -16,6 +17,7 @@ import com.qianyan.model.workflow.WorkflowStepId
 import com.qianyan.model.workflow.WorkflowStepPhase
 import com.qianyan.model.workflow.WorkflowStepStatus
 import com.qianyan.model.writing.Draft
+import com.qianyan.model.workingdraft.WorkingDraftStatus
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.provider.ChatMessage
 import com.qianyan.provider.ChatRole
@@ -34,6 +36,7 @@ import java.nio.file.Files
 import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -99,6 +102,11 @@ class WorkflowRevisionBranchTest {
         return id
     }
 
+    /** P1-02c+d：该章节当前的 AI 工作产物（WorkingDraft；未丢弃）。 */
+    private fun workingProducts(app: ApplicationContainer, novelId: NovelId, chapterId: ChapterId) =
+        app.workingDrafts.list(app.projects.projectOf(novelId).projectId)
+            .filter { it.target.chapterId == chapterId && !it.status.isTerminal }
+
     private fun open(url: String, handles: MutableList<QianyanDbHandle>, gateway: LLMGateway): ApplicationContainer {
         val handle = QianyanDbFactory.open(url)
         handles += handle
@@ -130,7 +138,9 @@ class WorkflowRevisionBranchTest {
         assertEquals(0, revisionCalls)
         assertEquals(1, criticCalls)
         assertTrue(steps.any { it.phase == WorkflowStepPhase.FINALIZE && it.status == WorkflowStepStatus.COMPLETED })
-        assertEquals(DraftStatus.FINAL, app.draftRepository.latestByChapter(ch.chapterId)!!.status)
+        // P1-02c+d：AI 产出不写章节 Draft 表；FINALIZE 把工作产物置为 VALIDATED（终稿整理在 WorkingDraft 上）。
+        assertEquals(0, app.draftRepository.listByChapter(ch.chapterId).size, "AI 产出不得直接写入章节 Draft 表")
+        assertEquals(WorkingDraftStatus.VALIDATED, workingProducts(app, novelId, ch.chapterId).single().status)
     }
 
     /** R2 — Critique NEED_REVISION 一次：A→REVISION→B→CRITIQUE(PASS)→FINALIZE。B.previousDraftId==A，revisionCount==1。 */
@@ -148,11 +158,6 @@ class WorkflowRevisionBranchTest {
         val r = app.workflowOrchestrator.runForward(wfId)
         assertEquals(WorkflowStatus.WAITING_HUMAN, r.status)
 
-        val drafts = app.draftRepository.listByChapter(ch.chapterId)
-        assertEquals(2, drafts.size)
-        assertEquals(DraftStatus.WRITTEN, drafts[0].status) // 原 Draft A 未被覆盖
-        assertEquals(drafts[0].draftId, drafts[1].previousDraftId) // B.previousDraftId == A.id
-
         val steps = app.workflowRepository.listSteps(wfId)
         val revSteps = steps.filter { it.phase == WorkflowStepPhase.REVISION }
         assertEquals(1, revSteps.size)
@@ -160,9 +165,12 @@ class WorkflowRevisionBranchTest {
 
         val critR1 = steps.first { it.phase == WorkflowStepPhase.CRITIQUE && it.logicalStepKey.contains(":R1") }
         assertEquals(WorkflowStepStatus.COMPLETED, critR1.status)
-        val finalized = app.draftRepository.latestByChapter(ch.chapterId)!!
-        assertEquals(DraftStatus.FINAL, finalized.status)
-        assertEquals(drafts[1].draftId, finalized.draftId) // FINALIZE 用 Draft B
+        // P1-02c+d：修订写回**同一份工作产物**（内容替换，身份不变）；不产生第二份 Draft / 工作产物，
+        // 版本序列由 Workflow 的 CRITIQUE:Rn / REVISION:Rn Steps 承载。
+        assertEquals(0, app.draftRepository.listByChapter(ch.chapterId).size, "AI 产出不得直接写入章节 Draft 表")
+        val working = workingProducts(app, novelId, ch.chapterId).single()
+        assertEquals("修订版B", working.content, "工作产物内容为修订结果")
+        assertEquals(WorkingDraftStatus.VALIDATED, working.status, "FINALIZE 后的工作产物为 VALIDATED")
     }
 
     /** R3 — 多次修订：A→REV1→B→REV2→C→CRITIQUE(PASS)→FINALIZE。lineage A→B→C，revisionCount==2。 */
@@ -180,16 +188,12 @@ class WorkflowRevisionBranchTest {
         val r = app.workflowOrchestrator.runForward(wfId)
         assertEquals(WorkflowStatus.WAITING_HUMAN, r.status)
 
-        val drafts = app.draftRepository.listByChapter(ch.chapterId)
-        assertEquals(3, drafts.size) // A,B,C
-        assertEquals("正文A", drafts[0].content)
-        assertEquals("修订版B", drafts[1].content)
-        assertEquals("修订版C", drafts[2].content)
-        assertNull(drafts[0].previousDraftId)
-        assertEquals(drafts[0].draftId, drafts[1].previousDraftId) // A→B
-        assertEquals(drafts[1].draftId, drafts[2].previousDraftId) // B→C
+        // P1-02c+d：两轮修订写回同一工作产物（内容 = 最后一轮），轮次由 REVISION Steps 记录。
+        assertEquals(0, app.draftRepository.listByChapter(ch.chapterId).size)
+        val working = workingProducts(app, novelId, ch.chapterId).single()
+        assertEquals("修订版C", working.content)
         assertEquals(2, app.workflowRepository.listSteps(wfId).count { it.phase == WorkflowStepPhase.REVISION })
-        assertEquals(DraftStatus.FINAL, app.draftRepository.latestByChapter(ch.chapterId)!!.status)
+        assertEquals(WorkingDraftStatus.VALIDATED, working.status)
     }
 
     /** R4 — Revision 上限：3 次修订后再 NEED_REVISION → 无第 4 次修订 / 不无限循环，Workflow 进入 FAILED（明确终止）。 */
@@ -247,12 +251,19 @@ class WorkflowRevisionBranchTest {
         assertEquals(WorkflowAttemptStatus.COMPLETED, attempts[1].status)
         assertEquals(2, step.currentAttemptNo) // attemptNo == 2
         assertEquals(1, app.workflowRepository.listSteps(wfId).count { it.phase == WorkflowStepPhase.REVISION }) // revisionCount == 1
-        assertEquals(2, app.draftRepository.listByChapter(ch.chapterId).size) // A + B，仅一个修订 Draft
+        // P1-02c+d：不产生任何章节 Draft；一轮修订 = 工作产物内容被替换一次（不新增工作产物）。
+        assertEquals(0, app.draftRepository.listByChapter(ch.chapterId).size)
+        assertEquals("修订版B", workingProducts(app, novelId, ch.chapterId).single().content)
     }
 
-    /** R6 — Crash Recovery：Critique NEED_REVISION → Revision SUCCESS → Workflow rebuild。Draft B 被恢复，Revision 不重复执行。 */
+    /**
+     * R6 — Crash Recovery（**P1-02c+d 新契约**）：Revision 成功后进程重启。
+     *
+     * 工作产物驻留**进程内工作区**，重启后 `resultReference`（`WORKING:…`）失效 —— 恢复必须**明确失败**：
+     * 不回退 `latestByChapter` 的 Draft、不重跑 Writer / Revision、不伪造章节 Draft（§九）。
+     */
     @Test
-    fun `R6 crash recovery after revision success`() {
+    fun `R6 restart with a stale working reference fails explicitly and reuses nothing`() {
         val tmp = Files.createTempFile("qianyan-r6", ".db").toString()
         val handles = mutableListOf<QianyanDbHandle>()
         try {
@@ -268,33 +279,41 @@ class WorkflowRevisionBranchTest {
             val wfId = createWorkflow(app, novelId, ch.chapterId, "W-R6")
             try { app.workflowOrchestrator.runForward(wfId) } catch (_: Throwable) { /* crash */ }
 
-            assertEquals(2, app.draftRepository.listByChapter(ch.chapterId).size) // A,B 已落库
+            // 崩溃前：AI 产出在 WorkingDraft（不写章节 Draft 表），REVISION Step 已 COMPLETED。
+            assertEquals(0, app.draftRepository.listByChapter(ch.chapterId).size, "AI 产出不得直接写入章节 Draft 表")
             val revStepBefore = app.workflowRepository.listSteps(wfId).first { it.phase == WorkflowStepPhase.REVISION }
             assertEquals(WorkflowStepStatus.COMPLETED, revStepBefore.status)
-            // 已进入 Endpoint：Workflow 不再是 CREATED 初始态（CRITIQUE:R1 之前）
+            assertTrue(revStepBefore.resultReference!!.startsWith("WORKING:"), "REVISION 结果应为类型化工作引用")
             closeAll(handles)
 
             var revisionCalls = 0
             val phase2 = ScriptedGateway(criticPass = { true }, onRevisionCall = { revisionCalls++ }, throwOnWriter = true)
             app = open("jdbc:sqlite:$tmp", handles, phase2)
-            val r = app.workflowOrchestrator.runForward(wfId)
-            assertEquals(WorkflowStatus.WAITING_HUMAN, r.status)
+            val ex = assertFailsWith<ApplicationException> { app.workflowOrchestrator.runForward(wfId) }
+            assertTrue(
+                ex.message.orEmpty().contains("工作产物"),
+                "应为「工作产物引用失效」的明确错误，实际：${ex.message}",
+            )
 
-            assertEquals(0, revisionCalls, "恢复绝不重调 Revision")
-            val drafts = app.draftRepository.listByChapter(ch.chapterId)
-            assertEquals(2, drafts.size, "恢复不产生第三个 Draft")
-            assertEquals(drafts[0].draftId, drafts[1].previousDraftId)
-            assertEquals(revStepBefore.stepId, app.workflowRepository.listSteps(wfId).first { it.phase == WorkflowStepPhase.REVISION }.stepId)
-            assertEquals(DraftStatus.FINAL, app.draftRepository.latestByChapter(ch.chapterId)!!.status)
+            assertEquals(0, revisionCalls, "失效恢复绝不重调 Revision")
+            assertEquals(0, app.draftRepository.listByChapter(ch.chapterId).size, "失效恢复不得回退 / 伪造章节 Draft")
+            assertEquals(
+                revStepBefore.stepId,
+                app.workflowRepository.listSteps(wfId).first { it.phase == WorkflowStepPhase.REVISION }.stepId,
+                "失效恢复不得新增 / 重建 REVISION Step",
+            )
         } finally {
             closeAll(handles)
             Files.deleteIfExists(Path(tmp))
         }
     }
 
-    /** R7 — Recovery after Critique PASS：已落库 CRITIQUE:R1 COMPLETED(PASS)，转 FINALIZE 而非重做 Revision/Critique/Writing。 */
+    /**
+     * R7 — **P1-02c+d 新契约**：持久化状态里若只有**遗留 Draft 引用**（无 `WORKING:` 工作引用），
+     * 恢复**必须明确失败** —— 不得把 `latestByChapter` 的 Draft 当作 AI 当前产出、不得重跑 Critique / Revision / Writing。
+     */
     @Test
-    fun `R7 recovery after critique pass continues to finalize`() {
+    fun `R7 legacy draft references are not recoverable and fail explicitly`() {
         val tmp = Files.createTempFile("qianyan-r7", ".db").toString()
         val handles = mutableListOf<QianyanDbHandle>()
         try {
@@ -310,22 +329,21 @@ class WorkflowRevisionBranchTest {
             app0.workflowRepository.createStep(step(wfId, ch, "write", WorkflowStepPhase.WRITING, draftA.draftId.value))
             app0.workflowRepository.createStep(step(wfId, ch, "crit0", WorkflowStepPhase.CRITIQUE, "CRITIQUE:t0:${draftA.draftId.value}:REVISION", "W-R7:c-r7:CRITIQUE"))
             app0.workflowRepository.createStep(step(wfId, ch, "rev1", WorkflowStepPhase.REVISION, draftB.draftId.value, "W-R7:c-r7:REVISION:R1"))
-            // CRITIQUE:R1 已 COMPLETED(PASS)，但 FINALIZE 尚未创建（crash 窗口）
             app0.workflowRepository.createStep(step(wfId, ch, "crit1", WorkflowStepPhase.CRITIQUE, "CRITIQUE:t1:${draftB.draftId.value}:PASS", "W-R7:c-r7:CRITIQUE:R1"))
             closeAll(handles)
 
             var revisionCalls = 0
             val phase2 = ScriptedGateway(criticPass = { true }, onRevisionCall = { revisionCalls++ }, throwOnWriter = true, throwOnCritic = true)
             val app = open("jdbc:sqlite:$tmp", handles, phase2)
-            val r = app.workflowOrchestrator.runForward(wfId)
-            assertEquals(WorkflowStatus.WAITING_HUMAN, r.status)
+            val ex = assertFailsWith<ApplicationException> { app.workflowOrchestrator.runForward(wfId) }
+            assertTrue(
+                ex.message.orEmpty().contains("工作产物"),
+                "遗留 Draft 引用不得被当作 AI 当前产出，应明确失败；实际：${ex.message}",
+            )
 
-            val steps = app.workflowRepository.listSteps(wfId)
-            assertEquals(0, revisionCalls, "恢复不重做 Revision")
-            val finalize = steps.first { it.phase == WorkflowStepPhase.FINALIZE }
-            assertEquals(WorkflowStepStatus.COMPLETED, finalize.status)
-            assertEquals(2, app.draftRepository.listByChapter(ch).size, "恢复不产生新 Draft")
-            assertEquals(DraftStatus.FINAL, app.draftRepository.latestByChapter(ch)!!.status)
+            assertEquals(0, revisionCalls, "不得重跑 Revision")
+            assertEquals(2, app.draftRepository.listByChapter(ch).size, "不得伪造 / 新增 Draft（遗留 Draft 原样保留）")
+            assertNull(app.draftRepository.latestByChapter(ch)?.takeIf { it.status == DraftStatus.FINAL }, "不得把遗留 Draft 定稿为 FINAL")
         } finally {
             closeAll(handles)
             Files.deleteIfExists(Path(tmp))

@@ -8,8 +8,12 @@ import com.qianyan.agent.tool.ToolRegistry
 import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
+import com.qianyan.application.usecase.tool.AgentToolBridge
+import com.qianyan.application.usecase.tool.ProductToolNames
+import com.qianyan.model.ActivityId
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
+import com.qianyan.model.agent.ToolName
 import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.provider.LLMGateway
@@ -24,14 +28,19 @@ import com.qianyan.provider.ProviderException
  *
  * 依赖约束（架构硬约束）：
  *  - 只依赖 :provider:api 的 [LLMGateway] 抽象，**禁止** DeepSeek/MiMo/HTTP/API Key/Storage；
- *  - 复用 P10 [AgentRuntime]，不重写 Agent loop；Agent 无工具（allowedTools 空），
- *    [ToolExecutor] 用空注册（Planning 阶段不需要业务 Tool，P11.3 再注册 writing:write 等）。
+ *  - 复用 P10 [AgentRuntime]，不重写 Agent loop；
+ *  - **工具（最小权限，按职责分配）**：规划需要了解既有章节与正文载体 ⇒ 经 [AgentToolBridge] 注册
+ *    只读 Product Tool（`list_chapters` / `get_chapter` / `get_latest_draft`），执行、权限（ActionPolicy）、
+ *    审计（ToolCallLog）与项目作用域全部走 [com.qianyan.application.usecase.tool.ProductToolService]
+ *    既有调度链。**未注入桥或无 Activity 锚时保持空注册 + 空 allowedTools（无工具声明）**——
+ *    不为形式统一而授权；声明清单 == 注册清单（桥内 fail-fast 保证）。
  *  - 输出解析经 [ChapterPlanParser]，非法/空/类型错误 → 类型化错误（不经 String.contains）。
  */
 class PlannerAgent(
     private val gateway: LLMGateway,
     private val errorMapper: ErrorMapper,
     private val model: ModelProfile = ModelProfile.MOCK,
+    private val toolBridge: AgentToolBridge? = null,
 ) {
 
     /** 执行了一次 Planner 运行（同步，无网络除非装配方注入真实 Provider）。 */
@@ -39,8 +48,11 @@ class PlannerAgent(
 
     /**
      * P20-P5：带上本任务使用的 [DecisionPolicy]（只读消费；Planner **不重新计算** Decision）。
+     *
+     * @param activityId 本次运行的编排 Activity 锚（NovelAgent EXECUTE 相位）：有桥时据此把工具调用
+     * 记入既有 ToolCallLog 并取得 Project 作用域；null = 无工具运行（行为与既有完全一致）。
      */
-    fun plan(context: PlanningContext, policies: List<DecisionPolicy>): ChapterPlan {
+    fun plan(context: PlanningContext, policies: List<DecisionPolicy>, activityId: ActivityId? = null): ChapterPlan {
         val structure = ChapterPlanStructure(
             novelId = context.novelId,
             arcId = DEFAULT_ARC,
@@ -50,7 +62,7 @@ class PlannerAgent(
             chapterPlanId = java.util.UUID.randomUUID().toString(),
         )
         return try {
-            val result = runtime.run(PLANNER_AGENT, renderInput(context, policies))
+            val result = toolRuntime(activityId).run(contract(activityId), renderInput(context, policies))
             val raw = result.answer
                 ?: throw PlanningException.InvalidOutput("planner returned no answer")
             ChapterPlanParser.parse(raw, structure)
@@ -83,6 +95,8 @@ class PlannerAgent(
         if (context.request.styleHints.isNotEmpty()) appendLine("styleHints: ${context.request.styleHints}")
 
         appendLine("【小说背景】${context.novelTitle}")
+        // novelId 供工具调用（list_chapters 等）定位本项目数据；工具内部再做项目归属校验
+        appendLine("novelId: ${context.novelId.value}")
         if (context.novelGenre.isNotEmpty()) appendLine("genre: ${context.novelGenre}")
         if (context.novelSynopsis.isNotBlank()) appendLine("synopsis: ${context.novelSynopsis}")
         if (context.variantName.isNotBlank()) appendLine("variant: ${context.variantName}")
@@ -152,13 +166,47 @@ class PlannerAgent(
         }
     }.trimEnd()
 
-    private val runtime: AgentRuntime = AgentRuntime(
+    /** 无工具运行的静态运行时（最小权限缺省；与既有行为逐字节一致）。 */
+    private val bareRuntime: AgentRuntime = AgentRuntime(
         gateway = gateway,
         toolExecutor = ToolExecutor(ToolRegistry()),
         model = model,
     )
 
+    /** 有桥 + 有 Activity 锚 ⇒ 本次运行重建注册表（桥接工具捕获本次 activityId，经调度层执行）。 */
+    private fun toolRuntime(activityId: ActivityId?): AgentRuntime {
+        val bridge = toolBridge ?: return bareRuntime
+        activityId ?: return bareRuntime
+        return AgentRuntime(
+            gateway = gateway,
+            toolExecutor = ToolExecutor(bridge.runtimeRegistry(activityId, PLANNER_TOOLS)),
+            model = model,
+        )
+    }
+
+    private fun contract(activityId: ActivityId?): AgentContract =
+        if (toolBridge != null && activityId != null) PLANNER_AGENT_WITH_TOOLS else PLANNER_AGENT
+
     private companion object {
+        /**
+         * Planner 的最小工具集合（按职责分配）：
+         *  - `list_chapters`：规划下一章前了解既有章节与全书进度；
+         *  - `get_chapter` / `get_latest_draft`：读取既有章节信息与最新正文载体（连贯性依据）。
+         * 不授予 get_project_state（模型无 projectId 输入）、search_vocabulary（词库已全量注入 PlanningContext）。
+         */
+        val PLANNER_TOOLS: List<ToolName> = listOf(
+            ToolName(ProductToolNames.LIST_CHAPTERS),
+            ToolName(ProductToolNames.GET_CHAPTER),
+            ToolName(ProductToolNames.GET_LATEST_DRAFT),
+        )
+
+        val PLANNER_AGENT_WITH_TOOLS: AgentContract = AgentContract(
+            agentId = AgentId("story-planner"),
+            name = "StoryPlannerAgent",
+            capabilities = listOf(),
+            allowedTools = PLANNER_TOOLS,
+        )
+
         val PLANNER_AGENT: AgentContract = AgentContract(
             agentId = AgentId("story-planner"),
             name = "StoryPlannerAgent",

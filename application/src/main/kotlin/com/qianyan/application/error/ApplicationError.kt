@@ -164,4 +164,21 @@ sealed interface ApplicationError {
 
     /** 需要 credential 的 Provider（DeepSeek / MiMo）缺少 API Key，无法组装/调用。 */
     data class ProviderCredentialMissing(val detail: String) : ApplicationError
+
+    // ---- Phase 1 follow-up F2 新增：TXT 初始化跨来源章节混排拒绝 ----
+    // 判定依据只有 TXT 章节的确定性 ID 目标集合（不用标题/正文/order 猜测、不用 `#c` 前缀单独判定）。
+
+    /** 目标 Novel 已存在不属于本次 TXT 文档初始化目标集合的 domain Chapter（或目标确定性 ID 已被其它来源占用）：
+     *  拒绝初始化，避免跨来源章节混排、静默缺章或覆盖既有章节。 */
+    data class ChapterSourceConflict(val detail: String) : ApplicationError
+
+    // ---- Phase 1 follow-up U2 新增：TXT 已导入但 Canonical 初始化未完成（分阶段语义的可识别状态） ----
+    // 包装初始化阶段的原始领域错误（[cause] 保留类型，禁止经 String 判断原因）；documentId 供重试定位。
+
+    /** TXT 文件本身已导入成功（Novel / TxtDocument 已落库），但该文档的章节 Canonical 初始化未完成。
+     *  重试路径：重新导入同一内容（去重分支幂等补齐）或直接调用 initializeCanonical(novelId, documentId)。 */
+    data class TxtCanonicalInitIncomplete(
+        val documentId: com.qianyan.model.TxtDocumentId,
+        val cause: ApplicationError,
+    ) : ApplicationError
 }

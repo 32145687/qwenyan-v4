@@ -34,12 +34,23 @@ import kotlinx.datetime.Clock
  *
  * VariantContext：TXT 导入 Original 时使用已有 [VariantContext]，scope=ORIGINAL、variantId=null、
  * baseNovelId=对应 Original Novel；不新建、不改 Variant 模型、不实现 Variant→Variant、不做字段级 Override。
+ *
+ * Phase 1 follow-up F1（导入闭环）：容器装配下导入成功后立即经
+ * [TxtCanonicalInitializationUseCases] 生成 domain Chapter + Canonical（详见该类的语义/边界）。
  */
 class TxtUseCases(
     private val txtPipeline: TxtPipeline,
     private val txtRepository: TxtRepository,
     private val novelRepository: NovelRepository,
     errorMapper: ErrorMapper,
+    /**
+     * F1 闭环协作者（Application 层装配注入）。**分阶段**执行：`saveImport` 与初始化各自成事务
+     * （见 [com.qianyan.storage.repository.TxtRepository.saveImport] 内部单事务），因此：
+     *  - 初始化失败时 TXT 导入结果已持久化，异常原样抛出（不吞、不伪装成功）；
+     *  - 重试路径 = 重新导入同一内容 → contentHash 命中去重分支 → 再次初始化（幂等，已完成章节跳过）。
+     * 未注入时只做导入（TXT 单测等无 Canonical 仓储的装配），结果中 `canonicalInit = null`。
+     */
+    private val canonicalInitialization: TxtCanonicalInitializationUseCases? = null,
 ) : UseCase(errorMapper) {
 
     /**
@@ -69,6 +80,10 @@ class TxtUseCases(
             // 复用既有绑定：不创建第二个 Novel、不写入重复 TXT。补读章节/块计数使结果字段完整。
             val chapterCount = guardEngine { txtRepository.getChapters(existing.documentId).size }
             val blockCount = guardEngine { txtRepository.getBlocks(existing.documentId).size }
+            // F1 闭环（去重分支）：命中重复即"导入已完成过"，此处补做/重试 Canonical 初始化。
+            // 幂等：已初始化的章节全部跳过 ⇒ 首次导入成功后重复导入不产生任何新写入；
+            // 若上次初始化失败（导入已落库、章节未生成），重复导入即安全重试。
+            val canonicalInit = initializeAfterImport(novelId, existing.documentId)
             return TxtImportOutput(
                 documentId = existing.documentId,
                 novelId = novelId,
@@ -79,6 +94,7 @@ class TxtUseCases(
                 charCount = existing.charCount,
                 chapterCount = chapterCount,
                 blockCount = blockCount,
+                canonicalInit = canonicalInit,
             )
         }
 
@@ -107,7 +123,11 @@ class TxtUseCases(
         // 5) 持久化：文档 + 章节 + 段落块（Repository 内单事务原子写入）
         guardEngine { txtRepository.saveImport(document, chapters, blocks) }
 
-        // 6) 结构化结果 + Original 上下文
+        // 6) F1 闭环：导入成功后立即将本文档初始化为 domain Chapter + Canonical（分阶段、独立事务）。
+        //    失败即抛出类型化错误（不吞、不回滚已落库的 TXT 导入），重导同一内容可幂等重试初始化。
+        val canonicalInit = initializeAfterImport(novelId, document.documentId)
+
+        // 7) 结构化结果 + Original 上下文
         return TxtImportOutput(
             documentId = document.documentId,
             novelId = novelId,
@@ -118,6 +138,7 @@ class TxtUseCases(
             charCount = document.charCount,
             chapterCount = chapters.size,
             blockCount = blocks.size,
+            canonicalInit = canonicalInit,
         )
     }
 
@@ -144,6 +165,20 @@ class TxtUseCases(
         throw errorMapper.map(e)
     }
 
+    /**
+     * U2：初始化阶段的类型化失败必须保留"TXT 已导入"这一事实与原始原因。
+     * 只包装 [ApplicationException]（领域失败）为 [ApplicationError.TxtCanonicalInitIncomplete]；
+     * 非领域异常（如驱动级错误）原样传播，不伪装成业务状态。
+     */
+    private fun initializeAfterImport(novelId: NovelId, documentId: TxtDocumentId): TxtCanonicalInitOutcome? {
+        val init = canonicalInitialization ?: return null
+        return try {
+            guardEngine { init.initializeCanonical(novelId, documentId) }
+        } catch (e: ApplicationException) {
+            throw ApplicationException(ApplicationError.TxtCanonicalInitIncomplete(documentId, e.error))
+        }
+    }
+
     /** TXT 导入的 Application 层结构化结果。 */
     data class TxtImportOutput(
         val documentId: TxtDocumentId,
@@ -155,5 +190,7 @@ class TxtUseCases(
         val charCount: Int,
         val chapterCount: Int,
         val blockCount: Int,
+        /** F1 闭环结果：本次导入后 Canonical 初始化的实际计数（null = 该装配未注入初始化器，仅完成导入）。 */
+        val canonicalInit: TxtCanonicalInitOutcome? = null,
     )
 }

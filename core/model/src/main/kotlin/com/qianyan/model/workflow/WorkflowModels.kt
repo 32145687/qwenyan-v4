@@ -89,6 +89,14 @@ data class WorkflowStep(
     val currentTaskId: String? = null,
     /** 业务结果引用（draftId / continuationId / taskId）；非正文。null=尚未完成消费。 */
     val resultReference: String? = null,
+    /**
+     * 创作轮次编号（P1-02j.2）。`null` = 兼容历史记录，按首轮 `0` 解释；`0` = 首轮；`>0` = 后续创作轮次。
+     *
+     * 与 `attemptNo`（重试）、REVISION（修订次数）、`logicalStepKey`（逻辑身份）**四者互相独立**。
+     * 仅"实际执行新一轮 WRITING"的操作（[com.qianyan.application.usecase.workflow.WorkflowOrchestrator.abandonRound]）
+     * 才推进该编号；重新打开同一轮 Gate（reopen）**不**改变创作轮次。
+     */
+    val roundNo: Int? = null,
     val createdAt: Instant,
     val completedAt: Instant? = null,
 )
@@ -111,7 +119,14 @@ data class WorkflowStepAttempt(
 @Serializable
 data class WorkflowHumanGate(
     val gateId: WorkflowHumanGateId,
-    val workflowId: WorkflowId,
+    /**
+     * 所属 Workflow；`null` = **独立 Human Gate**（不挂在任何 Workflow 上）。
+     *
+     * P1-01：用户在 Writer 编辑器保存一条已 Commit 的 Canonical Draft 时，"保存"本身就是人类决策，
+     * 此时不存在（也不应伪造）Workflow —— Gate 以 `workflowId=null` 独立存在，仅承载批准/审计语义，
+     * 不参与 `WorkflowStatus.WAITING_HUMAN` / `pendingGateId` 等 Workflow 状态流转。
+     */
+    val workflowId: WorkflowId?,
     val stepId: WorkflowStepId? = null,
     val draftId: DraftId? = null,
     val gateKey: String,

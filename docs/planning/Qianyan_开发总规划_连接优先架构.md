@@ -659,6 +659,9 @@ Canonical 不再等价于 latest Draft。
 
 > **只有 Commit 后才成为 Canonical。**
 
+> **术语对齐说明（P1-02b · 非实质性）**：上图与本页所有图中的抽象 `Draft` 指 **「Draft 类目」** —— 作者编辑稿与 AI 工作产物的统称；其中 **AI 侧的落点**由实施计划规定为 `WorkingDraft`（内存工作区，见 `qianyan-dev-implementation-plan-v3.1.md` §4.2 / §10.5 / §23C），作者手改仍落章节 `Draft`。
+> 本说明**不改变**本图的节点、流向与分层；`Canonical` 的唯一事实来源（`CommitHistory`）与唯一读取入口（`CanonicalReadUseCases`）见 v3.1 §23B / §23C。
+
 ------------------------------------------------------------------------
 
 # 13. World Model 与 Change Layer 的连接 {#13-world-model-与-change-layer-的连接}
@@ -1139,6 +1142,8 @@ Commit
 ↓
 Canonical
 ```
+
+> **术语对齐说明（P1-02b · 非实质性）**：本图第 3 段的 `Draft` 指**「Draft 类目」**；**AI 侧的落点**由实施计划规定为 `WorkingDraft`（`qianyan-dev-implementation-plan-v3.1.md` §23C），据此目标流程为 `AI → WorkingDraft → Diff → Change/Proposal → Validation → Human Gate → Commit → Canonical`。本说明不改变本图的节点、流向与分层；§12 的「只有 Commit 后才成为 Canonical」保持有效。
 
 ## 边界三：DSH 不成为小说业务层
 

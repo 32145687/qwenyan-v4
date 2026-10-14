@@ -94,47 +94,7 @@ class NovelListViewModel(
     }
 
     /** ApplicationError → 用户可读文案（不泄露底层技术细节 / 堆栈）。 */
-    private fun messageFor(error: ApplicationError): String = when (error) {
-        is ApplicationError.TxtImportFailed -> "导入失败：${error.detail}"
-        is ApplicationError.UnsupportedEncoding -> "不支持的编码：仅支持 UTF-8 文本"
-        is ApplicationError.EmptyDocument -> "文件内容为空，没有可导入的内容"
-        is ApplicationError.InvalidText -> "不是合法的文本文件，无法导入"
-        is ApplicationError.ParseFailed -> "解析失败：${error.detail}"
-        is ApplicationError.ImmutableOriginal -> "无法写入：该内容受保护"
-        is ApplicationError.VariantBaseInvalid -> "无法导入：Variant 基座无效"
-        is ApplicationError.DuplicateTarget -> "内容重复：${error.detail}"
-        is ApplicationError.EntityNotFound -> "内容不存在：${error.detail}"
-        is ApplicationError.InvalidOperation -> "操作不被允许：${error.detail}"
-        is ApplicationError.VariantMismatch -> "上下文不匹配：${error.detail}"
-        is ApplicationError.UnknownStorage -> "存储错误，请重试"
-        is ApplicationError.ProviderUnavailable -> "分析服务不可用，请稍后重试"
-        is ApplicationError.InvalidAnalysisOutput -> "分析结果无效，请重试"
-        is ApplicationError.AnalysisFailed -> "分析失败，请重试"
-        is ApplicationError.TaskNotFound -> "任务不存在：${error.detail}"
-        is ApplicationError.InvalidTaskStateTransition -> "任务状态不允许该操作：${error.detail}"
-        is ApplicationError.RevisionLimitExceeded -> "任务检查点数量已达上限：${error.detail}"
-        is ApplicationError.CheckpointNotFound -> "未找到可恢复的检查点：${error.detail}"
-        is ApplicationError.TaskAlreadyCompleted -> "任务已完成：${error.detail}"
-        is ApplicationError.TaskAlreadyCancelled -> "任务已取消：${error.detail}"
-        is ApplicationError.RestoreFailure -> "任务上下文恢复失败：${error.detail}"
-        is ApplicationError.UnsupportedTaskType -> "不支持的任务类型：${error.detail}"
-        is ApplicationError.InvalidPlanningOutput -> "规划输出无效，请重试"
-        is ApplicationError.PlanningFailed -> "规划失败，请重试"
-        is ApplicationError.WritingScaffoldNotImplemented -> "该写作能力暂未开放"
-        is ApplicationError.InvalidWritingOutput -> "写作输出无效，请重试"
-        is ApplicationError.WritingFailed -> "写作失败，请重试"
-        is ApplicationError.InvalidCritiqueOutput -> "评审输出无效，请重试"
-        is ApplicationError.CritiqueFailed -> "评审失败，请重试"
-        is ApplicationError.RevisionNotAllowed -> "修订次数已达上限"
-        is ApplicationError.InvalidRevisionOutput -> "修订输出无效，请重试"
-        is ApplicationError.RevisionFailed -> "修订失败，请重试"
-        is ApplicationError.InvalidKnowledgeUpdateOutput -> "知识更新输出无效，请重试"
-        is ApplicationError.KnowledgeUpdateFailed -> "知识更新失败，请重试"
-        is ApplicationError.KnowledgeUpdateRejected -> "知识更新被拒绝，请重试"
-        is ApplicationError.InvalidContinuationSource -> "续篇来源无效：${error.detail}"
-        is ApplicationError.DraftConfirmationRequired -> "知识更新需先确认最终稿：${error.detail}"
-        is ApplicationError.ProviderCredentialMissing -> "AI 服务未配置密钥：${error.detail}"
-    }
+    private fun messageFor(error: ApplicationError): String = novelImportErrorMessage(error)
 
     companion object {
         /** 供 [ViewModelProvider]（MainActivity 装配）与 compose viewModel() 使用的简单工厂。 */
@@ -145,4 +105,54 @@ class NovelListViewModel(
                     NovelListViewModel(novels, txts) as T
             }
     }
+}
+
+/**
+ * U2：TXT 导入 / 初始化失败的类型化文案（internal 供 JVM 单元测试直接断言）。
+ * "已导入但初始化未完成"必须区别于导入失败本身，并给出可执行的重试路径
+ * （重新导入同一文件 → 去重分支幂等补齐初始化；不重复建章、不覆盖作者内容）。
+ */
+internal fun novelImportErrorMessage(error: ApplicationError): String = when (error) {
+    is ApplicationError.TxtCanonicalInitIncomplete ->
+        "TXT 已导入，但章节初始化未完成：${novelImportErrorMessage(error.cause)}。重新导入同一文件可补齐初始化"
+    is ApplicationError.TxtImportFailed -> "导入失败：${error.detail}"
+    is ApplicationError.ChapterSourceConflict -> "该作品已存在其他来源的章节，已阻止导入初始化"
+    is ApplicationError.UnsupportedEncoding -> "不支持的编码：仅支持 UTF-8 文本"
+    is ApplicationError.EmptyDocument -> "文件内容为空，没有可导入的内容"
+    is ApplicationError.InvalidText -> "不是合法的文本文件，无法导入"
+    is ApplicationError.ParseFailed -> "解析失败：${error.detail}"
+    is ApplicationError.ImmutableOriginal -> "无法写入：该内容受保护"
+    is ApplicationError.VariantBaseInvalid -> "无法导入：Variant 基座无效"
+    is ApplicationError.DuplicateTarget -> "内容重复：${error.detail}"
+    is ApplicationError.EntityNotFound -> "内容不存在：${error.detail}"
+    is ApplicationError.InvalidOperation -> "操作不被允许：${error.detail}"
+    is ApplicationError.VariantMismatch -> "上下文不匹配：${error.detail}"
+    is ApplicationError.UnknownStorage -> "存储错误，请重试"
+    is ApplicationError.ProviderUnavailable -> "分析服务不可用，请稍后重试"
+    is ApplicationError.InvalidAnalysisOutput -> "分析结果无效，请重试"
+    is ApplicationError.AnalysisFailed -> "分析失败，请重试"
+    is ApplicationError.TaskNotFound -> "任务不存在：${error.detail}"
+    is ApplicationError.InvalidTaskStateTransition -> "任务状态不允许该操作：${error.detail}"
+    is ApplicationError.RevisionLimitExceeded -> "任务检查点数量已达上限：${error.detail}"
+    is ApplicationError.CheckpointNotFound -> "未找到可恢复的检查点：${error.detail}"
+    is ApplicationError.TaskAlreadyCompleted -> "任务已完成：${error.detail}"
+    is ApplicationError.TaskAlreadyCancelled -> "任务已取消：${error.detail}"
+    is ApplicationError.RestoreFailure -> "任务上下文恢复失败：${error.detail}"
+    is ApplicationError.UnsupportedTaskType -> "不支持的任务类型：${error.detail}"
+    is ApplicationError.InvalidPlanningOutput -> "规划输出无效，请重试"
+    is ApplicationError.PlanningFailed -> "规划失败，请重试"
+    is ApplicationError.WritingScaffoldNotImplemented -> "该写作能力暂未开放"
+    is ApplicationError.InvalidWritingOutput -> "写作输出无效，请重试"
+    is ApplicationError.WritingFailed -> "写作失败，请重试"
+    is ApplicationError.InvalidCritiqueOutput -> "评审输出无效，请重试"
+    is ApplicationError.CritiqueFailed -> "评审失败，请重试"
+    is ApplicationError.RevisionNotAllowed -> "修订次数已达上限"
+    is ApplicationError.InvalidRevisionOutput -> "修订输出无效，请重试"
+    is ApplicationError.RevisionFailed -> "修订失败，请重试"
+    is ApplicationError.InvalidKnowledgeUpdateOutput -> "知识更新输出无效，请重试"
+    is ApplicationError.KnowledgeUpdateFailed -> "知识更新失败，请重试"
+    is ApplicationError.KnowledgeUpdateRejected -> "知识更新被拒绝，请重试"
+    is ApplicationError.InvalidContinuationSource -> "续篇来源无效：${error.detail}"
+    is ApplicationError.DraftConfirmationRequired -> "知识更新需先确认最终稿：${error.detail}"
+    is ApplicationError.ProviderCredentialMissing -> "AI 服务未配置密钥：${error.detail}"
 }

@@ -22,6 +22,9 @@ import com.qianyan.model.VocabularyId
 import com.qianyan.model.VocabularyRuleId
 import com.qianyan.model.CharacterId
 import com.qianyan.model.EventId
+import com.qianyan.model.KnowledgeId
+import com.qianyan.model.LocationId
+import com.qianyan.model.StateSource
 import com.qianyan.model.ForeshadowingId
 import com.qianyan.model.GenreId
 import com.qianyan.model.NarrativeDeltaId
@@ -36,10 +39,15 @@ import com.qianyan.model.WorldRuleId
 import com.qianyan.model.character.Character as DomainCharacter
 import com.qianyan.model.character.CharacterState as DomainCharacterState
 import com.qianyan.model.character.EmotionalState
+import com.qianyan.model.character.AbilitySnapshot
+import com.qianyan.model.character.RelationshipSnapshot
 import com.qianyan.model.character.PhysicalState
 import com.qianyan.model.character.SnapshotType
+import com.qianyan.model.knowledge.Evidence
+import com.qianyan.model.knowledge.FactLevel
 import com.qianyan.model.story.Foreshadow as DomainForeshadow
 import com.qianyan.model.timeline.Event as DomainEvent
+import com.qianyan.model.timeline.EventParticipant
 import com.qianyan.model.timeline.EventStatus
 import com.qianyan.model.timeline.EventType
 import com.qianyan.model.timeline.TimelineEntry as DomainTimelineEntry
@@ -605,6 +613,9 @@ internal object StorageMappers {
         scope = c.scope.name,
         name = c.name,
         personality = json.encodeToString(ListSerializer(String.serializer()), c.personality),
+        goals = json.encodeToString(ListSerializer(String.serializer()), c.goals),
+        fears = json.encodeToString(ListSerializer(String.serializer()), c.fears),
+        description = c.description,
         created_at = c.createdAt.toEpochMillis(),
         updated_at = c.updatedAt.toEpochMillis(),
     )
@@ -616,6 +627,9 @@ internal object StorageMappers {
         scope = VariantScope.valueOf(row.scope),
         name = row.name,
         personality = json.decodeFromString(ListSerializer(String.serializer()), row.personality),
+        goals = json.decodeFromString(ListSerializer(String.serializer()), row.goals),
+        fears = json.decodeFromString(ListSerializer(String.serializer()), row.fears),
+        description = row.description,
         createdAt = epochMillisToInstant(row.created_at),
         updatedAt = epochMillisToInstant(row.updated_at),
     )
@@ -632,6 +646,13 @@ internal object StorageMappers {
         physical = json.encodeToString(PhysicalState.serializer(), s.physicalState),
         emotional = json.encodeToString(EmotionalState.serializer(), s.emotionalState),
         current_goal = s.currentGoal,
+        location = s.location?.value,
+        current_motivation = s.currentMotivation,
+        relationships = json.encodeToString(ListSerializer(RelationshipSnapshot.serializer()), s.relationships),
+        known_facts = json.encodeToString(ListSerializer(KnowledgeId.serializer()), s.knownFacts),
+        unknown_facts = json.encodeToString(ListSerializer(KnowledgeId.serializer()), s.unknownFacts),
+        abilities = json.encodeToString(ListSerializer(AbilitySnapshot.serializer()), s.abilities),
+        source = s.source.name,
         created_at = s.createdAt.toEpochMillis(),
     )
 
@@ -647,6 +668,13 @@ internal object StorageMappers {
         physicalState = json.decodeFromString(PhysicalState.serializer(), row.physical),
         emotionalState = json.decodeFromString(EmotionalState.serializer(), row.emotional),
         currentGoal = row.current_goal,
+        location = row.location?.let { LocationId(it) },
+        currentMotivation = row.current_motivation,
+        relationships = json.decodeFromString(ListSerializer(RelationshipSnapshot.serializer()), row.relationships),
+        knownFacts = json.decodeFromString(ListSerializer(KnowledgeId.serializer()), row.known_facts),
+        unknownFacts = json.decodeFromString(ListSerializer(KnowledgeId.serializer()), row.unknown_facts),
+        abilities = json.decodeFromString(ListSerializer(AbilitySnapshot.serializer()), row.abilities),
+        source = StateSource.valueOf(row.source),
         createdAt = epochMillisToInstant(row.created_at),
     )
 
@@ -681,6 +709,13 @@ internal object StorageMappers {
         importance = e.importance.toLong(),
         when_json = e.`when`?.let { json.encodeToString(TimelinePosition.serializer(), it) },
         who = json.encodeToString(ListSerializer(CharacterId.serializer()), e.who),
+        what = e.what,
+        where_json = json.encodeToString(ListSerializer(LocationId.serializer()), e.where),
+        cause = json.encodeToString(ListSerializer(EventId.serializer()), e.cause),
+        consequence = json.encodeToString(ListSerializer(EventId.serializer()), e.consequence),
+        participants = json.encodeToString(ListSerializer(EventParticipant.serializer()), e.participants),
+        evidence = json.encodeToString(ListSerializer(Evidence.serializer()), e.evidence),
+        fact_level = e.factLevel.name,
         chapter_id = e.chapterId?.value,
         status = e.status.name,
         created_at = e.createdAt.toEpochMillis(),
@@ -697,6 +732,13 @@ internal object StorageMappers {
         importance = row.importance.toInt(),
         `when` = row.when_json?.let { json.decodeFromString(TimelinePosition.serializer(), it) },
         who = json.decodeFromString(ListSerializer(CharacterId.serializer()), row.who),
+        what = row.what,
+        where = json.decodeFromString(ListSerializer(LocationId.serializer()), row.where_json),
+        cause = json.decodeFromString(ListSerializer(EventId.serializer()), row.cause),
+        consequence = json.decodeFromString(ListSerializer(EventId.serializer()), row.consequence),
+        participants = json.decodeFromString(ListSerializer(EventParticipant.serializer()), row.participants),
+        evidence = json.decodeFromString(ListSerializer(Evidence.serializer()), row.evidence),
+        factLevel = FactLevel.valueOf(row.fact_level),
         chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
         status = EventStatus.valueOf(row.status),
         createdAt = epochMillisToInstant(row.created_at),
@@ -1316,6 +1358,7 @@ internal object StorageMappers {
         project_id = e.projectId.value,
         operation = e.operation.name,
         artifact_id = e.artifactId?.value,
+        gate_id = e.gateId?.value,
         novel_id = e.target.novelId.value,
         chapter_id = e.target.chapterId.value,
         variant_id = e.target.variantId?.value,
@@ -1325,6 +1368,8 @@ internal object StorageMappers {
         resulting_content = e.resultingContent,
         summary = e.summary,
         reverted_history_id = e.revertedHistoryId?.value,
+        previous_format = com.qianyan.model.commit.CommitFormatHistory.toStorage(e.previousFormat),
+        resulting_format = com.qianyan.model.commit.CommitFormatHistory.toStorage(e.resultingFormat),
         created_at = e.createdAt.toEpochMillis(),
     )
 
@@ -1334,6 +1379,7 @@ internal object StorageMappers {
         projectId = com.qianyan.model.ProjectId(row.project_id),
         operation = com.qianyan.model.commit.CommitOperation.valueOf(row.operation),
         artifactId = row.artifact_id?.let { com.qianyan.model.change.ChangeArtifactId(it) },
+        gateId = row.gate_id?.let { com.qianyan.model.workflow.WorkflowHumanGateId(it) },
         target = com.qianyan.model.workingdraft.WorkingDraftTarget(
             novelId = NovelId(row.novel_id),
             chapterId = com.qianyan.model.ChapterId(row.chapter_id),
@@ -1345,6 +1391,8 @@ internal object StorageMappers {
         resultingContent = row.resulting_content,
         summary = row.summary,
         revertedHistoryId = row.reverted_history_id?.let { com.qianyan.model.commit.CommitHistoryId(it) },
+        previousFormat = com.qianyan.model.commit.CommitFormatHistory.fromStorage(row.previous_format),
+        resultingFormat = com.qianyan.model.commit.CommitFormatHistory.fromStorage(row.resulting_format),
         createdAt = epochMillisToInstant(row.created_at),
     )
 

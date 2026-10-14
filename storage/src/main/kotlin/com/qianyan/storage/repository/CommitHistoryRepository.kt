@@ -5,6 +5,7 @@ import com.qianyan.model.ProjectId
 import com.qianyan.model.change.ChangeArtifactId
 import com.qianyan.model.commit.CommitHistoryEntry
 import com.qianyan.model.commit.CommitHistoryId
+import com.qianyan.model.workflow.WorkflowHumanGateId
 
 /**
  * I10 · Commit History 仓储（Canonical Commit / Revert 的**不可变**审计记录）。
@@ -32,6 +33,12 @@ interface CommitHistoryRepository {
      * 同一 Draft 在版本链上至多成为一次提交的产物 ⇒ 至多一条；无返回 null。
      */
     fun getByResultingDraftId(draftId: DraftId): CommitHistoryEntry?
+
+    /**
+     * 按**批准 Gate** 读取（P1-02j B1）：判定某 Human Gate 是否已产生正式提交（跨重启恢复的持久判据）。
+     * 一个 Gate 至多批准一次提交 ⇒ 至多一条；无关联（含历史旧行 / REVERT / 作者手改）→ null。
+     */
+    fun getByGate(gateId: WorkflowHumanGateId): CommitHistoryEntry?
 
     /** 某 Project 的全部历史（**插入序** = 真实发生时序；确定性，依赖 rowid 而非时间戳精度）。 */
     fun listByProject(projectId: ProjectId): List<CommitHistoryEntry>

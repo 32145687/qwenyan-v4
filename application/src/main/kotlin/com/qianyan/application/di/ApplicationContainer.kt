@@ -10,6 +10,7 @@ import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.session.AgentSessionUseCases
 import com.qianyan.application.usecase.log.ActivityUseCases
 import com.qianyan.application.usecase.log.ToolCallLogUseCases
+import com.qianyan.application.usecase.tool.AgentToolBridge
 import com.qianyan.application.usecase.tool.ProductToolService
 import com.qianyan.application.usecase.tool.readOnlyProductTools
 import com.qianyan.application.usecase.context.ContextEngineUseCases
@@ -17,6 +18,7 @@ import com.qianyan.application.usecase.context.defaultContextSources
 import com.qianyan.agent.agents.SkillRegistry
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftValidator
+import com.qianyan.application.usecase.canonical.CanonicalReadUseCases
 import com.qianyan.application.usecase.change.ChangeUseCases
 import com.qianyan.application.usecase.commit.CommitUseCases
 import com.qianyan.application.usecase.agent.NovelAgent
@@ -29,6 +31,7 @@ import com.qianyan.application.usecase.task.TaskRunner
 import com.qianyan.application.usecase.taskqueue.TaskExecutor
 import com.qianyan.application.usecase.taskqueue.TaskQueueUseCases
 import com.qianyan.application.usecase.taskqueue.TaskWorker
+import com.qianyan.application.usecase.workspace.WorkspaceUseCases
 import com.qianyan.model.taskqueue.TaskKind
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
@@ -346,6 +349,15 @@ class ApplicationContainer(
         errorMapper = errorMapper,
     )
 
+    /** P1-01b · Canonical Read（正式 Canonical 正文读取入口；R3 / §23B）。 */
+    val canonicalRead: CanonicalReadUseCases = CanonicalReadUseCases(
+        chapters = chapterRepository,
+        novels = novelRepository,
+        history = commitHistoryRepository,
+        drafts = draftRepository,
+        errorMapper = errorMapper,
+    )
+
     /**
      * I11 · Novel Agent（Novel IDE 核心**编排**入口；第 11 阶段）。
      *
@@ -420,12 +432,59 @@ class ApplicationContainer(
         TaskKind.PROJECT_INDEX_REBUILD to TaskExecutor { item -> projectIndex.rebuild(item.projectId) },
     )
 
+    /**
+     * I14 · Workspace（Context Inspector + 三栏 Workspace 的 **Application 薄 Facade**）。
+     *
+     * 只**编排**既有能力：I1 Project · I3 AgentSession · I4 Activity/ToolCallLog · I6 ContextEngine ·
+     * I9 Change · I10 Commit · I12 ProjectIndex · I13 TaskQueue —— 不重实现 Context / Activity /
+     * Change / Diff / Task，也不新建状态机。**无自身状态**（当前对象由 UI 会话态持有，不落库），故每次访问新建。
+     */
+    val workspace: WorkspaceUseCases
+        get() = WorkspaceUseCases(
+            projects = projects,
+            novels = novels,
+            chapters = chapters,
+            writer = writerUseCases,
+            index = projectIndex,
+            contextEngine = contextEngine,
+            activities = activities,
+            toolCallLogs = toolCallLogs,
+            changes = changes,
+            commits = commits,
+            tasks = tasks,
+            taskQueue = taskQueue,
+            sessions = agentSessions,
+            storyState = storyState,
+            errorMapper = errorMapper,
+        )
+
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
     val overrides: OverrideUseCases get() = OverrideUseCases(novelRepository, errorMapper)
     val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, errorMapper)
     val memories: MemoryUseCases get() = MemoryUseCases(memoryRepository, errorMapper)
-    val txts: TxtUseCases get() = TxtUseCases(txtPipeline, txtRepository, novelRepository, errorMapper)
+    /**
+     * P5 演进 + Phase 1 follow-up F1 闭环装配：导入成功后立即初始化 Canonical（分阶段、独立事务；
+     * 初始化失败抛出类型化错误，重导同一内容幂等重试）。documentId 显式传入初始化器（F3）。
+     */
+    val txts: TxtUseCases get() = TxtUseCases(
+        txtPipeline = txtPipeline,
+        txtRepository = txtRepository,
+        novelRepository = novelRepository,
+        errorMapper = errorMapper,
+        canonicalInitialization = txtCanonicalInitialization,
+    )
+
+    /** Phase 1 §10.12：TXT 导入 → domain Chapter → Canonical 初始化（幂等、原子；不经 AI 变更链）。 */
+    val txtCanonicalInitialization: com.qianyan.application.usecase.txt.TxtCanonicalInitializationUseCases
+        get() = com.qianyan.application.usecase.txt.TxtCanonicalInitializationUseCases(
+            txtRepository = txtRepository,
+            chapterRepository = chapterRepository,
+            draftRepository = draftRepository,
+            commits = commits,
+            workflows = workflowRepository,
+            errorMapper = errorMapper,
+        )
     val analysis: AnalysisUseCases get() = AnalysisUseCases(txtRepository, vocabularyRepository, AnalysisInputBuilder, analysisGateway, errorMapper, model = analysisModel)
     val tasks: TaskManagerUseCases get() = TaskManagerUseCases(taskRepository, errorMapper)
 
@@ -437,7 +496,7 @@ class ApplicationContainer(
      * + 阅读位置；只读 + 位置保存，不新建第二套章节正文模型。
      */
     val reading: ReadingUseCases
-        get() = ReadingUseCases(chapterRepository, draftRepository, readingProgressRepository, errorMapper)
+        get() = ReadingUseCases(chapterRepository, canonicalRead, readingProgressRepository, errorMapper)
 
     /** P12.1.7 Chapter 写作链编排（Planning→Writing→Critique→Revision→Finalize→Confirm→KnowledgeUpdate），复用既有 UseCases/Task。 */
     val chapterWriting: ChapterWritingUseCases
@@ -464,6 +523,7 @@ class ApplicationContainer(
             taskManager = tasks,
             confirmation = confirmations,
             knowledgeUpdate = knowledgeUpdate,
+            workingDrafts = workingDrafts,
             errorMapper = errorMapper,
         )
 
@@ -485,10 +545,13 @@ class ApplicationContainer(
             planning = planning,
             critique = critique,
             revision = revision,
-            confirmation = confirmations,
             knowledgeUpdate = knowledgeUpdate,
             draftRepository = draftRepository,
             chapterRepository = chapterRepository,
+            commits = commits,
+            workingDrafts = workingDrafts,
+            changes = changes,
+            canonicalRead = canonicalRead,
             errorMapper = errorMapper,
         )
 
@@ -602,9 +665,11 @@ class ApplicationContainer(
     val continuationResolver: ContinuationResolver
         get() = ContinuationResolver(chapterRepository, draftRepository, errorMapper)
 
-    /** P11.2 Planner Agent：经 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
+    /** P11.2 Planner Agent：经 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。
+     *  注入 AgentToolBridge：Planner 的只读工具调用（list_chapters / get_chapter / get_latest_draft）
+     *  经 ProductToolService 既有调度链执行（ActionPolicy + ToolCallLog + 项目作用域）。 */
     val planner: PlannerAgent
-        get() = PlannerAgent(analysisGateway, errorMapper, analysisModel)
+        get() = PlannerAgent(analysisGateway, errorMapper, analysisModel, toolBridge = AgentToolBridge(productTools))
 
     /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan（P0-4 绑定/创建真实 Chapter）。
      *  P20-P5：经 [decisionModelGateway] 在 Application orchestration 决定 DecisionPolicy（Planner 只消费）。 */
@@ -623,18 +688,29 @@ class ApplicationContainer(
     val writerGateway: com.qianyan.application.usecase.writing.WriterGateway
         get() = WriterFacade(
             chapters = chapters,
+            projects = projects,
             novelRepository = novelRepository,
             drafts = writerUseCases,
             workflow = workflowFacade,
             critique = critique,
             revision = revision,
             taskManager = tasks,
+            commits = commits,
+            workingDrafts = workingDrafts,
             errorMapper = errorMapper,
         )
 
-    /** P11.3 Writing 执行 Use Case：Task 生命周期 + Draft 持久化 + WRITING Checkpoint。 */
+    /** P11.3 Writing 执行 Use Case：Task 生命周期 + AI 产出落点（WorkingDraft）+ WRITING Checkpoint。 */
     val writingExecution: WritingExecutionUseCase
-        get() = WritingExecutionUseCase(tasks, planningContextAssembly, writer, draftRepository, errorMapper)
+        get() = WritingExecutionUseCase(
+            taskManager = tasks,
+            contextAssembly = planningContextAssembly,
+            writer = writer,
+            draftRepository = draftRepository,
+            workingDrafts = workingDrafts,
+            projects = projects,
+            errorMapper = errorMapper,
+        )
 
     /** P11.4 Critic Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
     val critic: CritiqueAgent

@@ -90,6 +90,7 @@ class ActionPolicyUseCasesTest {
             ?: f.app.novels.createOriginal(title = "I2 书")
         val chapter = f.app.chapters.createNextChapter(title, novelId)
 
+        // P1-02c+d：AI 产出先落 WorkingDraft（不写章节 Draft 表），需经人工门批准提交后才产生 Canonical 载体 Draft。
         var guard = 0
         while (guard++ < 12 && f.app.draftRepository.latestByChapter(chapter.chapterId) == null) {
             if (f.app.workflowFacade.getChapterProgress(chapter.chapterId).waitingForUser) {
@@ -98,7 +99,7 @@ class ActionPolicyUseCasesTest {
                 f.app.writerGateway.continueWriting(novelId, null, chapter.chapterId)
             }
         }
-        val draft = assertNotNull(f.app.draftRepository.latestByChapter(chapter.chapterId), "既有 Writer 链路应产出 Draft")
+        val draft = assertNotNull(f.app.draftRepository.latestByChapter(chapter.chapterId), "既有 Writer 链路（含人闸批准提交）应产出 Canonical 载体 Draft")
         val wf = assertNotNull(f.app.workflows.getWorkflowByActiveChapter(chapter.chapterId), "应存在既有 Workflow")
         val stepId = assertNotNull(f.app.workflows.listSteps(wf.workflowId).firstOrNull(), "应存在既有 Workflow Step").stepId
         return ChapterCtx(novelId, draft, draft.draftId, wf.workflowId, stepId)
@@ -202,6 +203,7 @@ class ActionPolicyUseCasesTest {
         val first = prepareChapter(f, "第 1 章")
         val second = prepareChapter(f, "第 2 章")
         val gatesBefore = count(f.handle, "WorkflowHumanGate")
+        val draftStatusBefore = f.app.draftRepository.getById(first.draftId)?.status
 
         val rejected = f.app.actionPolicy.resolveHumanGate(
             f.app.actionPolicy.openHumanGate(first.workflowId, first.stepId, first.draftId, action(AgentActionKind.MODIFY_CANONICAL)).gateId,
@@ -209,7 +211,7 @@ class ActionPolicyUseCasesTest {
         )
         assertEquals(HumanGateStatus.RESOLVED, rejected.status)
         assertEquals(HumanDecision.REJECTED, rejected.decision)
-        assertEquals(DraftStatus.FINAL, f.app.draftRepository.getById(first.draftId)?.status, "REJECTED 不改动 Draft")
+        assertEquals(draftStatusBefore, f.app.draftRepository.getById(first.draftId)?.status, "REJECTED 不改动 Draft")
 
         // 不同 (workflow, step, draft) → 独立 gate，可表达 REQUEST_REVISION
         val revision = f.app.actionPolicy.resolveHumanGate(

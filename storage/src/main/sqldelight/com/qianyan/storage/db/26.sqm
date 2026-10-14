@@ -1,0 +1,33 @@
+-- Phase 2 · World Model 字段补全（v26 → v27，additive）
+-- 依据：v3.1 §11.9「补 Event 7 字段、CharacterState 7 字段、Character 3 字段」；
+-- 字段契约的唯一权威是领域模型（core/model Character / CharacterState / Event 已定义这些字段，
+-- 此前 Storage 丢弃 ⇒ 「能写等于写进去就丢」）。本迁移只补列，不新建表族、不改既有列。
+--
+-- 无需数据回填：这些字段此前**从未被持久化**，旧行不存在"丢失的非默认值"；
+-- 新列 DEFAULT 与领域默认值一致（列表 '[]'、字符串 ''、枚举取默认成员、可空列 NULL），
+-- 即旧行读回的领域对象与迁移前完全等价（可证明重建，不是猜测）。
+--
+-- 列名遵循本表族既有约定：
+--   · 复杂嵌套列表/对象用 JSON 字符串列（不建关联表）；
+--   · `when` 列名既有先例 when_json ⇒ 领域 `where`（SQL 保留字）命名 where_json；
+--   · 枚举存枚举名；ID 一律 TEXT；时间不动。
+
+ALTER TABLE Character ADD COLUMN goals TEXT NOT NULL DEFAULT '[]';          -- JSON List<String>
+ALTER TABLE Character ADD COLUMN fears TEXT NOT NULL DEFAULT '[]';          -- JSON List<String>
+ALTER TABLE Character ADD COLUMN description TEXT NOT NULL DEFAULT '';      -- String（默认空串）
+
+ALTER TABLE CharacterState ADD COLUMN location TEXT;                        -- LocationId?（NULL=未定位）
+ALTER TABLE CharacterState ADD COLUMN current_motivation TEXT;              -- String?（NULL=无）
+ALTER TABLE CharacterState ADD COLUMN relationships TEXT NOT NULL DEFAULT '[]';  -- JSON List<RelationshipSnapshot>
+ALTER TABLE CharacterState ADD COLUMN known_facts TEXT NOT NULL DEFAULT '[]';    -- JSON List<KnowledgeId>
+ALTER TABLE CharacterState ADD COLUMN unknown_facts TEXT NOT NULL DEFAULT '[]';  -- JSON List<KnowledgeId>
+ALTER TABLE CharacterState ADD COLUMN abilities TEXT NOT NULL DEFAULT '[]';      -- JSON List<AbilitySnapshot>
+ALTER TABLE CharacterState ADD COLUMN source TEXT NOT NULL DEFAULT 'INFERRED';   -- StateSource 枚举名
+
+ALTER TABLE Event ADD COLUMN what TEXT NOT NULL DEFAULT '';                 -- String（默认空串）
+ALTER TABLE Event ADD COLUMN where_json TEXT NOT NULL DEFAULT '[]';         -- JSON List<LocationId>（SQL 保留字 → _json）
+ALTER TABLE Event ADD COLUMN cause TEXT NOT NULL DEFAULT '[]';              -- JSON List<EventId>
+ALTER TABLE Event ADD COLUMN consequence TEXT NOT NULL DEFAULT '[]';        -- JSON List<EventId>
+ALTER TABLE Event ADD COLUMN participants TEXT NOT NULL DEFAULT '[]';       -- JSON List<EventParticipant>
+ALTER TABLE Event ADD COLUMN evidence TEXT NOT NULL DEFAULT '[]';           -- JSON List<Evidence>
+ALTER TABLE Event ADD COLUMN fact_level TEXT NOT NULL DEFAULT 'EXPLICIT';   -- FactLevel 枚举名

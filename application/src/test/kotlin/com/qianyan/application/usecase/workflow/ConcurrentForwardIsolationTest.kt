@@ -2,6 +2,7 @@ package com.qianyan.application.usecase.workflow
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.qianyan.application.di.ApplicationContainer
+import com.qianyan.application.error.ApplicationException
 import com.qianyan.model.BaseNovelId
 import com.qianyan.model.MemoryEntryId
 import com.qianyan.model.NovelId
@@ -38,6 +39,7 @@ import java.nio.file.Files
 import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -141,7 +143,7 @@ class ConcurrentForwardIsolationTest {
         assertEquals(ch11, app.workflowRepository.getWorkflow(wfB)!!.activeChapterId)
     }
 
-    /** CF2 — Draft 隔离：latestByChapter 各自归位。 */
+    /** CF2 — Draft 隔离（P1-02c+d）：AI 产出落各自的 WorkingDraft，章节 Draft 表不被写。 */
     @Test
     fun `CF2 draft isolation`() {
         val app = ApplicationContainer.open(analysisGateway = AuditedGateway())
@@ -150,13 +152,13 @@ class ConcurrentForwardIsolationTest {
         val (ch11, wfB) = chapterWorkflow(app, novelId, null)
         runToGate(app, wfA); runToGate(app, wfB)
 
-        val d10 = app.draftRepository.latestByChapter(ch10)!!
-        val d11 = app.draftRepository.latestByChapter(ch11)!!
-        assertEquals(ch10, d10.chapterId)
-        assertEquals(ch11, d11.chapterId)
-        assertNotEquals(d10.draftId, d11.draftId) // 同一个 novel 的两个 chapter 不得共用同一 draft
-        assertEquals(1, app.draftRepository.listByChapter(ch10).size)
-        assertEquals(1, app.draftRepository.listByChapter(ch11).size)
+        assertEquals(0, app.draftRepository.listByChapter(ch10).size, "AI 产出不得直写章节 Draft")
+        assertEquals(0, app.draftRepository.listByChapter(ch11).size, "AI 产出不得直写章节 Draft")
+        val w10 = workingProducts(app, novelId).single { it.target.chapterId == ch10 }
+        val w11 = workingProducts(app, novelId).single { it.target.chapterId == ch11 }
+        assertEquals(ch10, w10.target.chapterId)
+        assertEquals(ch11, w11.target.chapterId)
+        assertNotEquals(w10.workingDraftId, w11.workingDraftId) // 各章节工作产物身份独立
     }
 
     /** CF3 — Attempt 隔离：A 重试一次(2 attempts)、B 单次(1 attempt)，attempt 不共享。 */
@@ -188,7 +190,8 @@ class ConcurrentForwardIsolationTest {
         val (ch10, wfA) = chapterWorkflow(app, novelId, null)
         val (_, wfB) = chapterWorkflow(app, novelId, null)
         runToGate(app, wfA); runToGate(app, wfB)
-        val draft10Before = app.draftRepository.latestByChapter(ch10)!!.draftId
+        val workingA = workingProducts(app, novelId).single { it.target.chapterId == ch10 }
+        val workingB = workingProducts(app, novelId).single { it.target.chapterId != ch10 }
 
         val gateA = app.workflowRepository.getGate(app.workflowRepository.getWorkflow(wfA)!!.pendingGateId!!)!!
         val gateB = app.workflowRepository.getGate(app.workflowRepository.getWorkflow(wfB)!!.pendingGateId!!)!!
@@ -204,8 +207,11 @@ class ConcurrentForwardIsolationTest {
         assertEquals(HumanGateStatus.PENDING, gB.status)
         assertEquals(HumanDecision.PENDING, gB.decision)
         assertEquals(WorkflowStatus.WAITING_HUMAN, app.workflowRepository.getWorkflow(wfB)!!.status)
-        // approve A 不产生第二个业务结果污染 A 回退：A 仍 WAITING（approve 后未 runForward 前）
-        assertEquals(draft10Before, app.draftRepository.latestByChapter(ch10)!!.draftId)
+        // approve A 只影响 A：A 产生自己的 Canonical 载体；B 的工作产物与 Draft 表均未被触碰
+        assertEquals(1, app.draftRepository.listByChapter(ch10).size, "A 批准后产生自己的 Canonical 载体")
+        assertEquals(0, app.draftRepository.listByChapter(workingB.target.chapterId).size, "B 仍无章节 Draft")
+        assertNotEquals(HumanGateStatus.RESOLVED, app.workflowRepository.getGate(gateB.gateId)!!.status)
+        assertEquals(workingA.workingDraftId, app.workingDrafts.get(workingA.workingDraftId).workingDraftId, "A 状态未串到 B")
     }
 
     /** CF5 — Revision 隔离：A 修订产生 lineage；B 不修订，二者不串。 */
@@ -217,12 +223,11 @@ class ConcurrentForwardIsolationTest {
         val (ch11, wfB) = chapterWorkflow(app, novelId, null)
         runToGate(app, wfA); runToGate(app, wfB)
 
-        val dA = app.draftRepository.listByChapter(ch10)
-        val dB = app.draftRepository.listByChapter(ch11)
-        assertEquals(2, dA.size) // A：原稿 + 修订稿（revision lineage）
-        assertEquals(dA[0].draftId, dA[1].previousDraftId) // 修订父链只在 ch10 内部
-        assertEquals(1, dB.size) // B：无修订
-        assertNull(dB[0].previousDraftId) // 未被跨 workflow 的 revision 父引用污染
+        // P1-02c+d：修订写回**各自**的工作产物（A 内容被替换，B 不变）；轮次由 REVISION Steps 记录。
+        assertEquals(0, app.draftRepository.listByChapter(ch10).size)
+        assertEquals(0, app.draftRepository.listByChapter(ch11).size)
+        assertEquals("修订版", workingProducts(app, novelId).single { it.target.chapterId == ch10 }.content)
+        assertEquals("正文", workingProducts(app, novelId).single { it.target.chapterId == ch11 }.content)
         assertEquals(1, app.workflowRepository.listSteps(wfA).count { it.phase == WorkflowStepPhase.REVISION })
         assertEquals(0, app.workflowRepository.listSteps(wfB).count { it.phase == WorkflowStepPhase.REVISION })
     }
@@ -243,13 +248,14 @@ class ConcurrentForwardIsolationTest {
         assertEquals(WorkflowStatus.COMPLETED, runToGate(app, wfA))
         assertTrue(app.storyWorldContextResolver.resolve(novelId).memories.any { it.contains("已突破金丹期") })
 
-        // B 独立推进至 gate；B 的 chapter 只含 B 自己的 draft
+        // B 独立推进至 gate；B 的章节只含 B 自己的工作产物
         assertEquals(WorkflowStatus.WAITING_HUMAN, runToGate(app, wfB))
-        assertEquals(ch11, app.draftRepository.latestByChapter(ch11)!!.chapterId)
-        assertEquals(1, app.draftRepository.listByChapter(ch11).size)
-        // A 的 chapter 只含 A 自己的 draft（不因 B 增多 / 被 B 覆盖）
+        assertEquals(ch11, workingProducts(app, novelId).single { it.target.chapterId == ch11 }.target.chapterId)
+        assertEquals(1, app.workingDrafts.list(app.projects.projectOf(novelId).projectId).count { it.target.chapterId == ch11 })
+        // A 的章节只含 A 自己的 Canonical 载体（不因 B 增多 / 被 B 覆盖）
         assertEquals(1, app.draftRepository.listByChapter(ch10).size)
         assertEquals(DraftStatus.CONFIRMED, app.draftRepository.latestByChapter(ch10)!!.status)
+        assertEquals(0, app.draftRepository.listByChapter(ch11).size, "B 未提交 → 无章节 Draft")
     }
 
     /** CF7 — Variant 隔离：ORIGINAL 与 VARIANT 的 Memory/StoryState 不串；Workflow Draft scope 正确。 */
@@ -273,14 +279,14 @@ class ConcurrentForwardIsolationTest {
         assertTrue(orig.memories.none { it.contains("变体独有") }, "ORIGINAL 不得读到 Variant 独有事实")
         assertTrue(vctx.memories.any { it.contains("变体独有") }, "Variant 读到自身事实")
 
-        // 两个 Workflow：ORIGINAL(Ch10) 与 VARIANT(Ch11)，Draft scope 不串
+        // 两个 Workflow：ORIGINAL(Ch10) 与 VARIANT(Ch11)，工作产物 target 作用域不串
         val (ch10, wfA) = chapterWorkflow(app, novelId, null)
         val (ch11, wfB) = chapterWorkflow(app, novelId, vx)
         runToGate(app, wfA); runToGate(app, wfB)
-        assertEquals(VariantScope.ORIGINAL, app.draftRepository.latestByChapter(ch10)!!.scope)
-        assertEquals(VariantScope.VARIANT, app.draftRepository.latestByChapter(ch11)!!.scope)
-        assertEquals(null, app.draftRepository.latestByChapter(ch10)!!.variantId)
-        assertEquals(vx, app.draftRepository.latestByChapter(ch11)!!.variantId)
+        val w10 = workingProducts(app, novelId).single { it.target.chapterId == ch10 }
+        val w11 = workingProducts(app, novelId).single { it.target.chapterId == ch11 }
+        assertEquals(null, w10.target.variantId)
+        assertEquals(vx, w11.target.variantId)
     }
 
     /** CF8 — Continuation 幂等 + 每个 Workflow 各自的 continuation 独立。 */
@@ -321,7 +327,8 @@ class ConcurrentForwardIsolationTest {
         assertEquals(3, chapters.map { it.chapterId }.distinct().size)
     }
 
-    /** CF9 — Crash/Rebuild 隔离：A/B 交错推进后关库重建，各自续走自己的 chapter。 */
+    /** CF9 — Crash/Rebuild 隔离（**P1-02c+d 新契约**）：A/B 交错推进后关库重建 —— 各自的工作产物引用失效，
+     *  恢复必须**明确失败**且不串线、不伪造 Draft。 */
     @Test
     fun `CF9 crash rebuild isolation`() {
         val tmp = Files.createTempFile("qianyan-CF9", ".db").toString()
@@ -334,26 +341,31 @@ class ConcurrentForwardIsolationTest {
             // 交错执行：A Planning/Writing → B Planning/Writing（critique 抛错停在 Writing 之后）
             try { app.workflowOrchestrator.runForward(wfA) } catch (_: Throwable) {}
             try { app.workflowOrchestrator.runForward(wfB) } catch (_: Throwable) {}
-            assertEquals(null, app.draftRepository.latestByChapter(ch10)!!.variantId)
-            assertEquals(null, app.draftRepository.latestByChapter(ch11)!!.variantId)
+            // 崩溃前：各章节只有自己的工作产物（target 正确、无章节 Draft）
+            assertEquals(null, workingProducts(app, novelId).single { it.target.chapterId == ch10 }.target.variantId)
+            assertEquals(null, workingProducts(app, novelId).single { it.target.chapterId == ch11 }.target.variantId)
+            assertEquals(0, app.draftRepository.listByChapter(ch10).size)
+            assertEquals(0, app.draftRepository.listByChapter(ch11).size)
             closeAll(handles)
 
             app = open("jdbc:sqlite:$tmp", handles, AuditedGateway()) // 恢复后 critic 通过
-            assertEquals(WorkflowStatus.WAITING_HUMAN, runToGate(app, wfA))
-            assertEquals(WorkflowStatus.WAITING_HUMAN, runToGate(app, wfB))
-            // 不串线
-            assertEquals(ch10, app.draftRepository.latestByChapter(ch10)!!.chapterId)
-            assertEquals(ch11, app.draftRepository.latestByChapter(ch11)!!.chapterId)
-            assertNotEquals(ch10, app.draftRepository.latestByChapter(ch11)!!.chapterId)
+            val exA = assertFailsWith<ApplicationException> { app.workflowOrchestrator.runForward(wfA) }
+            val exB = assertFailsWith<ApplicationException> { app.workflowOrchestrator.runForward(wfB) }
+            assertTrue(exA.message.orEmpty().contains("工作产物"), "A 应明确报告引用失效：${exA.message}")
+            assertTrue(exB.message.orEmpty().contains("工作产物"), "B 应明确报告引用失效：${exB.message}")
+            // 不串线：各自仍绑定自己的 chapter；不伪造任何章节 Draft
             assertEquals(ch10, app.workflowRepository.getWorkflow(wfA)!!.activeChapterId)
             assertEquals(ch11, app.workflowRepository.getWorkflow(wfB)!!.activeChapterId)
+            assertEquals(0, app.draftRepository.listByChapter(ch10).size)
+            assertEquals(0, app.draftRepository.listByChapter(ch11).size)
         } finally {
             closeAll(handles)
             Files.deleteIfExists(Path(tmp))
         }
     }
 
-    /** CF10 — LLM Recovery 隔离：rebuild 后已 COMPLETED 的 Planning/Writing 不再重调 LLM（A 与 B 均不重跑已完步骤）。 */
+    /** CF10 — LLM Recovery 隔离（**P1-02c+d 新契约**）：rebuild 后已 COMPLETED 的 Planning/Writing 绝不重调 LLM；
+     *  CRITIQUE 因工作产物引用失效（进程内工作区）而**明确失败**，不重跑、不伪造 Draft。 */
     @Test
     fun `CF10 llm recovery isolation`() {
         val tmp = Files.createTempFile("qianyan-CF10", ".db").toString()
@@ -362,8 +374,8 @@ class ConcurrentForwardIsolationTest {
             val gw1 = AuditedGateway(throwCritique = true)
             var app = open("jdbc:sqlite:$tmp", handles, gw1)
             val novelId = app.novels.createOriginal(title = "仙侠")
-            val (_, wfA) = chapterWorkflow(app, novelId, null)
-            val (_, wfB) = chapterWorkflow(app, novelId, null)
+            val (chA, wfA) = chapterWorkflow(app, novelId, null)
+            val (chB, wfB) = chapterWorkflow(app, novelId, null)
             try { app.workflowOrchestrator.runForward(wfA) } catch (_: Throwable) {}
             try { app.workflowOrchestrator.runForward(wfB) } catch (_: Throwable) {}
             // phase1：两个 workflow 各完成过 Planning + Writing
@@ -373,18 +385,26 @@ class ConcurrentForwardIsolationTest {
 
             val gw2 = AuditedGateway()
             app = open("jdbc:sqlite:$tmp", handles, gw2)
-            assertEquals(WorkflowStatus.WAITING_HUMAN, runToGate(app, wfA))
-            assertEquals(WorkflowStatus.WAITING_HUMAN, runToGate(app, wfB))
-            // 已 COMPLETED 的 Planning/Writing 绝不重调（两 Workflow 皆不重跑）
+            // 引用失效：明确失败（不静默续接、不重跑 AI、不伪造 Draft）
+            val exA = assertFailsWith<ApplicationException> { app.workflowOrchestrator.runForward(wfA) }
+            val exB = assertFailsWith<ApplicationException> { app.workflowOrchestrator.runForward(wfB) }
+            assertTrue(exA.message.orEmpty().contains("工作产物"), "A 应明确报告引用失效：${exA.message}")
+            assertTrue(exB.message.orEmpty().contains("工作产物"), "B 应明确报告引用失效：${exB.message}")
+            // 已 COMPLETED 的 Planning/Writing 绝不重调；Critique 也不得被调用
             assertEquals(0, gw2.plannerCalls)
             assertEquals(0, gw2.writerCalls)
-            // 恢复后继续执行的是未完成步骤（Critique → Finalize → Confirmation），A/B 各一次
-            assertEquals(2, gw2.criticCalls)
+            assertEquals(0, gw2.criticCalls)
+            assertEquals(0, app.draftRepository.listByChapter(chA).size, "不得伪造 / 新增章节 Draft")
+            assertEquals(0, app.draftRepository.listByChapter(chB).size)
         } finally {
             closeAll(handles)
             Files.deleteIfExists(Path(tmp))
         }
     }
+
+    /** P1-02c+d：该 Novel 内未丢弃的 AI 工作产物。 */
+    private fun workingProducts(app: ApplicationContainer, novelId: NovelId) =
+        app.workingDrafts.list(app.projects.projectOf(novelId).projectId).filter { !it.status.isTerminal }
 
     private fun completeChapter(app: ApplicationContainer, wfId: WorkflowId) {
         assertEquals(WorkflowStatus.WAITING_HUMAN, runToGate(app, wfId))

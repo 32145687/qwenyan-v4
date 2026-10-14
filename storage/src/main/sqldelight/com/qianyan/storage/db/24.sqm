@@ -1,0 +1,13 @@
+-- P1-02j.2 · Schema v25（24.sqm：v24 → v25）
+-- additive migration：WorkflowStep 新增**可空** round_no 列（创作轮次编号）。
+--   目的：轮次级 Revision Budget —— 修订预算按 (chapterId, roundNo) 统计，而非按章节跨轮累计。
+--   语义：
+--     NULL = 兼容历史记录，按首轮 0 解释（不回填、不猜测）；
+--     0    = 首轮新建 Step；> 0 = 后续创作轮次（仅 abandonRound 执行新一轮 WRITING 时推进）。
+--
+-- 边界（FD-9 additive）：只加列，不修改任何既有列 / 语义 / 既有数据；
+--   不重建 Storage、不删除 / 重写历史 Step；不改变 UNIQUE(workflow_id, logical_step_key)；
+--   不修改 WorkflowStepAttempt 语义；不新增索引；不做历史 round 推断或回填。
+-- 幂等由 DatabaseInitializer 的 !columnExists("WorkflowStep","round_no") 分支包裹（列已存在则跳过）。
+
+ALTER TABLE WorkflowStep ADD COLUMN round_no INTEGER;

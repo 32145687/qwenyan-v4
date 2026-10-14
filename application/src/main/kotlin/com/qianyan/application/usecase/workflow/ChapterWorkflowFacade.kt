@@ -67,10 +67,16 @@ class ChapterWorkflowFacade(
         return getChapterProgress(chapterId)
     }
 
-    /** 推进当前章节 workflow（runForward 到 WAITING_HUMAN / 完成 / 未接入处），返回进度投影。 */
+    /**
+     * 推进当前章节 workflow（runForward 到 WAITING_HUMAN / 完成 / 未接入处），返回进度投影。
+     *
+     * P1-02g：本入口语义为**显式作者请求**（继续创作 / 推进任务）⇒ 若当前待决 Gate 已被**拒绝**，
+     * 允许在同一 Workflow 上开启新的决议轮次（新 Gate，旧 Gate 保持 REJECTED；不重新生成内容）。
+     * 与 [resume] 的区别：恢复路径**不得**因刷新 / 恢复而自动创建新 Gate。
+     */
     override fun advance(chapterId: ChapterId): ChapterWorkflowProgress {
         val wf = requireWorkflowByChapter(chapterId)
-        orchestrator.runForward(wf.workflowId)
+        orchestrator.runForward(wf.workflowId, allowReentryAfterReject = true)
         return getChapterProgress(chapterId)
     }
 
@@ -96,6 +102,21 @@ class ChapterWorkflowFacade(
         val gateId = wf.pendingGateId
             ?: throw ApplicationException(ApplicationError.InvalidOperation("chapter $chapterId 无待确认闸门"))
         guard { orchestrator.approveGate(gateId) }
+        return getChapterProgress(chapterId)
+    }
+
+    /**
+     * **显式作废失效轮次**（P1-02j A1）：当前 Gate 已被拒绝、但其工作产物已失效时，关闭该轮并在同一
+     * Workflow 上开启新一轮（只建立新一轮骨架，**不**重跑 LLM —— 由后续显式 [advance] 驱动生成）。
+     *
+     * 非自动：本方法是唯一的作废入口；[resume] / [getChapterProgress] 等只读路径**绝不**触发作废。
+     * 前置不满足（未拒绝 / 已批准 / 产物仍可用 / 计划不可验证）→ 类型化失败，不改动任何状态。
+     */
+    override fun abandonRound(chapterId: ChapterId): ChapterWorkflowProgress {
+        val wf = requireWorkflowByChapter(chapterId)
+        val gateId = wf.pendingGateId
+            ?: throw ApplicationException(ApplicationError.InvalidOperation("chapter $chapterId 无待决闸门，无法作废"))
+        guard { orchestrator.abandonRound(gateId) }
         return getChapterProgress(chapterId)
     }
 
@@ -207,5 +228,7 @@ interface ChapterWorkflowGateway {
     fun resume(chapterId: ChapterId): ChapterWorkflowProgress
     fun getChapterProgress(chapterId: ChapterId): ChapterWorkflowProgress
     fun approve(chapterId: ChapterId): ChapterWorkflowProgress
+    /** P1-02j A1：显式作废失效轮次并在同一 Workflow 上开启新一轮（非自动；只读路径绝不触发）。 */
+    fun abandonRound(chapterId: ChapterId): ChapterWorkflowProgress
     fun continueToNextChapter(chapterId: ChapterId): ChapterWorkflowProgress
 }

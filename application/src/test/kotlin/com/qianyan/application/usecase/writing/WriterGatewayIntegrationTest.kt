@@ -7,6 +7,7 @@ import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftFormat
+import com.qianyan.model.workingdraft.WorkingDraftStatus
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.model.workflow.WorkflowStepPhase
 import com.qianyan.provider.ChatMessage
@@ -16,6 +17,7 @@ import com.qianyan.provider.ProviderResponse
 import com.qianyan.provider.Usage
 import com.qianyan.provider.impl.MockLLMGateway
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
@@ -56,6 +58,13 @@ class WriterGatewayIntegrationTest {
         )
     }
 
+    /**
+     * P1-02h：fixture Draft 的时间戳固定为**过去**（确定性），避免与"测试过程中新产生的 Draft"落在同一毫秒
+     * —— `latestByChapter` 使用 `created_at DESC, draft_id DESC`，同毫秒时按 draft_id 字符串比较决定顺序，
+     * 曾使本类 rewrite 用例偶发失败（`"d-orig"` 被选中）。**生产排序契约不变**，仅 fixture 不再依赖"当前时刻"。
+     */
+    private val FIXTURE_CREATED_AT: Instant = Instant.parse("2026-01-01T00:00:00Z")
+
     private fun draft(novelId: NovelId, chapterId: ChapterId, id: String, content: String, format: String?) = Draft(
         draftId = DraftId(id),
         novelId = novelId,
@@ -63,8 +72,8 @@ class WriterGatewayIntegrationTest {
         content = content,
         format = format,
         status = DraftStatus.WRITTEN,
-        createdAt = Clock.System.now(),
-        updatedAt = Clock.System.now(),
+        createdAt = FIXTURE_CREATED_AT,
+        updatedAt = FIXTURE_CREATED_AT,
     )
 
     /* 1. 打开上下文：真实章节信息 + 尚无 Draft（不伪造草稿） */
@@ -92,11 +101,19 @@ class WriterGatewayIntegrationTest {
         val progress = app.writerGateway.continueWriting(novelId, null, chapter.chapterId)
 
         assertEquals("WAITING_CONFIRMATION", progress.phase.name, "驱动至既有 Workflow 的人闸阶段")
-        val draft = app.draftRepository.latestByChapter(chapter.chapterId)
-        assertNotNull(draft, "AI 写作应产出真实 Draft")
-        assertEquals(DraftFormat.CONTROLLED_MARKDOWN, draft.format, "新产生的 Draft 标记为受控 Markdown v1")
-        // 该 Draft 由 Workflow 继续推进至 FINALIZE（人闸前），状态为 FINAL
-        assertEquals(DraftStatus.FINAL, draft.status)
+        // P1-02c+d：AI 产出落 WorkingDraft（进程内工作区），**不写章节 Draft 表**；
+        // 受控 Markdown 标记（P2/FD-1）在人闸批准后的 Commit 载体上生效（见 AiWritingCanonicalTest）。
+        assertNull(app.draftRepository.latestByChapter(chapter.chapterId), "AI 产出不得直写章节 Draft")
+        val working = app.workingDrafts.list(app.projects.projectOf(novelId).projectId)
+            .single { it.target.chapterId == chapter.chapterId && !it.status.isTerminal }
+        assertEquals("AI 生成的正文", working.content, "AI 正文落在工作产物")
+        // 该工作产物由 Workflow 推进至 FINALIZE（人闸前）→ VALIDATED
+        assertEquals(WorkingDraftStatus.VALIDATED, working.status)
+        // 人闸绑定的待审对象是工作产物（Gate 不冒充 DraftId）
+        val pendingGate = app.workflowRepository.getGate(
+            assertNotNull(app.workflowRepository.getWorkflowByActiveChapter(chapter.chapterId)?.pendingGateId),
+        )
+        assertNull(pendingGate?.draftId, "工作产物 Gate 不绑 Draft")
 
         // DecisionPolicy 经 P5-fix 的 durable PLANNING seam 持久化（未新建第二套 Decision 路径）
         val wf = app.workflowRepository.getWorkflowByActiveChapter(chapter.chapterId)

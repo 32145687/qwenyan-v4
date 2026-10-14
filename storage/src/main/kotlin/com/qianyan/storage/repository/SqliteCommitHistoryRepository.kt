@@ -5,6 +5,7 @@ import com.qianyan.model.ProjectId
 import com.qianyan.model.change.ChangeArtifactId
 import com.qianyan.model.commit.CommitHistoryEntry
 import com.qianyan.model.commit.CommitHistoryId
+import com.qianyan.model.workflow.WorkflowHumanGateId
 import com.qianyan.storage.db.QianyanDb
 
 /** [CommitHistoryRepository] 的 SQLDelight + SQLite 实现（I10）。 */
@@ -20,6 +21,7 @@ class SqliteCommitHistoryRepository(
             project_id = row.project_id,
             operation = row.operation,
             artifact_id = row.artifact_id,
+            gate_id = row.gate_id,
             novel_id = row.novel_id,
             chapter_id = row.chapter_id,
             variant_id = row.variant_id,
@@ -29,6 +31,8 @@ class SqliteCommitHistoryRepository(
             resulting_content = row.resulting_content,
             summary = row.summary,
             reverted_history_id = row.reverted_history_id,
+            previous_format = row.previous_format,
+            resulting_format = row.resulting_format,
             created_at = row.created_at,
         )
     }
@@ -43,6 +47,10 @@ class SqliteCommitHistoryRepository(
 
     override fun getByResultingDraftId(draftId: DraftId): CommitHistoryEntry? =
         db.commitHistoryQueries.getCommitHistoryByResultingDraftId(draftId.value).executeAsOneOrNull()
+            ?.let { StorageMappers.dbCommitHistory(it) }
+
+    override fun getByGate(gateId: WorkflowHumanGateId): CommitHistoryEntry? =
+        db.commitHistoryQueries.getCommitHistoryByGateId(gateId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbCommitHistory(it) }
 
     override fun listByProject(projectId: ProjectId): List<CommitHistoryEntry> =
