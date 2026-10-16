@@ -37,6 +37,8 @@ class RevealMigrationTest {
         // P2 v27 前置（v3.1 §11.9）：v5 起真实存在的 Story State 三表（26.sqm 会对其加列；旧形态 = 无新增 17 列）
         "CREATE TABLE Character (character_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, personality TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
         "CREATE TABLE CharacterState (state_id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, timeline_position TEXT, snapshot_type TEXT NOT NULL, physical TEXT NOT NULL DEFAULT '{}', emotional TEXT NOT NULL DEFAULT '{}', current_goal TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        // P2 收口：v5 起真实存在的 Story State 表（Original 写保护触发器建在其上，夹具必须含表）
+        "CREATE TABLE WorldRule (rule_id TEXT NOT NULL PRIMARY KEY, world_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, content TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
     )
 
     private fun JdbcSqliteDriver.exec(sql: String) { execute(null, sql, 0) }
@@ -68,7 +70,7 @@ class RevealMigrationTest {
                 DatabaseInitializer.initializeDatabase(driver)
 
                 assertTrue(tableExists(driver, "Reveal"), "migration 后应有 Reveal 表（P13 LCL-D）")
-                assertEquals(27L, userVersion(driver), "user_version 应为最新版本 27（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27）")
+                assertEquals(28L, userVersion(driver), "user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
                 // scope 索引已建
                 val idxEvent = driver.executeQuery(null,
                     "SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_event_scope' LIMIT 1",

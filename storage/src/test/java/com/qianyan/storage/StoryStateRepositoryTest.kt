@@ -310,7 +310,10 @@ class StoryStateRepositoryTest {
         assertFalse(f.resolved)
     }
 
-    /* ---------- 测试 3：Foreshadow resolved 默认 false 且可改为 true ---------- */
+    /* ---------- 测试 3：Foreshadow resolved 默认 false 且可改为 true ----------
+       P2 收口：Foreshadow 生命周期契约 = "Original 只读、Variant-only"
+       （ForeshadowLifecycleUseCases 冻结语义；Original 行已由 *_original_*_protect 触发器保护），
+       故 resolved 翻转用例按契约使用 Variant scope 伏笔（storage 层 variant_id 为纯引用，无需建 Variant 行）。 */
 
     @Test
     fun `foreshadow resolved defaults false and can be updated to true`() {
@@ -318,15 +321,16 @@ class StoryStateRepositoryTest {
         seedNovel(h.db, "foreshadow-update")
         val repo = SqliteStoryStateRepository(h.db)
         val novel = NovelId("foreshadow-update")
+        val variant = VariantId("fs-v")
 
-        repo.saveForeshadow(foreshadow("fs-1", novel, null, VariantScope.ORIGINAL, "墙上剑痕"))
+        repo.saveForeshadow(foreshadow("fs-1", novel, variant, VariantScope.VARIANT, "墙上剑痕"))
         assertFalse(repo.getForeshadowById(ForeshadowingId("fs-1"))!!.resolved, "新建 Foreshadow resolved 默认应为 false")
 
-        // 更新为已兑现（同主键覆盖）
-        repo.saveForeshadow(foreshadow("fs-1", novel, null, VariantScope.ORIGINAL, "墙上剑痕", resolved = true))
+        // 更新为已兑现（同主键覆盖；Variant 行按契约可重存）
+        repo.saveForeshadow(foreshadow("fs-1", novel, variant, VariantScope.VARIANT, "墙上剑痕", resolved = true))
         assertTrue(repo.getForeshadowById(ForeshadowingId("fs-1"))!!.resolved, "更新后 resolved 应为 true")
         // 列表同样反映出兑现状态
-        val listed = repo.listForeshadows(novel, null)
+        val listed = repo.listForeshadows(novel, variant)
         assertEquals(1, listed.size)
         assertTrue(listed.single().resolved)
     }

@@ -222,9 +222,15 @@ class AuthorDnaUseCasesTest {
     @Test
     fun `two valid sources contribute equally and deterministic order`() {
         var call = 0
-        val gateway = MockLLMGateway { _ ->
-            call++
-            if (call <= 1) {
+        val gateway = MockLLMGateway { req ->
+            // Phase 3 挂载点会为每次 Commit 额外调用 WorldModelUpdateAgent（TXT 初始化即提交）。
+            // 本测试断言的是"两次来源抽取的等权聚合"，旁路调用不计数、也不返回 DNA features。
+            val sidecar = req.messages.any {
+                it.role == ChatRole.SYSTEM && it.content.contains("WorldModelUpdateAgent")
+            }
+            if (sidecar) {
+                response("""{"answer":"{\"facts\":[]}"}""")
+            } else if (++call <= 1) {
                 response("{\"features\":[{\"dimension\":\"SENTENCE\",\"featureKey\":\"k\",\"value\":\"v\",\"statement\":\"s\",\"confidence\":0.6}]}")
             } else {
                 response("{\"features\":[{\"dimension\":\"SENTENCE\",\"featureKey\":\"k\",\"value\":\"v\",\"statement\":\"s\",\"confidence\":0.8}]}")

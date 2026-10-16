@@ -105,6 +105,9 @@ object DatabaseInitializer {
     /** v26（Phase 1）→ v27（Phase 2：World Model 字段补全，Character 3 + CharacterState 7 + Event 7 列）迁移起点。 */
     private const val V26 = 26L
 
+    /** v27（Phase 2）→ v28（Phase 3：CandidateFact 候选事实表，additive）迁移起点。 */
+    private const val V27 = 27L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -131,6 +134,159 @@ object DatabaseInitializer {
         WHEN (SELECT scope FROM Novel WHERE novel_id = NEW.base_novel_id) IS NOT 'ORIGINAL'
         BEGIN
             SELECT RAISE(ABORT, 'Variant base must be an Original Novel');
+        END;
+        """.trimIndent(),
+        // P2 收口（v3.1 §11.10）：Story State 六表的 Original 写保护。
+        // Original 判定（StoryState.sq 表契约）：variant_id IS NULL 且 scope='ORIGINAL'。
+        // 三条路径全覆盖：
+        //   · UPDATE / DELETE：直接拦截；
+        //   · INSERT（overwrite）：本仓储写路径均为 INSERT OR REPLACE——在 recursive_triggers=OFF（默认）
+        //     下 REPLACE 的隐式 DELETE 不触发 DELETE 触发器，故必须用 BEFORE INSERT + EXISTS 显式拦截
+        //     "同 PK 已存在 Original 行"的覆盖；新 Original 行首插与 Variant 行按契约重存不受影响。
+        // Variant 行（含 Foreshadow 生命周期 transitionForeshadowState 的 UPDATE）不在保护范围。
+        // Reveal / NarrativeState 不在本轮范围（Reveal 为 insert-only 运行时 fact，另裁决）。
+        """
+        CREATE TRIGGER IF NOT EXISTS character_original_update_protect
+        BEFORE UPDATE ON Character
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Character is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS character_original_delete_protect
+        BEFORE DELETE ON Character
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Character is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS character_original_overwrite_protect
+        BEFORE INSERT ON Character
+        WHEN EXISTS (SELECT 1 FROM Character WHERE character_id = NEW.character_id AND variant_id IS NULL AND scope = 'ORIGINAL')
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Character cannot be overwritten');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS character_state_original_update_protect
+        BEFORE UPDATE ON CharacterState
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original CharacterState is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS character_state_original_delete_protect
+        BEFORE DELETE ON CharacterState
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original CharacterState is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS character_state_original_overwrite_protect
+        BEFORE INSERT ON CharacterState
+        WHEN EXISTS (SELECT 1 FROM CharacterState WHERE state_id = NEW.state_id AND variant_id IS NULL AND scope = 'ORIGINAL')
+        BEGIN
+            SELECT RAISE(ABORT, 'Original CharacterState cannot be overwritten');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS event_original_update_protect
+        BEFORE UPDATE ON Event
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Event is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS event_original_delete_protect
+        BEFORE DELETE ON Event
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Event is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS event_original_overwrite_protect
+        BEFORE INSERT ON Event
+        WHEN EXISTS (SELECT 1 FROM Event WHERE event_id = NEW.event_id AND variant_id IS NULL AND scope = 'ORIGINAL')
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Event cannot be overwritten');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS world_rule_original_update_protect
+        BEFORE UPDATE ON WorldRule
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original WorldRule is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS world_rule_original_delete_protect
+        BEFORE DELETE ON WorldRule
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original WorldRule is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS world_rule_original_overwrite_protect
+        BEFORE INSERT ON WorldRule
+        WHEN EXISTS (SELECT 1 FROM WorldRule WHERE rule_id = NEW.rule_id AND variant_id IS NULL AND scope = 'ORIGINAL')
+        BEGIN
+            SELECT RAISE(ABORT, 'Original WorldRule cannot be overwritten');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS timeline_entry_original_update_protect
+        BEFORE UPDATE ON TimelineEntry
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original TimelineEntry is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS timeline_entry_original_delete_protect
+        BEFORE DELETE ON TimelineEntry
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original TimelineEntry is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS timeline_entry_original_overwrite_protect
+        BEFORE INSERT ON TimelineEntry
+        WHEN EXISTS (SELECT 1 FROM TimelineEntry WHERE timeline_id = NEW.timeline_id AND variant_id IS NULL AND scope = 'ORIGINAL')
+        BEGIN
+            SELECT RAISE(ABORT, 'Original TimelineEntry cannot be overwritten');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS foreshadow_original_update_protect
+        BEFORE UPDATE ON Foreshadow
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Foreshadow is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS foreshadow_original_delete_protect
+        BEFORE DELETE ON Foreshadow
+        WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Foreshadow is immutable');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS foreshadow_original_overwrite_protect
+        BEFORE INSERT ON Foreshadow
+        WHEN EXISTS (SELECT 1 FROM Foreshadow WHERE foreshadow_id = NEW.foreshadow_id AND variant_id IS NULL AND scope = 'ORIGINAL')
+        BEGIN
+            SELECT RAISE(ABORT, 'Original Foreshadow cannot be overwritten');
         END;
         """.trimIndent(),
     )
@@ -320,6 +476,14 @@ object DatabaseInitializer {
                 // Event +7（what/where_json/cause/consequence/participants/evidence/fact_level）。
                 // 全部 additive；新列 DEFAULT 与领域默认值一致，旧行无需回填（字段此前从未持久化）；见 26.sqm。
                 QianyanDb.Schema.migrate(driver, V26, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "CandidateFact") -> withTransaction(driver) {
+                // v27 → v28：Phase 3 候选事实表（v3.1 §12.9，additive）：
+                // CandidateFact 承载 Pending/Accepted/Rejected/Conflict 生命周期与 Commit 来源引用；
+                // 纯新增表，不改六表/既有列；见 27.sqm。表已存在则跳过（幂等）。
+                QianyanDb.Schema.migrate(driver, V27, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

@@ -27,7 +27,7 @@ class DatabaseInitializerTest {
     }
 
     @Test
-    fun `initializeDatabase creates the three guard triggers`() {
+    fun `initializeDatabase creates all guard triggers`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         DatabaseInitializer.initializeDatabase(driver)
 
@@ -41,7 +41,8 @@ class DatabaseInitializerTest {
             0,
         ).value
 
-        assertEquals(3L, triggerCount, "应创建 2 个 Original 写保护触发器 + 1 个 Variant 基座守卫触发器")
+        // 3 个既有守卫（Novel ×2 + NovelVariant ×1）+ P2 收口新增 18 个（Story State 六表 × UPDATE/DELETE/OVERWRITE）
+        assertEquals(21L, triggerCount, "应创建 3 个既有守卫触发器 + 18 个 Story State Original 写保护触发器")
     }
 
     @Test
@@ -55,7 +56,7 @@ class DatabaseInitializerTest {
 
         DatabaseInitializer.initializeDatabase(driver) // 触发 v22 → v25（22.sqm + 23.sqm + 24.sqm）
 
-        assertEquals(27L, userVersion(driver), "migration 后 user_version 应为 27")
+        assertEquals(28L, userVersion(driver), "migration 后 user_version 应为 28")
         assertEquals(QianyanDb.Schema.version, userVersion(driver), "user_version 应与 Schema.version 一致")
         assertTrue(!columnIsNotNull(driver, "WorkflowHumanGate", "workflow_id"), "migration 后 workflow_id 应放宽为可空")
         assertTrue(columnExists(driver, "CommitHistory", "gate_id"), "migration 后 CommitHistory 应含 gate_id（P1-02j）")
@@ -80,12 +81,12 @@ class DatabaseInitializerTest {
 
         simulateV22Gate(driver)
         DatabaseInitializer.initializeDatabase(driver)
-        assertEquals(27L, userVersion(driver))
+        assertEquals(28L, userVersion(driver))
 
         // 已 v25：重复初始化不得重新执行已有迁移，版本与数据保持稳定
         DatabaseInitializer.initializeDatabase(driver)
         DatabaseInitializer.initializeDatabase(driver)
-        assertEquals(27L, userVersion(driver), "已 v25 不得重复 migration")
+        assertEquals(28L, userVersion(driver), "已 v25 不得重复 migration")
         assertEquals(1L, countGates(driver), "重复初始化不得丢数据或重复行")
         assertTrue(!columnIsNotNull(driver, "WorkflowHumanGate", "workflow_id"), "重复初始化后仍应为可空")
     }
@@ -134,6 +135,8 @@ class DatabaseInitializerTest {
         driver.execute(null, "ALTER TABLE WorkflowStep DROP COLUMN round_no", 0)
         // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
         driver.dropWorldModelV27Columns()
+        // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+        driver.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
         driver.execute(null, "PRAGMA user_version = 22", 0)
     }
 

@@ -1,0 +1,36 @@
+-- Phase 3 · World Model Update（v27 → v28，additive）
+-- 依据：v3.1 §12.9「需一张候选事实表（additive）承载 Pending/Accepted/Rejected/Conflict 状态与来源」。
+--
+-- CandidateFact = 一次 Commit 产生的**候选事实**（Extract 产物），不是 World Model 事实本身：
+--   · 生命周期：PENDING（已抽取待裁决）→ ACCEPTED（已写入 World Model）/ REJECTED（确定性校验拒绝）/
+--     CONFLICT（与现有事实冲突，不得覆盖，留待人审）；
+--   · 来源引用是写入的必要条件：每行必带 history_id / commit_id / source_excerpt（§12.8）；
+--   · fact_name 是身份键（当前 EVENT 按 novel+variant+scope+name 判冲突）；resulting_fact_id 指向
+--     ACCEPTED 落地产生的 World Model 行（Commit ↔ 事实双向可追溯）；
+--   · 不承载：World Model 本体（六表不变）、冲突解决 UI 状态机（人审接线属后续）。
+
+CREATE TABLE CandidateFact (
+    candidate_id       TEXT NOT NULL PRIMARY KEY,
+    history_id         TEXT NOT NULL,        -- 来源 CommitHistory.history_id
+    commit_id          TEXT NOT NULL,        -- 来源 CommitHistory.commit_id
+    novel_id           TEXT NOT NULL,
+    variant_id         TEXT,                 -- NULL=Original
+    scope              TEXT NOT NULL,        -- VariantScope 枚举名
+    chapter_id         TEXT,                 -- 来源章节（Commit target）
+    kind               TEXT NOT NULL,        -- CandidateFactKind 枚举名（当前仅 EVENT）
+    operation          TEXT NOT NULL,        -- ADD / UPDATE / REMOVE
+    fact_name          TEXT NOT NULL,        -- 身份键（冲突判定用）
+    summary            TEXT NOT NULL,        -- 候选事实内容摘要
+    source_excerpt     TEXT NOT NULL,        -- 来源正文片段（必须包含于提交后正文，确定性校验）
+    reason             TEXT NOT NULL DEFAULT '',  -- LLM 给出的提取依据
+    status             TEXT NOT NULL,        -- PENDING / ACCEPTED / REJECTED / CONFLICT
+    decision_reason    TEXT,                 -- 裁决说明（拒绝原因 / 冲突说明）
+    conflict_with      TEXT,                 -- 冲突对象引用（现有事实的 PK；无冲突 → NULL）
+    resulting_fact_id  TEXT,                 -- ACCEPTED 落地产物引用（如 Event.event_id；其余 → NULL）
+    created_at         INTEGER NOT NULL      -- epoch 毫秒
+);
+
+-- Commit 维度反查（幂等重放判定：同一 Commit 的候选不重复抽取）。
+CREATE INDEX idx_candidate_fact_history ON CandidateFact(history_id);
+-- 人审队列查询（Conflict / PENDING 待裁决）。
+CREATE INDEX idx_candidate_fact_status ON CandidateFact(status);

@@ -88,7 +88,7 @@ class DesktopGraphSmokeTest {
     fun `fresh database initializes to schema v25 with reading progress project state session activity and guard triggers`() {
         val handle = openFileDb("qianyan-desktop-schema")
 
-        assertEquals(27L, userVersion(handle.driver), "全新库应直接建到 schema v27（含 I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog + I13 TaskQueueItem）")
+        assertEquals(28L, userVersion(handle.driver), "全新库应直接建到 schema v28（含 I1 ProjectState + I3 AgentSession + I4 Activity/ToolCallLog + I13 TaskQueueItem）")
         assertTrue(tableExists(handle.driver, "Novel"), "v25 必须含 Novel")
         assertTrue(tableExists(handle.driver, "ChapterDraft"), "v25 必须含 ChapterDraft")
         assertTrue(tableExists(handle.driver, "ReadingProgress"), "v25 必须含 ReadingProgress（P20-P4）")
@@ -132,6 +132,8 @@ class DesktopGraphSmokeTest {
         for ((tbl, col) in WORLD_MODEL_V27_COLUMNS) {
             first.driver.execute(null, "ALTER TABLE $tbl DROP COLUMN $col", 0)
         }
+        // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+        first.driver.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
         first.driver.execute(null, "PRAGMA user_version = 16", 0)
         first.driver.close()
 
@@ -139,7 +141,7 @@ class DesktopGraphSmokeTest {
         val handle = QianyanDbFactory.open(url)
         opened += handle.driver
 
-        assertEquals(27L, userVersion(handle.driver), "旧 v16 库应自动迁移到最新版本")
+        assertEquals(28L, userVersion(handle.driver), "旧 v16 库应自动迁移到最新版本")
         assertTrue(tableExists(handle.driver, "ReadingProgress"), "迁移后应重建 ReadingProgress")
         assertEquals("旧库作品", containerOf(handle).novels.getNovel(novelId)?.title, "迁移必须保留旧数据")
     }

@@ -96,10 +96,10 @@ class ProductToolRegistryTest {
         assertEquals(
             setOf(
                 "get_project", "get_project_state", "get_novel", "list_chapters",
-                "get_chapter", "get_latest_draft", "search_vocabulary",
+                "get_chapter", "get_latest_draft", "search_vocabulary", "get_world_context",
             ),
             definitions.keys,
-            "I5 只读 Product Tool 共 7 个",
+            "I5 只读 Product Tool 共 7 个 + Phase 2 读侧 get_world_context",
         )
         listOf("projectId").forEach {
             assertTrue(definitions.getValue("get_project").parameters.any { p -> p.name == it && p.required }, "get_project 必填 $it")
@@ -111,6 +111,8 @@ class ProductToolRegistryTest {
         assertTrue(definitions.getValue("get_latest_draft").parameters.any { it.name == "chapterId" && it.required })
         assertTrue(definitions.getValue("search_vocabulary").parameters.any { it.name == "novelId" && it.required })
         assertTrue(definitions.getValue("search_vocabulary").parameters.any { it.name == "query" && !it.required })
+        assertTrue(definitions.getValue("get_world_context").parameters.any { it.name == "novelId" && it.required })
+        assertTrue(definitions.getValue("get_world_context").parameters.any { it.name == "variantId" && !it.required })
 
         assertEquals(
             app.productTools.availableTools().map { it.toolName.value },

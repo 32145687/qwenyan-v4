@@ -23,6 +23,8 @@ import com.qianyan.model.change.TextDiffer
 import com.qianyan.model.commit.CommitApproval
 import com.qianyan.model.commit.CommitErrorCodes
 import com.qianyan.model.commit.CommitFormatHistory
+import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelUpdateException
+import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelUpdateUseCases
 import com.qianyan.model.commit.CommitHistoryEntry
 import com.qianyan.model.commit.CommitHistoryId
 import com.qianyan.model.commit.CommitId
@@ -84,6 +86,8 @@ class CommitUseCases(
     private val workflows: WorkflowRepository,
     private val actionPolicy: ActionPolicyUseCases,
     private val clock: Clock = Clock.System,
+    /** Phase 3 · World Model Update Pipeline（v3.1 §12）：仅在成功提交后触发；null = 未装配（既有测试路径）。 */
+    private val worldModelUpdate: WorldModelUpdateUseCases? = null,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -207,6 +211,8 @@ class CommitUseCases(
         val result = committed!!
         // 提交成功后经 I8 既有能力收尾 Working Draft（终态 DISCARDED；不改 AgentSession / Workflow / Task）
         workingDrafts.discard(draft.workingDraftId)
+        // Phase 3：Commit 已持久化 → World Model Update Pipeline（唯一合法触发点在事务成功之后）
+        runWorldModelUpdate(result.historyEntry)
         return result
     }
 
@@ -301,7 +307,10 @@ class CommitUseCases(
             committed = entry
         }
         // 事务成功即已赋值（失败则事务已回滚并抛出）
-        return committed!!
+        val entry = committed!!
+        // Phase 3：作者手改 / TXT 初始化同为成功 Commit → 触发 World Model Update
+        runWorldModelUpdate(entry)
+        return entry
     }
 
     /* ---------------- AI 主写作链提交（P1-02：人工门批准后的 Final Draft） ---------------- */
@@ -384,7 +393,10 @@ class CommitUseCases(
             committed = entry
         }
         // 事务成功即已赋值（失败则事务已回滚并抛出）
-        return committed!!
+        val committedEntry = committed!!
+        // Phase 3：成功 Commit → World Model Update（本路径当前无生产调用方，挂载保持契约一致）
+        runWorldModelUpdate(committedEntry)
+        return committedEntry
     }
 
     /* ---------------- History ---------------- */
@@ -534,7 +546,10 @@ class CommitUseCases(
             )
         }
         // 事务成功即已赋值（失败则事务已回滚并抛出），故此处必然非空
-        return reverted!!
+        val revertResult = reverted!!
+        // Phase 3：Revert 本身是一条新的 Canonical Commit → 同样触发 World Model Update
+        runWorldModelUpdate(revertResult.historyEntry)
+        return revertResult
     }
 
     /* ---------------- internals ---------------- */
@@ -707,6 +722,28 @@ class CommitUseCases(
      * 依据：`Draft.format` 对行不可变（唯一写入点只作用于新建 Draft）⇒ 行现值即该行全部历史版本的格式。
      * baseEntry 为 null（章节首条历史）⇒ [CommitFormatHistory.NONE]；载体行缺失（异常状态）⇒ UNKNOWN。
      */
+    /**
+     * Phase 3 · Commit 成功后的 World Model Update 触发点（v3.1 §12）。
+     *
+     * 唯一挂载路径：四条提交路径（AI Artifact / 作者手改与 TXT 初始化 same-row / 人工门批准 Draft / Revert）
+     * 均在**提交事务成功之后**调用；未提交内容（Draft / WorkingDraft / Proposal / 被拒变更）不经过这里
+     * ⇒ "草稿阶段 World Model 零变化"由挂载点本身保证。
+     * Pipeline 失败策略：Commit 已在先前事务中持久化，**不回滚、不报告为提交失败**；
+     * 类型化的 [WorldModelUpdateException] 被捕获后经 `recordFailure` 落为一条可追溯的记录
+     * （带 historyId / commitId 与失败原因）⇒ 既不静默，也不把旁路故障伪装成主链故障。
+     * 其它异常（真实存储故障）不捕获，原样上抛。
+     * 该策略属实现选择，§12 未定义旁路失败归属 ⇒ Architecture Closure U1/U8 待裁决；
+     * 逐类失败语义与理由见 [WorldModelUpdateUseCases] 类 KDoc。
+     */
+    private fun runWorldModelUpdate(entry: CommitHistoryEntry) {
+        val pipeline = worldModelUpdate ?: return
+        try {
+            pipeline.onCommit(entry)
+        } catch (e: WorldModelUpdateException) {
+            pipeline.recordFailure(entry, e.message ?: "world model update failed")
+        }
+    }
+
     private fun carrierFormat(baseEntry: CommitHistoryEntry?): CommitFormatHistory {
         if (baseEntry == null) return CommitFormatHistory.NONE
         val carrier = guard { drafts.draft(baseEntry.resultingDraftId) } ?: return CommitFormatHistory.UNKNOWN

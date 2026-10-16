@@ -28,12 +28,21 @@ import com.qianyan.model.story.ForeshadowLifecycleState
  *
  * 写函数接受完整 domain 对象（含 scope），由调用方在 Application 层保证写 Original 用
  * scope=ORIGINAL、写 Variant 用 scope=VARIANT 且 variant_id 与 scope 一致。
+ *
+ * 悬空引用契约（v3.1 §11.9「禁止留着含糊」· Phase 2 明确标注）：`LocationId` / `KnowledgeId` /
+ * `RelationshipId` 等**没有独立持久化表**——它们在本仓储与 `StoryWorldContextResolver` 中
+ * 一律作为**纯引用**存取与透传（不解析、不校验存在性、不级联）；
+ * MVP 阶段**未实现**对应实体表与解析能力，消费方不得假设其可解析。
  */
 interface StoryStateRepository {
 
     /* ---- 按 novel+variant 隔离查询（Original: variantId=null；Variant: variantId=指定值） ---- */
     fun listCharacters(novelId: NovelId, variantId: VariantId?): List<Character>
     fun listCharacterStates(novelId: NovelId, variantId: VariantId?): List<CharacterState>
+    /** P0-3 先例（MemoryRepository）：在单个 SQLite 事务中执行 [block]；任何失败整体回滚。Phase 3 候选落地用。 */
+    fun inTransaction(block: () -> Unit)
+
+    /** 读取当前 Novel/Variant 作用域的全部世界规则。 */
     fun listWorldRules(novelId: NovelId, variantId: VariantId?): List<WorldRule>
     fun listEvents(novelId: NovelId, variantId: VariantId?): List<Event>
     fun listTimelineEntries(novelId: NovelId, variantId: VariantId?): List<TimelineEntry>

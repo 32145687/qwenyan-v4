@@ -1396,6 +1396,51 @@ internal object StorageMappers {
         createdAt = epochMillisToInstant(row.created_at),
     )
 
+    /* ---------------- Candidate Fact (Phase 3 · World Model Update) ---------------- */
+
+    fun domainCandidateFact(e: com.qianyan.model.worldmodel.CandidateFact): com.qianyan.storage.db.CandidateFact = com.qianyan.storage.db.CandidateFact(
+        candidate_id = e.candidateId,
+        history_id = e.historyId,
+        commit_id = e.commitId,
+        novel_id = e.novelId.value,
+        variant_id = e.variantId?.value,
+        scope = e.scope.name,
+        chapter_id = e.chapterId?.value,
+        kind = e.kind.name,
+        operation = e.operation.name,
+        fact_name = e.factName,
+        summary = e.summary,
+        source_excerpt = e.sourceExcerpt,
+        reason = e.reason,
+        status = e.status.name,
+        decision_reason = e.decisionReason,
+        conflict_with = e.conflictWith,
+        resulting_fact_id = e.resultingFactId,
+        created_at = e.createdAt.toEpochMillis(),
+    )
+
+    fun dbCandidateFact(row: com.qianyan.storage.db.CandidateFact): com.qianyan.model.worldmodel.CandidateFact =
+        com.qianyan.model.worldmodel.CandidateFact(
+            candidateId = row.candidate_id,
+            historyId = row.history_id,
+            commitId = row.commit_id,
+            novelId = NovelId(row.novel_id),
+            variantId = row.variant_id?.let { VariantId(it) },
+            scope = VariantScope.valueOf(row.scope),
+            chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+            kind = com.qianyan.model.worldmodel.CandidateFactKind.valueOf(row.kind),
+            operation = com.qianyan.model.worldmodel.CandidateFactOperation.valueOf(row.operation),
+            factName = row.fact_name,
+            summary = row.summary,
+            sourceExcerpt = row.source_excerpt,
+            reason = row.reason,
+            status = com.qianyan.model.worldmodel.CandidateFactStatus.valueOf(row.status),
+            decisionReason = row.decision_reason,
+            conflictWith = row.conflict_with,
+            resultingFactId = row.resulting_fact_id,
+            createdAt = epochMillisToInstant(row.created_at),
+        )
+
     /* ---------------- Task Queue Item (I13) ---------------- */
 
     fun domainTaskQueueItem(item: com.qianyan.model.taskqueue.TaskQueueItem): DbTaskQueueItem = DbTaskQueueItem(

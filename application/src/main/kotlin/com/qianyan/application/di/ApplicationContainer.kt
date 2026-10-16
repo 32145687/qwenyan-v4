@@ -68,6 +68,7 @@ import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.story.StoryStateVariantUseCases
+import com.qianyan.application.usecase.story.WorldModelReadUseCases
 import com.qianyan.application.usecase.story.ForeshadowLifecycleUseCases
 import com.qianyan.application.usecase.story.RevealUseCases
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
@@ -99,6 +100,10 @@ import com.qianyan.storage.repository.ActivityRepository
 import com.qianyan.storage.repository.ToolCallLogRepository
 import com.qianyan.storage.repository.CommitHistoryRepository
 import com.qianyan.storage.repository.SqliteCommitHistoryRepository
+import com.qianyan.storage.repository.SqliteWorldModelCandidateRepository
+import com.qianyan.storage.repository.WorldModelCandidateRepository
+import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelUpdateAgent
+import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelUpdateUseCases
 import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorObservationRepository
@@ -186,6 +191,8 @@ class ApplicationContainer(
     private val toolCallLogRepository: ToolCallLogRepository,
     /** I10 · Commit History 仓储（Canonical Commit / Revert 的不可变审计记录）。 */
     private val commitHistoryRepository: CommitHistoryRepository,
+    /** Phase 3 · 候选事实仓储（CandidateFact；World Model Update Pipeline 的落地记录）。 */
+    private val worldModelCandidateRepository: WorldModelCandidateRepository,
     /** I13 · 后台任务队列仓储（Task 的**调度条目**；不承载 Task 生命周期）。 */
     val taskQueueRepository: TaskQueueRepository,
     private val analysisGateway: LLMGateway,
@@ -248,11 +255,15 @@ class ApplicationContainer(
      */
     val productTools: ProductToolService
         get() = ProductToolService(
-            tools = readOnlyProductTools(projects, novels, chapters, writerUseCases, vocabularies),
+            tools = readOnlyProductTools(projects, novels, chapters, writerUseCases, vocabularies, worldModelRead),
             activities = activities,
             toolCallLogs = toolCallLogs,
             actionPolicy = actionPolicy,
         )
+
+    /** Phase 2 · World Model 读侧用例（§11.5：Resolver → 读侧契约 → Tool / Context 消费；只读）。 */
+    val worldModelRead: WorldModelReadUseCases
+        get() = WorldModelReadUseCases(novels, storyWorldContextResolver, errorMapper)
 
     /**
      * I6 · Context Engine（任务级 Context 构建；Novel IDE 第 6 阶段）。
@@ -337,6 +348,18 @@ class ApplicationContainer(
      * `WorkflowRepository.inTransaction`（真实跨仓储 DB 事务），放行判定复用 I2 [actionPolicy]，
      * Working Draft 收尾复用 I8 [workingDrafts]。**有意持有单一实例**（无自身状态，与 [changes] 同构）。
      */
+    /**
+     * Phase 3 · World Model Update Pipeline（v3.1 §12）：Commit 之后把正文变化沉淀为候选事实，
+     * 经确定性校验与冲突分类后写入 World Model（只新增、零静默覆盖、来源可追溯）。
+     * 由 [commits] 在提交事务成功后调用（唯一触发点）；本 Phase 不新增其他生产写入调用方。
+     */
+    val worldModelUpdate: WorldModelUpdateUseCases = WorldModelUpdateUseCases(
+        agent = WorldModelUpdateAgent(analysisGateway, analysisModel),
+        candidates = worldModelCandidateRepository,
+        storyState = storyStateRepository,
+        errorMapper = errorMapper,
+    )
+
     val commits: CommitUseCases = CommitUseCases(
         projects = projects,
         chapters = chapters,
@@ -346,6 +369,7 @@ class ApplicationContainer(
         history = commitHistoryRepository,
         workflows = workflows,
         actionPolicy = actionPolicy,
+        worldModelUpdate = worldModelUpdate,
         errorMapper = errorMapper,
     )
 
@@ -782,6 +806,7 @@ class ApplicationContainer(
                 activityRepository = SqliteActivityRepository(db),
                 toolCallLogRepository = SqliteToolCallLogRepository(db),
                 commitHistoryRepository = SqliteCommitHistoryRepository(db),
+                worldModelCandidateRepository = SqliteWorldModelCandidateRepository(db),
                 taskQueueRepository = SqliteTaskQueueRepository(db),
                 analysisGateway = analysisGateway,
                 analysisModel = analysisModel,

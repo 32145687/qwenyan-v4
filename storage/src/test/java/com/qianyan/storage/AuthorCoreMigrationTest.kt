@@ -38,6 +38,9 @@ class AuthorCoreMigrationTest {
         "CREATE TABLE Character (character_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, personality TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
         "CREATE TABLE CharacterState (state_id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, timeline_position TEXT, snapshot_type TEXT NOT NULL, physical TEXT NOT NULL DEFAULT '{}', emotional TEXT NOT NULL DEFAULT '{}', current_goal TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
         "CREATE TABLE Event (event_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 5, when_json TEXT, who TEXT NOT NULL DEFAULT '[]', chapter_id TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        // P2 收口：v5 起真实存在的 Story State 表（Original 写保护触发器建在其上，夹具必须含表）
+        "CREATE TABLE WorldRule (rule_id TEXT NOT NULL PRIMARY KEY, world_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, content TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        "CREATE TABLE TimelineEntry (timeline_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, position TEXT NOT NULL, event_id TEXT, description TEXT NOT NULL DEFAULT '', chapter_id TEXT, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
     )
 
     private fun JdbcSqliteDriver.exec(sql: String) { execute(null, sql, 0) }
@@ -63,6 +66,8 @@ class AuthorCoreMigrationTest {
             V11_MINIMAL_DDL.forEach { v11.exec(it) }
             // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
             v11.dropWorldModelV27Columns()
+            // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+            v11.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
             v11.exec("PRAGMA user_version = 11")
             v11.exec(
                 "INSERT INTO Novel(novel_id, project_id, title, source, genre, synopsis, scope, status, created_at, updated_at) " +
@@ -81,7 +86,7 @@ class AuthorCoreMigrationTest {
                 listOf("AuthorCore", "AuthorCorePattern", "AuthorCoreCandidate", "AuthorCoreEvidenceLink", "AuthorCoreLearning").forEach {
                     assertTrue(tableExists(driver, it), "migration 后应存在 $it（P17）")
                 }
-                assertEquals(27L, userVersion(driver), "migration 后 user_version 应为最新版本 27（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27）")
+                assertEquals(28L, userVersion(driver), "migration 后 user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
                 assertTrue(tableExists(driver, "AuthorObservation"), "migration 后应存在 AuthorObservation（P18-A）")
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"))
                 assertEquals("偏好调查", scalar(driver, "SELECT statement FROM AuthorPreference WHERE preference_id='p-legacy'"))

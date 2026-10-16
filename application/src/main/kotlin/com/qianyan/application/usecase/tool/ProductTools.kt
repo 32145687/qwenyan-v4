@@ -6,6 +6,7 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
+import com.qianyan.application.usecase.story.WorldModelReadUseCases
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.writing.WriterUseCases
 import com.qianyan.model.ChapterId
@@ -14,6 +15,7 @@ import com.qianyan.model.ProjectId
 import com.qianyan.model.VariantId
 import com.qianyan.model.action.AgentActionKind
 import com.qianyan.model.agent.ToolName
+import com.qianyan.model.context.StoryWorldContext
 import com.qianyan.model.core.Novel
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.tool.ToolDefinition
@@ -274,15 +276,47 @@ class SearchVocabularyTool(
         runReadOnly(definition.toolName, request, context) { scope, input: SearchVocabularyInput -> call(scope, input) }
 }
 
+// ---------- get_world_context ----------
+
+/** 读取 World Model 确定性世界上下文（只读；经既有 Resolver，Original/Variant 隔离）。动作：READ。 */
+class GetWorldContextTool(
+    private val novels: NovelUseCases,
+    private val worldRead: WorldModelReadUseCases,
+) : ReadOnlyProductTool {
+
+    override val actionKind: AgentActionKind = AgentActionKind.READ
+
+    override val definition: ToolDefinition = ToolDefinition(
+        toolName = ToolName(ProductToolNames.GET_WORLD_CONTEXT),
+        description = "读取作品的世界模型上下文（人物 / 人物状态 / 事件 / 世界规则 / 时间线 / 伏笔，" +
+            "Original 或指定 Variant 作用域；只读，不产生任何写入）",
+        parameters = listOf(
+            ToolParameterSpec("novelId", "作品 ID", required = true),
+            ToolParameterSpec("variantId", "Variant ID（可选；缺省为 Original 作用域）", required = false),
+        ),
+    )
+
+    fun call(scope: ProjectId, input: GetWorldContextInput): StoryWorldContext {
+        val novelId = NovelId(requireNotBlank(input.novelId, "novelId"))
+        requireScopedNovel(novels, scope, novelId)
+        val variantId = input.variantId?.takeIf { it.isNotBlank() }?.let { VariantId(it) }
+        return worldRead.worldContext(novelId, variantId)
+    }
+
+    override fun execute(request: ToolRequest, context: ToolContext): ToolResult =
+        runReadOnly(definition.toolName, request, context) { scope, input: GetWorldContextInput -> call(scope, input) }
+}
+
 // ---------- 工厂（ApplicationContainer 组装用） ----------
 
-/** I5 第一批只读 Product Tool（7 个；注册顺序即声明顺序）。 */
+/** I5 第一批只读 Product Tool（7 个）+ Phase 2 读侧 `get_world_context`（注册顺序即声明顺序）。 */
 fun readOnlyProductTools(
     projects: ProjectUseCases,
     novels: NovelUseCases,
     chapters: ChapterUseCases,
     writer: WriterUseCases,
     vocabularies: VocabularyUseCases,
+    worldRead: WorldModelReadUseCases,
 ): List<ReadOnlyProductTool> = listOf(
     GetProjectTool(projects),
     GetProjectStateTool(projects),
@@ -291,6 +325,7 @@ fun readOnlyProductTools(
     GetChapterTool(novels, chapters),
     GetLatestDraftTool(novels, chapters, writer),
     SearchVocabularyTool(novels, vocabularies),
+    GetWorldContextTool(novels, worldRead),
 )
 
 // ---------- 内部视图映射 / 归属校验 ----------

@@ -56,6 +56,7 @@ object CoreSkills {
     private const val TOOL_GET_CHAPTER = "get_chapter"
     private const val TOOL_GET_LATEST_DRAFT = "get_latest_draft"
     private const val TOOL_SEARCH_VOCABULARY = "search_vocabulary"
+    private const val TOOL_GET_WORLD_CONTEXT = "get_world_context"
 
     private fun tool(name: String): ToolName = ToolName(name)
 
@@ -79,6 +80,7 @@ object CoreSkills {
             tool(TOOL_GET_NOVEL),
             tool(TOOL_LIST_CHAPTERS),
             tool(TOOL_GET_CHAPTER),
+            tool(TOOL_GET_WORLD_CONTEXT),
         ),
         expectedActions = listOf(AgentActionKind.READ, AgentActionKind.ANALYZE),
         bindings = listOf(SkillBinding(AgentId(AGENT_STORY_PLANNER), "既有 PlannerAgent（固定五段之一的规划阶段）")),
@@ -184,6 +186,7 @@ object CoreSkills {
             tool(TOOL_GET_CHAPTER),
             tool(TOOL_GET_LATEST_DRAFT),
             tool(TOOL_SEARCH_VOCABULARY),
+            tool(TOOL_GET_WORLD_CONTEXT),
         ),
         // 声明"更新世界模型需人工确认"的预期动作；权限仍由 I2 ActionPolicy 判定。
         expectedActions = listOf(AgentActionKind.READ, AgentActionKind.UPDATE_WORLD_MODEL),

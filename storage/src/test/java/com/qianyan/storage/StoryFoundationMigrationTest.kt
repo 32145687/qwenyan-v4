@@ -74,7 +74,7 @@ class StoryFoundationMigrationTest {
                 // 3) 两新表已创建，版本同步为 10
                 assertTrue(tableExists(driver, "StoryFoundation"), "migration 后应存在 StoryFoundation（P14-F.2）")
                 assertTrue(tableExists(driver, "FoundationOverride"), "migration 后应存在 FoundationOverride（P14-F.2）")
-                assertEquals(27L, userVersion(driver), "migration 后 user_version 应为最新版本 27（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27）")
+                assertEquals(28L, userVersion(driver), "migration 后 user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
 
                 // 4) 既有 v9 数据仍可读取，迁移未触碰既有表语义
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"), "Novel 旧数据应保持")
@@ -120,4 +120,6 @@ internal fun v9MinimalDdl(): List<String> = listOf(
     // P2 v27 前置（v3.1 §11.9）：v5 起真实存在的 Character / CharacterState（26.sqm 会对其加列；旧形态 = 无新增列）
     """CREATE TABLE Character (character_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, personality TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))""",
     """CREATE TABLE CharacterState (state_id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, timeline_position TEXT, snapshot_type TEXT NOT NULL, physical TEXT NOT NULL DEFAULT '{}', emotional TEXT NOT NULL DEFAULT '{}', current_goal TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))""",
+    // P2 收口：v5 起真实存在的 Story State 表（Original 写保护触发器建在其上，夹具必须含表）
+    "CREATE TABLE WorldRule (rule_id TEXT NOT NULL PRIMARY KEY, world_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, content TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
 )

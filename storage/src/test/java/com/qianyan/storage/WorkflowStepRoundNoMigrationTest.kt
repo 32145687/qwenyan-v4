@@ -38,7 +38,7 @@ class WorkflowStepRoundNoMigrationTest {
             val driver = h.driver as JdbcSqliteDriver
             try {
                 assertTrue(columnExists(driver, "WorkflowStep", "round_no"), "全新库应含 round_no")
-                assertEquals(27L, userVersion(driver), "全新库版本应为 27")
+                assertEquals(28L, userVersion(driver), "全新库版本应为 28")
 
                 val repo = SqliteWorkflowRepository(QianyanDb(driver))
                 val wfId = WorkflowId("wf-round")
@@ -85,6 +85,8 @@ class WorkflowStepRoundNoMigrationTest {
             d1.execute(null, "ALTER TABLE CommitHistory DROP COLUMN resulting_format", 0)
             // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
             d1.dropWorldModelV27Columns()
+            // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+            d1.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
             d1.execute(null, "PRAGMA user_version = 24", 0)
             assertEquals(24L, userVersion(d1), "前置：模拟库应为 v24")
             assertTrue(!columnExists(d1, "WorkflowStep", "round_no"), "前置：v24 形态无 round_no")
@@ -98,7 +100,7 @@ class WorkflowStepRoundNoMigrationTest {
                 assertTrue(columnExists(d2, "WorkflowStep", "round_no"), "迁移后应含 round_no")
                 assertTrue(columnExists(d2, "CommitHistory", "previous_format"), "迁移后应含 previous_format")
                 assertTrue(columnExists(d2, "CommitHistory", "resulting_format"), "迁移后应含 resulting_format")
-                assertEquals(27L, userVersion(d2), "旧 v24 库应迁移到最新版本")
+                assertEquals(28L, userVersion(d2), "旧 v24 库应迁移到最新版本")
 
                 // 历史旧行保留，且 round_no = NULL（不回填、不猜测）
                 val row = QianyanDb(d2).workflowQueries.getStepById("s-legacy").executeAsOne()
@@ -108,7 +110,7 @@ class WorkflowStepRoundNoMigrationTest {
                 // 4) 重复初始化幂等
                 DatabaseInitializer.initializeDatabase(d2)
                 DatabaseInitializer.initializeDatabase(d2)
-                assertEquals(27L, userVersion(d2))
+                assertEquals(28L, userVersion(d2))
                 assertNull(QianyanDb(d2).workflowQueries.getStepById("s-legacy").executeAsOne().round_no)
             } finally {
                 d2.getConnection().close()

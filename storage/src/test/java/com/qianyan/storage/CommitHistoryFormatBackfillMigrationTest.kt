@@ -31,13 +31,13 @@ class CommitHistoryFormatBackfillMigrationTest {
         val file = java.nio.file.Files.createTempFile("qianyan_fmt_backfill_v25", ".db").toAbsolutePath()
         val url = "jdbc:sqlite:$file"
         try {
-            // 1) 真实建到 v27，播种 v25 时代形态的旧行（两列 format 值留空）
+            // 1) 真实建到最新版本（当前 v28），播种 v25 时代形态的旧行（两列 format 值留空）
             val first = QianyanDbFactory.open(url)
             val d1 = first.driver as JdbcSqliteDriver
             seedOldRows(d1)
             assertTrue(
                 columnExists(d1, "CommitHistory", "previous_format") && columnExists(d1, "CommitHistory", "resulting_format"),
-                "前置：v27 全新库含两列（播种行未写值 ⇒ NULL）",
+                "前置：全新库含两列（播种行未写值 ⇒ NULL）",
             )
             assertStorageFormats(d1, "h-r1", null, null, "播种后迁移前两列应为 NULL")
             d1.getConnection().close()
@@ -49,6 +49,8 @@ class CommitHistoryFormatBackfillMigrationTest {
             dd.execute(null, "ALTER TABLE CommitHistory DROP COLUMN resulting_format", 0)
             // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
             dd.dropWorldModelV27Columns()
+            // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+            dd.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
             dd.execute(null, "PRAGMA user_version = 25", 0)
             assertEquals(25L, userVersion(dd), "前置：模拟库应为 v25")
             assertTrue(!columnExists(dd, "CommitHistory", "previous_format"), "前置：v25 形态无 previous_format")
@@ -59,7 +61,7 @@ class CommitHistoryFormatBackfillMigrationTest {
             val second = QianyanDbFactory.open(url)
             val d2 = second.driver as JdbcSqliteDriver
             try {
-                assertEquals(27L, userVersion(d2), "v25 库应迁移到 v27")
+                assertEquals(28L, userVersion(d2), "v25 库应迁移到最新版本")
                 assertTrue(columnExists(d2, "CommitHistory", "previous_format"), "迁移后应含 previous_format")
                 assertTrue(columnExists(d2, "CommitHistory", "resulting_format"), "迁移后应含 resulting_format")
 
@@ -98,7 +100,7 @@ class CommitHistoryFormatBackfillMigrationTest {
                 // 7) 幂等：重复初始化不得改动已回填的值
                 DatabaseInitializer.initializeDatabase(d2)
                 DatabaseInitializer.initializeDatabase(d2)
-                assertEquals(27L, userVersion(d2))
+                assertEquals(28L, userVersion(d2))
                 assertStorageFormats(d2, "h-r4", null, DraftFormatText.CM, "幂等重跑后同 row 旧行仍为 NULL")
                 assertStorageFormats(d2, "h-r2", DraftFormatText.CM, DraftFormatText.CM, "幂等重跑后可证明值不变")
             } finally {

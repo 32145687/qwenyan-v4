@@ -159,6 +159,8 @@ class NarrativeStateMigrationTest {
         // P2 v27 前置（v3.1 §11.9）：v5 起真实存在的 Story State 三表（26.sqm 会对其加列；旧形态 = 无新增 17 列）
         "CREATE TABLE Character (character_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, personality TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
         "CREATE TABLE CharacterState (state_id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, timeline_position TEXT, snapshot_type TEXT NOT NULL, physical TEXT NOT NULL DEFAULT '{}', emotional TEXT NOT NULL DEFAULT '{}', current_goal TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        // P2 收口：v5 起真实存在的 Story State 表（Original 写保护触发器建在其上，夹具必须含表）
+        "CREATE TABLE WorldRule (rule_id TEXT NOT NULL PRIMARY KEY, world_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, content TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
     )
 
     private fun JdbcSqliteDriver.exec(sql: String) {
@@ -206,7 +208,7 @@ class NarrativeStateMigrationTest {
                 // 3) NarrativeState / NarrativeDelta 已创建，版本同步为 7
                 assertTrue(tableExists(driver, "NarrativeState"), "migration 后应存在 NarrativeState（P13 LCL-A）")
                 assertTrue(tableExists(driver, "NarrativeDelta"), "migration 后应存在 NarrativeDelta（P13 LCL-A）")
-                assertEquals(27L, userVersion(driver), "migration 后 user_version 应为最新版本 27（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27）")
+                assertEquals(28L, userVersion(driver), "migration 后 user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
 
                 // 4) 重复执行初始化幂等安全（不报"表已存在"）
                 DatabaseInitializer.initializeDatabase(driver)

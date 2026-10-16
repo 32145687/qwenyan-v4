@@ -114,6 +114,9 @@ class ReadingProgressMigrationTest {
         "CREATE TABLE Character (character_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, personality TEXT NOT NULL DEFAULT '[]', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
         "CREATE TABLE CharacterState (state_id TEXT NOT NULL PRIMARY KEY, character_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, chapter_id TEXT, timeline_position TEXT, snapshot_type TEXT NOT NULL, physical TEXT NOT NULL DEFAULT '{}', emotional TEXT NOT NULL DEFAULT '{}', current_goal TEXT, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
         "CREATE TABLE Event (event_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, importance INTEGER NOT NULL DEFAULT 5, when_json TEXT, who TEXT NOT NULL DEFAULT '[]', chapter_id TEXT, status TEXT NOT NULL, created_at INTEGER NOT NULL, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        // P2 收口：v5 起真实存在的 Story State 表（Original 写保护触发器建在其上，夹具必须含表）
+        "CREATE TABLE WorldRule (rule_id TEXT NOT NULL PRIMARY KEY, world_id TEXT NOT NULL, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, content TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
+        "CREATE TABLE TimelineEntry (timeline_id TEXT NOT NULL PRIMARY KEY, novel_id TEXT NOT NULL, variant_id TEXT, scope TEXT NOT NULL, position TEXT NOT NULL, event_id TEXT, description TEXT NOT NULL DEFAULT '', chapter_id TEXT, FOREIGN KEY (novel_id) REFERENCES Novel(novel_id))",
     )
 
     private fun JdbcSqliteDriver.exec(sql: String) = execute(null, sql, 0)
@@ -134,6 +137,8 @@ class ReadingProgressMigrationTest {
         )
         // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
         driver.dropWorldModelV27Columns()
+        // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+        driver.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
         driver.exec("PRAGMA user_version = 16")
     }
 
@@ -171,7 +176,7 @@ class ReadingProgressMigrationTest {
             val driver = h.driver as JdbcSqliteDriver
             try {
                 assertTrue(tableExists(driver, "ReadingProgress"), "migration 后应存在 ReadingProgress 表")
-                assertEquals(27L, userVersion(driver), "migration 后 user_version 应为 27")
+                assertEquals(28L, userVersion(driver), "migration 后 user_version 应为 28")
 
                 // 3) 旧数据原样保留（经既有 Repository 读回）
                 val novels = SqliteNovelRepository(h.db)
@@ -202,7 +207,7 @@ class ReadingProgressMigrationTest {
                 // 5) 重复初始化幂等安全
                 DatabaseInitializer.initializeDatabase(driver)
                 DatabaseInitializer.initializeDatabase(driver)
-                assertEquals(27L, userVersion(driver))
+                assertEquals(28L, userVersion(driver))
                 assertTrue(tableExists(driver, "ReadingProgress"))
             } finally {
                 driver.getConnection().close()
@@ -217,7 +222,7 @@ class ReadingProgressMigrationTest {
         val h = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY)
         val driver = h.driver as JdbcSqliteDriver
         assertTrue(tableExists(driver, "ReadingProgress"), "全新库应直接建出 ReadingProgress 表")
-        assertEquals(27L, userVersion(driver), "全新库 user_version 应为 27")
+        assertEquals(28L, userVersion(driver), "全新库 user_version 应为 28")
         driver.getConnection().close()
     }
 }

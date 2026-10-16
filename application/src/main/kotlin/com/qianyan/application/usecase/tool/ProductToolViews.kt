@@ -40,6 +40,9 @@ data class GetLatestDraftInput(val chapterId: String)
 @Serializable
 data class SearchVocabularyInput(val novelId: String, val query: String? = null)
 
+@Serializable
+data class GetWorldContextInput(val novelId: String, val variantId: String? = null)
+
 // ---- Output（稳定视图）----
 
 /** 项目聚合视图（身份 + 运行态引用；不含 Novel 元数据副本）。 */

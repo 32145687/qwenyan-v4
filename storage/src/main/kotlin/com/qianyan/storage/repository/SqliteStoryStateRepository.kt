@@ -166,6 +166,10 @@ class SqliteStoryStateRepository(private val db: QianyanDb) : StoryStateReposito
 
     /* ---- 按主键读取 ---- */
 
+    override fun inTransaction(block: () -> Unit) {
+        db.transaction { block() }
+    }
+
     override fun getCharacterById(characterId: CharacterId): Character? =
         db.storyStateQueries.getCharacterById(characterId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbCharacter(it) }

@@ -32,9 +32,9 @@ import kotlin.test.assertTrue
 /**
  * Phase 2（v3.1 §11.9）· Schema v26 → v27（26.sqm）值级迁移验证。
  *
- * 用真实 v26 形态数据库：真实建库（v27）→ 播种行 → 真实摘除 17 个新列 → user_version = 26 →
+ * 用真实 v26 形态数据库：真实建库（最新 v28）→ 播种行 → 真实摘除 17 个新列 → user_version = 26 →
  * 重开触发迁移 → 断言：
- *  1) 17 列全部加回，版本到 27；
+ *  1) 17 列全部加回，版本升到最新（28）；
  *  2) 旧行的**既有字段**原样保留；
  *  3) 旧行的**新字段**读回为领域默认值（'[]' / '' / NULL / INFERRED / EXPLICIT）——
  *     这些字段此前从未持久化，默认值是可证明重建，不是猜测性回填；
@@ -110,13 +110,15 @@ class StoryStateWorldModelFieldsMigrationTest {
             NEW_COLUMNS.forEach { (tbl, col) ->
                 assertTrue(columnExists(d1, tbl, col), "前置：v27 全新库应含 $tbl.$col")
             }
-            assertEquals(27L, userVersion(d1), "前置：全新库版本应为 27")
+            assertEquals(28L, userVersion(d1), "前置：全新库版本应为 28")
             d1.getConnection().close()
 
             // 2) 真实回退为 v26 形态：摘除 17 列 + user_version = 26
             val down = QianyanDbFactory.open(url)
             val dd = down.driver as JdbcSqliteDriver
             NEW_COLUMNS.forEach { (tbl, col) -> dd.execute(null, "ALTER TABLE $tbl DROP COLUMN $col", 0) }
+            // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+            dd.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
             dd.execute(null, "PRAGMA user_version = 26", 0)
             assertEquals(26L, userVersion(dd), "前置：模拟库应为 v26")
             NEW_COLUMNS.forEach { (tbl, col) ->
@@ -128,7 +130,7 @@ class StoryStateWorldModelFieldsMigrationTest {
             val second = QianyanDbFactory.open(url)
             val d2 = second.driver as JdbcSqliteDriver
             try {
-                assertEquals(27L, userVersion(d2), "v26 库应迁移到 v27")
+                assertEquals(28L, userVersion(d2), "v26 库应迁移到最新版本")
                 NEW_COLUMNS.forEach { (tbl, col) ->
                     assertTrue(columnExists(d2, tbl, col), "迁移后应含 $tbl.$col")
                 }
@@ -168,7 +170,7 @@ class StoryStateWorldModelFieldsMigrationTest {
                 // 5) 幂等：重复初始化不改值
                 DatabaseInitializer.initializeDatabase(d2)
                 DatabaseInitializer.initializeDatabase(d2)
-                assertEquals(27L, userVersion(d2))
+                assertEquals(28L, userVersion(d2))
                 assertEquals(emptyList(), repo.getCharacterById(CharacterId("mig-c"))!!.goals, "幂等重跑后默认值不变")
                 assertEquals("旧事件", repo.getEventById(EventId("mig-e"))!!.name, "幂等重跑后旧行不变")
             } finally {

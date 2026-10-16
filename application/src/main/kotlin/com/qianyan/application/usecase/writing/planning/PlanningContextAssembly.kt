@@ -18,7 +18,7 @@ import com.qianyan.storage.repository.VocabularyRepository
  *
  * 把用户创作要求 + 必要的既有领域信息组装为最小 [PlanningContext]，供 Planner Agent 使用。
  * 只收集 Planning 真正需要的信息：请求本体 + Novel / Variant 背景 + 当前作用域下可见的
- * Memory / Vocabulary（Character 无持久化仓储，保持空投影，见 Known Issue）。
+ * Memory / Vocabulary / Character（World Model 只读，经 [StoryWorldContextResolver]）。
  *
  * P11.6：Memory / Story World 经确定性 [StoryWorldContextResolver] 解析为 canon 优先、按 layer 分层的
  * [com.qianyan.model.context.StoryWorldContext]，并以确定性顺序投影到 [PlanningContext.memories]；
@@ -95,7 +95,8 @@ class PlanningContextAssembly(
             )
         }
 
-        // 6) 组装最小投影（Character 无持久化仓储 → 空列表，见 Known Issue）
+        // 6) 组装最小投影（Phase 2：Character 已由 StoryState 持久化并经 Resolver 确定性合并，
+        //    此处投影为 Planner 渲染所需的 CharacterLite；无 World Model 数据 ⇒ 空列表）
         return PlanningContext(
             request = request,
             novelId = novel.novelId,
@@ -108,7 +109,14 @@ class PlanningContextAssembly(
                 variant?.blueprint?.note,
                 variant?.scopeSpec?.directive,
             ).joinToString("\n"),
-            characters = emptyList(),
+            characters = worldContext.characters.map {
+                CharacterLite(
+                    characterId = it.characterId,
+                    name = it.name,
+                    personality = it.personality,
+                    goals = it.goals,
+                )
+            },
             memories = worldContext.orderedVisible,
             vocabulary = vocabulary.map { VocabularyLite(canonical = it.canonical, aliases = it.aliases, replacement = it.replacement) },
             worldContext = worldContext,

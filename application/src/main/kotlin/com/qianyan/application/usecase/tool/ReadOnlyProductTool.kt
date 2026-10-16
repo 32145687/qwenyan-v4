@@ -52,6 +52,7 @@ object ProductToolNames {
     const val GET_CHAPTER = "get_chapter"
     const val GET_LATEST_DRAFT = "get_latest_draft"
     const val SEARCH_VOCABULARY = "search_vocabulary"
+    const val GET_WORLD_CONTEXT = "get_world_context"
 }
 
 /** 工具边界 JSON 编解码器（`internal`：被 `internal inline` 适配器引用）。 */

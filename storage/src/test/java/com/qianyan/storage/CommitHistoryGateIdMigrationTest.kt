@@ -27,7 +27,7 @@ class CommitHistoryGateIdMigrationTest {
             try {
                 assertTrue(columnExists(driver, "CommitHistory", "gate_id"), "全新库应含 gate_id")
                 assertTrue(indexExists(driver, "idx_commit_history_gate"), "全新库应含 idx_commit_history_gate")
-                assertEquals(27L, userVersion(driver), "全新库版本应为 27")
+                assertEquals(28L, userVersion(driver), "全新库版本应为 28")
                 assertEquals(QianyanDb.Schema.version, userVersion(driver))
             } finally {
                 driver.getConnection().close()
@@ -66,7 +66,7 @@ class CommitHistoryGateIdMigrationTest {
             try {
                 assertTrue(columnExists(d2, "CommitHistory", "gate_id"), "迁移后应含 gate_id")
                 assertTrue(indexExists(d2, "idx_commit_history_gate"), "迁移后应含 idx_commit_history_gate")
-                assertEquals(27L, userVersion(d2), "旧 v23 库应迁移到 v25")
+                assertEquals(28L, userVersion(d2), "旧 v23 库应迁移到 v25")
 
                 // 历史旧行保留，且 gate_id = NULL（不回填、不猜测）
                 val row = QianyanDb(d2).commitHistoryQueries.getCommitHistoryById("h-legacy").executeAsOne()
@@ -76,7 +76,7 @@ class CommitHistoryGateIdMigrationTest {
                 // 4) 重复初始化幂等
                 DatabaseInitializer.initializeDatabase(d2)
                 DatabaseInitializer.initializeDatabase(d2)
-                assertEquals(27L, userVersion(d2))
+                assertEquals(28L, userVersion(d2))
                 assertNull(QianyanDb(d2).commitHistoryQueries.getCommitHistoryById("h-legacy").executeAsOne().gate_id)
             } finally {
                 d2.getConnection().close()
@@ -108,6 +108,8 @@ class CommitHistoryGateIdMigrationTest {
         driver.execute(null, "ALTER TABLE WorkflowStep DROP COLUMN round_no", 0)
         // P2 v27（26.sqm）：Character/CharacterState/Event 新列不幂等，降级前必须真实摘除
         driver.dropWorldModelV27Columns()
+        // P3 v28（27.sqm）：CandidateFact 由迁移建出，降级前必须真实摘除（CREATE TABLE 不幂等）
+        driver.execute(null, "DROP TABLE IF EXISTS CandidateFact", 0)
         driver.execute(null, "PRAGMA user_version = 23", 0)
     }
 
