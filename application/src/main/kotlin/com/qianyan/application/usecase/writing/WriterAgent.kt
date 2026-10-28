@@ -11,6 +11,7 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.writing.planning.PlanningContext
 import com.qianyan.application.usecase.writing.planning.WRITER_CONTINUATION_MAX_CODE_POINTS
 import com.qianyan.application.usecase.writing.planning.continuationExcerpt
+import com.qianyan.application.usecase.writing.planning.toPromptLine
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
 import com.qianyan.model.decision.DecisionPolicy
@@ -155,10 +156,7 @@ class WriterAgent(
         }
         if (context.vocabulary.isNotEmpty()) {
             appendLine("【词库】")
-            context.vocabulary.forEach { v ->
-                val repl = if (v.replacement != null) " -> ${v.replacement}" else ""
-                appendLine("- ${v.canonical}$repl")
-            }
+            context.vocabulary.forEach { appendLine(it.toPromptLine()) }
         }
 
         // P20-P5（FD-4）：与 Planning 同一份创作决策政策（只读消费；Writer 不重算 Decision）

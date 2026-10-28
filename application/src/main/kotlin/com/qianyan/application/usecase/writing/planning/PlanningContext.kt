@@ -95,3 +95,11 @@ data class VocabularyLite(
     val aliases: List<String> = emptyList(),
     val replacement: String? = null,
 )
+
+/** Planner / Writer 共用的词条 prompt 行；别名保持原始顺序并忽略空字符串。 */
+internal fun VocabularyLite.toPromptLine(): String {
+    val visibleAliases = aliases.filter { it.isNotEmpty() }
+    val aliasText = if (visibleAliases.isEmpty()) "" else "（别名：${visibleAliases.joinToString("、")}）"
+    val replacementText = replacement?.let { if (aliasText.isEmpty()) " -> $it" else "-> $it" }.orEmpty()
+    return "- $canonical$aliasText$replacementText"
+}

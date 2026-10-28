@@ -154,10 +154,7 @@ class PlannerAgent(
         }
         if (context.vocabulary.isNotEmpty()) {
             appendLine("【词库】")
-            context.vocabulary.forEach { v ->
-                val repl = if (v.replacement != null) " -> ${v.replacement}" else ""
-                appendLine("- ${v.canonical}$repl")
-            }
+            context.vocabulary.forEach { appendLine(it.toPromptLine()) }
         }
 
         // P12.1.3 / Phase 6：续篇来源标识 + 前章 Canonical 正文摘录（仅摘录，不复制整章）

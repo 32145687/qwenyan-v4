@@ -10,6 +10,7 @@ import com.qianyan.model.context.VocabularyPayload
 import com.qianyan.model.vocabulary.VocabularyEntry
 import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.model.vocabulary.VocabularyEntryType
+import com.qianyan.model.vocabulary.VocabularyScopeLevel
 import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftFormat
 import com.qianyan.model.writing.DraftStatus
@@ -106,6 +107,56 @@ class VocabularyPromptIntegrationTest {
             assertTrue(it.canonical in planner, "Planner 必须看到词条 ${it.canonical}")
             assertTrue(it.canonical in writer, "Writer 必须看到词条 ${it.canonical}")
         }
+        f.close()
+    }
+
+    @Test
+    fun `aliases are rendered in planner and writer prompts and match source content`() {
+        val records = mutableListOf<PromptRecord>()
+        val f = novelAgentFixture(recordingGateway(records))
+        val w = seedNovelWorld(f)
+        val vocabularyId = f.app.vocabularies.getOrCreateNovelVocabulary(w.novelId)
+
+        fun save(entryId: String, canonical: String, aliases: List<String>, replacement: String?) {
+            f.app.vocabularyRepository.saveEntry(
+                VocabularyEntry(
+                    entryId = VocabularyEntryId(entryId),
+                    vocabularyId = vocabularyId,
+                    novelId = w.novelId,
+                    scopeLevel = VocabularyScopeLevel.NOVEL,
+                    canonical = canonical,
+                    aliases = aliases,
+                    replacement = replacement,
+                    type = VocabularyEntryType.PROPER_NOUN,
+                    status = VocabularyEntryStatus.APPROVED,
+                ),
+            )
+        }
+
+        save("ve-v3a-main", "V3A主词", listOf("阿甲", "阿乙"), "替词")
+        save("ve-v3a-no-alias", "V3A无别名", emptyList(), "旧替词")
+        save("ve-v3a-empty-alias", "V3A空别名", listOf("", "有效别名"), null)
+
+        val result = f.app.novelAgent.run(request(w, "继续写第一章"))
+        val sessionId = assertNotNull(result.sessionId)
+        val pack = assertNotNull(f.app.contextPackStore.find(sessionId, w.projectId)).pack
+        val contentByCanonical = pack.items
+            .filter { it.source == ContextSourceKind.VOCABULARY }
+            .associate { (it.payload as VocabularyPayload).canonical to it.content }
+
+        val mainContent = contentByCanonical.getValue("V3A主词")
+        assertTrue("aliases=阿甲|阿乙" in mainContent, "Source content 必须包含同一条 Entry 的 aliases")
+        assertTrue("replacement=替词" in mainContent)
+
+        val planner = promptFor(records, "StoryPlannerAgent")
+        val writer = promptFor(records, "StoryWriterAgent")
+        val mainLine = "- V3A主词（别名：阿甲、阿乙）-> 替词"
+        assertTrue(mainLine in planner, "Planner 必须按约定格式渲染 aliases: $mainLine")
+        assertTrue(mainLine in writer, "Writer 必须按约定格式渲染 aliases: $mainLine")
+        assertTrue("- V3A无别名 -> 旧替词" in planner, "无别名时必须保持旧格式")
+        assertTrue("- V3A无别名 -> 旧替词" in writer, "无别名时必须保持旧格式")
+        assertTrue("- V3A空别名（别名：有效别名）" in planner, "空字符串别名必须忽略")
+        assertTrue("- V3A空别名（别名：有效别名）" in writer, "空字符串别名必须忽略")
         f.close()
     }
 
