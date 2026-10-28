@@ -58,6 +58,7 @@ import com.qianyan.model.context.TargetKind
 import com.qianyan.model.context.TargetRef
 import com.qianyan.model.context.TargetRefId
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.novelagent.NovelAgentAnalysisSummary
 import com.qianyan.model.novelagent.NovelAgentApprovalState
 import com.qianyan.model.novelagent.NovelAgentErrorCodes
 import com.qianyan.model.novelagent.NovelAgentFailure
@@ -221,7 +222,7 @@ class NovelAgent internal constructor(
             }
             builtPack = pack
 
-            val outcome = step(sessionId, OrchestrationPhase.EXECUTE, NovelAgentErrorCodes.EXECUTION_FAILED, state, "执行 Skill") { activityId ->
+            var outcome = step(sessionId, OrchestrationPhase.EXECUTE, NovelAgentErrorCodes.EXECUTION_FAILED, state, "执行 Skill") { activityId ->
                 executeSkill(skill, request, project, intent, activityId, pack, state)
             }
 
@@ -238,12 +239,48 @@ class NovelAgent internal constructor(
                 }
 
                 is SkillOutcome.Analysis -> {
-                    sessions.complete(sessionId)
-                    return result(
-                        NovelAgentOutcome.COMPLETED, request, intent, sessionId, skill, pack, state,
-                        summary = "已完成 ${skill.skillId.value}：评审 passed=${outcome.passed}，" +
-                            "问题 ${outcome.issueCount} 项（其中 ERROR ${outcome.errorCount}）；只读评审，未写入 Canonical",
+                    // D-36：初次分析结论显式入结果；PASS 直接结束，ERROR 触发唯一一次 rewrite-revision 续步。
+                    state.analysis = NovelAgentAnalysisSummary(
+                        passed = outcome.passed,
+                        issueCount = outcome.issueCount,
+                        errorCount = outcome.errorCount,
                     )
+                    if (outcome.errorCount == 0) {
+                        sessions.complete(sessionId)
+                        return result(
+                            NovelAgentOutcome.COMPLETED, request, intent, sessionId, skill, pack, state,
+                            summary = "已完成 ${skill.skillId.value}：评审 passed=${outcome.passed}，" +
+                                "问题 ${outcome.issueCount} 项（其中 ERROR ${outcome.errorCount}）；只读评审，未写入 Canonical",
+                        )
+                    }
+                    val followUp = skillRegistry.get(CoreSkills.REWRITE_REVISION.skillId)
+                        ?: throw RunAbort(
+                            NovelAgentErrorCodes.SKILL_NOT_FOUND,
+                            "续步 Skill 未注册: ${CoreSkills.REWRITE_REVISION.skillId.value}",
+                        )
+                    if (!followUp.enabled) {
+                        throw RunAbort(
+                            NovelAgentErrorCodes.SKILL_NOT_EXECUTABLE,
+                            "续步 Skill 已 disabled: ${followUp.skillId.value}",
+                        )
+                    }
+                    state.followUpSkillId = followUp.skillId
+                    // 有界：只在这里执行一次；续步后不论结果都进入既有 Review/Gate/Commit 或失败收口。
+                    outcome = step(
+                        sessionId,
+                        OrchestrationPhase.EXECUTE,
+                        NovelAgentErrorCodes.EXECUTION_FAILED,
+                        state,
+                        "执行续步 Skill（${followUp.skillId.value}）",
+                    ) { activityId ->
+                        executeSkill(followUp, request, project, intent, activityId, pack, state)
+                    }
+                    if (outcome !is SkillOutcome.Draft) {
+                        throw RunAbort(
+                            NovelAgentErrorCodes.EXECUTION_FAILED,
+                            "续步 ${followUp.skillId.value} 未产生正文变更",
+                        )
+                    }
                 }
 
                 is SkillOutcome.CharacterConsistency -> {
@@ -259,8 +296,11 @@ class NovelAgent internal constructor(
                 is SkillOutcome.Draft -> Unit
             }
 
+            val draftOutcome = outcome as? SkillOutcome.Draft
+                ?: throw RunAbort(NovelAgentErrorCodes.EXECUTION_FAILED, "该执行结果不产生正文变更，无法生成 Artifact")
+
             val artifact = step(sessionId, OrchestrationPhase.REVIEW, NovelAgentErrorCodes.ARTIFACT_FAILED, state, "校验并生成变更提案") { activityId ->
-                review(outcome, request, sessionId, activityId, state)
+                review(draftOutcome, request, sessionId, activityId, state)
             }
 
             when (artifact.status) {
@@ -310,7 +350,8 @@ class NovelAgent internal constructor(
                             sessions.pause(sessionId)
                             result(
                                 NovelAgentOutcome.WAITING_HUMAN, request, intent, sessionId, skill, pack, state,
-                                summary = "变更已就绪并接入正式审批（章节 Workflow 人工门）；批准 / 拒绝以正式 Workflow 进度为准",
+                                summary = analysisSummaryPrefix(state) +
+                                    "变更已就绪并接入正式审批（章节 Workflow 人工门）；批准 / 拒绝以正式 Workflow 进度为准",
                                 approvalState = NovelAgentApprovalState.BRIDGED,
                             )
                         }
@@ -1331,6 +1372,16 @@ class NovelAgent internal constructor(
     private fun outcomeOf(code: String): NovelAgentOutcome =
         if (code == NovelAgentErrorCodes.SESSION_CANCELLED) NovelAgentOutcome.CANCELLED else NovelAgentOutcome.FAILED
 
+    /** D-36 · 续步场景下保留初次分析结论的前缀；普通写作任务为空。 */
+    private fun analysisSummaryPrefix(state: RunState): String {
+        val analysis = state.analysis ?: return ""
+        val followUp = state.followUpSkillId
+            ?.let { "；已自动续步 ${it.value}" }
+            ?: "；只读评审，未写入 Canonical"
+        return "已完成 ${CoreSkills.ANALYSIS_CRITIQUE.skillId.value}：评审 passed=${analysis.passed}，" +
+            "问题 ${analysis.issueCount} 项（其中 ERROR ${analysis.errorCount}）$followUp；"
+    }
+
     private fun result(
         outcome: NovelAgentOutcome,
         request: NovelAgentRequest,
@@ -1357,6 +1408,8 @@ class NovelAgent internal constructor(
         toolCallCount = state.toolCallCount,
         planChapterId = state.planChapterId,
         characterConsistency = state.characterConsistency,
+        analysis = state.analysis,
+        followUpSkillId = state.followUpSkillId,
         workingDraftId = state.workingDraftId,
         artifactId = state.artifactId,
         artifactStatus = state.artifactStatus,
@@ -1376,6 +1429,8 @@ class NovelAgent internal constructor(
         var contextPackVersion: Long? = null
         var planChapterId: ChapterId? = null
         var characterConsistency: CharacterConsistencyResult? = null
+        var analysis: NovelAgentAnalysisSummary? = null
+        var followUpSkillId: SkillId? = null
         var workingDraftId: WorkingDraftId? = null
         var artifactId: ChangeArtifactId? = null
         var artifactStatus: ChangeArtifactStatus? = null

@@ -121,6 +121,18 @@ data class NovelAgentFailure(
 )
 
 /**
+ * D-36 · 初次只读分析（analysis_critique）的结论摘要。
+ *
+ * 只承载可观测的结论字段，不复制 CritiqueResult / issues / 正文。
+ */
+@Serializable
+data class NovelAgentAnalysisSummary(
+    val passed: Boolean,
+    val issueCount: Int,
+    val errorCount: Int,
+)
+
+/**
  * 一次 Novel Agent run 的结果（**ID + status + summary**，不复制 ContextPack / Draft / Artifact 大对象）。
  *
  * @param activityIds 本次 run 每个编排相位的事实记录（复用 I4 Activity；顺序 = 执行顺序）。
@@ -142,6 +154,10 @@ data class NovelAgentResult(
     val planChapterId: ChapterId? = null,
     /** T-2B-3：CharacterConsistency 只读结果；其他 Skill / 未执行时为 null。 */
     val characterConsistency: CharacterConsistencyResult? = null,
+    /** D-36：初次 analysis_critique 结论；非分析任务 / 未执行时为 null。 */
+    val analysis: NovelAgentAnalysisSummary? = null,
+    /** D-36：analysis 发现 ERROR 后唯一一次续步的 Skill；未触发时为 null。 */
+    val followUpSkillId: SkillId? = null,
     val workingDraftId: WorkingDraftId? = null,
     val artifactId: ChangeArtifactId? = null,
     val artifactStatus: ChangeArtifactStatus? = null,

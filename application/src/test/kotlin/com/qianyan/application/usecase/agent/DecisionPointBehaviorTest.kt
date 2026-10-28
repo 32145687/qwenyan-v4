@@ -1,5 +1,6 @@
 package com.qianyan.application.usecase.agent
 
+import com.qianyan.agent.agents.CoreSkills
 import com.qianyan.model.ChapterId
 import com.qianyan.model.novelagent.NovelAgentApprovalState
 import com.qianyan.model.novelagent.NovelAgentErrorCodes
@@ -18,6 +19,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -144,7 +146,7 @@ class DecisionPointBehaviorTest {
     }
 
     @Test
-    fun `A7 failed analysis stays completed and exposes passed false counts`() {
+    fun `A7 failed analysis triggers one follow up and still leaves drafts untouched`() {
         val gateway = MockLLMGateway { request ->
             val system = request.messages.first { it.role == ChatRole.SYSTEM }.content
             val body = if ("StoryCriticAgent" in system) {
@@ -166,13 +168,19 @@ class DecisionPointBehaviorTest {
 
         val result = f.app.novelAgent.run(request(w, "分析第一章"))
 
-        assertEquals(NovelAgentOutcome.COMPLETED, result.outcome)
-        assertNull(result.workingDraftId)
-        assertNull(result.artifactId)
+        // D-36：分析发现 ERROR 不再直接 COMPLETED，而是在同一 Task 内续步 rewrite-revision。
+        assertEquals(NovelAgentOutcome.WAITING_HUMAN, result.outcome)
+        val analysis = assertNotNull(result.analysis)
+        assertFalse(analysis.passed)
+        assertEquals(1, analysis.issueCount)
+        assertEquals(1, analysis.errorCount)
+        assertEquals(CoreSkills.REWRITE_REVISION.skillId, result.followUpSkillId)
+        assertNotNull(result.workingDraftId)
+        assertNotNull(result.artifactId)
         assertTrue(result.summary.contains("passed=false"), result.summary)
         assertTrue(result.summary.contains("问题 1 项"), result.summary)
         assertTrue(result.summary.contains("ERROR 1"), result.summary)
-        assertEquals(1, f.app.draftRepository.listByChapter(w.chapterId).size, "只读分析不得写 Canonical")
+        assertEquals(1, f.app.draftRepository.listByChapter(w.chapterId).size, "分析 + 续步都不得写 Canonical")
         f.close()
     }
 
