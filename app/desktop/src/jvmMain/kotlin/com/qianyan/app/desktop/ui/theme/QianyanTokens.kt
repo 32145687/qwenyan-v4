@@ -15,16 +15,18 @@ import androidx.compose.ui.unit.sp
 /*
  * Qianyan Writing IDE · Design Token（全站唯一视觉事实来源）。
  *
- * 视觉基调：**安静的编辑器**，不是 Dashboard。
- *  - 低饱和中性色；accent 只是灰阶里的一个"深一点/亮一点"的层次，不做彩色强调；
- *  - 层次靠空间、分隔线与背景级差，不靠阴影与卡片；
- *  - 圆角 2 / 3 / 4（窗口 6），编辑区与列表 0；
- *  - 阴影只用于浮层（Command Palette / Dialog / Settings Window）。
+ * P0-UI · 视觉基线对齐「温润暖白」（内容优先、留白、克制）：
+ *  - **浅色**：暖白画布 #FAF9F6，界面框架为暖米 #F2F0EB，浮层 / 稿纸为 #FFFFFF；
+ *    层次靠暖灰级差 + 1px 极轻分隔线，不用冷灰；
+ *  - **深色**：画布为舒适的深灰（#1C1C1E），框架更深（#0E0E10），浮层更亮（#2C2C2E）——不是简单反色；
+ *  - 唯一强调色为暖蓝（浅色 #1769D2 / 深色 #0A84FF），只用于关键动作、焦点与当前选择；
+ *  - 圆角柔和（6 / 8 / 11 / 16），按钮为胶囊形；阴影极轻，只用于浮层与主输入区；
+ *  - 间距按 4 / 8 / 12 / 16 / 24 / 32 / 48 节奏。
  *
  * 层次约定：
- *  - [QianyanPalette.bg]      = 内容画布（正文编辑区；视觉焦点）
+ *  - [QianyanPalette.bg]      = 内容画布（正文 / 主工作区；视觉焦点）
  *  - [QianyanPalette.surface] = 界面框架（Sidebar / Inspector / TopBar / StatusBar）
- *  - [QianyanPalette.raised]  = 浮层（Dialog / Palette / 设置窗口）
+ *  - [QianyanPalette.raised]  = 浮层（Dialog / Palette / Settings / Toast）
  */
 
 /** 主题模式（纯 UI 显示偏好；不落库、不进领域模型）。 */
@@ -40,6 +42,8 @@ data class QianyanPalette(
     val raised: Color,
     /** 静默填充（hover / 次级按钮 / 选区底）。 */
     val soft: Color,
+    /** 指针悬停底色（Apple 式浅一档，带 140ms 过渡）。 */
+    val hover: Color,
     /** 1px 分隔线（默认）。 */
     val line: Color,
     /** 结构线（输入框边框 / 需要更明确边界时）。 */
@@ -64,95 +68,109 @@ data class QianyanPalette(
 )
 
 /**
- * Dark（**纯黑**：画布与所有面板 / 浮层同为 #000000）。
+ * Dark（**暖调深色分层**：画布 #1B1B18 / 框架 #141412 / 浮层 #232320）。
  *
- * 层次**只靠 1px 分隔线**（line / lineStrong）区分，不靠背景色；
- * soft 只用于 hover / 列表选中 / 当前对象高亮。
- *
- * 字段对应（设计规格 → 本类字段）：
- *  bg→bg · panel→surface · panel2→raised · soft→soft · line→line · line2→lineStrong
- *  · accent→accent · accentInk→accent（强调色文字直接用 accent）· selection→selection
- *  · add→add · addBg→addSoft · del→del · delBg→delSoft
- *  onAccent = 强调填充上的文字
+ * 与浅色同一套暖中性色相，避免切到深色后变成冷灰；强调色使用更亮的暖蓝。
  */
 val QianyanDarkPalette = QianyanPalette(
-    bg = Color(0xFF000000),
-    surface = Color(0xFF000000),
-    raised = Color(0xFF000000),
-    soft = Color(0xFF1A1A1A),
-    line = Color(0xFF262626),
-    lineStrong = Color(0xFF333333),
-    text = Color(0xFFF0F0F0),
-    text2 = Color(0xFFA0A0A0),
-    text3 = Color(0xFF6A6A6A),
-    accent = Color(0xFFDDA56C),
-    onAccent = Color(0xFF1A1A1A),
-    accentSoft = Color(0x3DDDA56C),
-    selection = Color(0x3DDDA56C),
-    add = Color(0xFF4ADE80),
-    addSoft = Color(0x244ADE80),
-    del = Color(0xFFF87171),
-    delSoft = Color(0x24F87171),
+    bg = Color(0xFF1B1B18),
+    surface = Color(0xFF141412),
+    raised = Color(0xFF232320),
+    soft = Color(0xFF2A2A26),
+    hover = Color(0xFF32322D),
+    line = Color(0xFF2E2E29),
+    lineStrong = Color(0xFF3B3B35),
+    text = Color(0xFFF2F0EA),
+    text2 = Color(0xFFC9C5BB),
+    text3 = Color(0xFF928D82),
+    accent = Color(0xFF4C8FF5),
+    onAccent = Color(0xFFFFFFFF),
+    accentSoft = Color(0x334C8FF5),
+    selection = Color(0x2E4C8FF5),
+    add = Color(0xFF5FBF7A),
+    addSoft = Color(0x245FBF7A),
+    del = Color(0xFFE06A63),
+    delSoft = Color(0x24E06A63),
 )
 
 /**
- * Light（**纯白**：画布与所有面板 / 浮层同为 #FFFFFF）。
+ * Light（**温润暖白**：画布 #FAF9F6 / 框架 #F2F0EB / 浮层与稿纸 #FFFFFF）。
  *
- * 三栏层次**只靠 1px 分隔线**（line / lineStrong）区分，不靠背景色；
- * soft 只用于 hover / 列表选中 / 当前对象高亮，普通列表项背景为纯白。
- * 字段对应同 Dark。onAccent = 白（与原型 .btn.primary 一致）。
+ * 文字使用暖中性层级（#252722 / #777970 / #92938B）；
+ * 强调色为暖蓝 #1769D2；选中态为极轻蓝底 #E4EEFF，不抢注意力。
  */
 val QianyanLightPalette = QianyanPalette(
-    bg = Color(0xFFFFFFFF),
-    surface = Color(0xFFFFFFFF),
+    bg = Color(0xFFFAF9F6),
+    surface = Color(0xFFF2F0EB),
     raised = Color(0xFFFFFFFF),
-    soft = Color(0xFFF5F5F5),
-    line = Color(0xFFE5E5E5),
-    lineStrong = Color(0xFFD0D0D0),
-    text = Color(0xFF1A1A1A),
-    text2 = Color(0xFF666666),
-    text3 = Color(0xFF999999),
-    accent = Color(0xFFB87333),
+    soft = Color(0xFFF4F2EE),
+    hover = Color(0xFFEBE8E1),
+    line = Color(0xFFEAE7E0),
+    lineStrong = Color(0xFFE5E1D9),
+    text = Color(0xFF252722),
+    text2 = Color(0xFF777970),
+    text3 = Color(0xFF92938B),
+    accent = Color(0xFF1769D2),
     onAccent = Color(0xFFFFFFFF),
-    accentSoft = Color(0x1FB87333),
-    selection = Color(0x1FB87333),
-    add = Color(0xFF16A34A),
-    addSoft = Color(0x1A16A34A),
-    del = Color(0xFFDC2626),
-    delSoft = Color(0x14DC2626),
+    accentSoft = Color(0xFFE4EEFF),
+    selection = Color(0xFFE4EEFF),
+    add = Color(0xFF2E7D51),
+    addSoft = Color(0x1A2E7D51),
+    del = Color(0xFFB4433C),
+    delSoft = Color(0x1AB4433C),
 )
 
-/** 尺寸 Token：IDE 密度 + 正文呼吸感。 */
+/** 尺寸 Token：IDE 密度 + 正文呼吸感（间距节奏 4 / 8 / 12 / 16 / 24 / 32 / 48）。 */
 object QianyanDimens {
-    val TopBar: Dp = 44.dp
-    val StatusBar: Dp = 24.dp
-    val Sidebar: Dp = 216.dp
-    val Inspector: Dp = 300.dp
+    val TopBar: Dp = 52.dp
+    val StatusBar: Dp = 28.dp
+    val Sidebar: Dp = 262.dp
+    val Inspector: Dp = 312.dp
 
     /** 正文栏最大宽度（长文本可读性上限）。 */
-    val EditorWidth: Dp = 700.dp
+    val EditorWidth: Dp = 756.dp
 
     /** 页面内容留白。 */
-    val PageX: Dp = 28.dp
-    val PageY: Dp = 22.dp
+    val PageX: Dp = 32.dp
+    val PageY: Dp = 24.dp
 
     /** 面板 / 分组留白。 */
-    val Gutter: Dp = 14.dp
+    val Gutter: Dp = 16.dp
 
     /** 单行高度（列表 / 导航）。 */
-    val Row: Dp = 28.dp
-    val RowLoose: Dp = 34.dp
+    val Row: Dp = 30.dp
+    val RowLoose: Dp = 38.dp
 
     /** 正文字号（作者可调档位）。 */
     val EditorText: TextUnit = 18.sp
 }
 
-/** 圆角 Token：2 / 3 / 4（窗口 6）；编辑区与列表 0。 */
+/** 圆角 Token：6 / 8 / 11 / 16（窗口）；按钮为胶囊形。 */
 object QianyanShapes {
-    val r: Dp = 2.dp
-    val r2: Dp = 3.dp
-    val r3: Dp = 4.dp
-    val window: Dp = 6.dp
+    val r: Dp = 6.dp
+    val r2: Dp = 8.dp
+    val r3: Dp = 11.dp
+    val window: Dp = 16.dp
+
+    /** 胶囊（ActionButton / Tag）。 */
+    val pill: Dp = 999.dp
+}
+
+/**
+ * 阴影 Token（极轻；Pinguo 设计系统：边框优先、阴影只用于浮层 / 主输入区）。
+ *
+ * 用法：`Modifier.shadow(elevation, shape, clip = false)`；
+ * 静止表面一律不投影，避免把界面切成大量独立卡片。
+ */
+object QianyanElevation {
+    /** 主输入区 / Toast：几乎不可见的抬升。 */
+    val Composer: Dp = 2.dp
+
+    /** 浮层（Command Palette / Dialog）。 */
+    val Overlay: Dp = 12.dp
+
+    /** 模态（设置 / 新建作品）。 */
+    val Modal: Dp = 20.dp
 }
 
 /** Motion Token：只用于 Tab / 浮层 / Focus / Inspector 更新。 */

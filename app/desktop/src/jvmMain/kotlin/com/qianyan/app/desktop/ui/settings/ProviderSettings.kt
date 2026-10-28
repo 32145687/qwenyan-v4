@@ -130,7 +130,7 @@ fun ProviderSettingsDialog(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "默认：${graph.defaultModelId(selected)} · 可填任意模型（如 deepseek-reasoner）",
+                    "默认：${graph.defaultModelId(selected)} · 可填任意模型 ID（以服务商当前文档为准）",
                     style = MaterialTheme.typography.labelSmall,
                     color = palette.text3,
                 )
