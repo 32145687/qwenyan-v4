@@ -9,11 +9,11 @@
 
 ## 0. 当前焦点
 
-- 当前单元：**词库线已收口（T-V1/V2/V3/V3-A/V2-A 全 DONE）**；下一步待选：**G2 提交本批** / W1 工作树 / T-7-2 GUI
-- 阻塞：无；O-37（Rule 执行）/O-38（Critic 漂移）/O-39（variant_id 无 FK）为登记项
-- 已完成：Phase 4/5/6 DONE；G1 六批；T-7-1 收口；词库 D-34 + T-V3-A + T-V2-A
+- 当前单元：**Phase 8 已收口（GATE_PASS）**；下一步待选：**G3 提交本轮 18 项** / T-7-2 GUI / W1
+- 阻塞：无；Phase 7 剩 T-7-2 GUI（PENDING_GUI），不影响 Phase 8 Gate
+- 已完成：Phase 4/5/6/8 DONE；G1 六批 + G2 四批；词库线；T-8-0/A/1A/C/D/E/1；T-7-1/T-7-3；T-8-2（GATE_PASS）
 - 并行决策：W1（工作树）、T-7-2（GUI，暂停）
-- 仓库快照：HEAD `e3be34c`，领先 `5b047b0` **8 commits**（未 push）；工作区 **13 项**（10 M + 3 ??），全部为本轮 Phase 7 测试 + 词库 V3-A/V2-A + D-34 文档
+- 仓库快照：HEAD `42320c3`，领先 12（未 push、远端 live 同 SHA）；工作区 **18 项**（T-8-A/C/D/E/1 + T-7-3 未提交）
 
 ## 1. 阶段总览
 
@@ -26,8 +26,8 @@
 | 4 | DONE（Gate） | ContextPack；AC-15 条件性不适用；词库契约另裁 |
 | 5 | DONE | Tool Runtime 五件套 |
 | 6 | DONE（GATE_PASS_WITH_LIMITATIONS） | 第一单元 + 2A + 2B + 2C DONE；Gate 审计 → D-29/30/31 → 重 Gate 通过；限制：O-23/24/25/29(2)/30/31/32/33 |
-| 7 | PARTIAL | NovelAgent 七相位；决策点行为测试缺 |
-| 8 | NOT_STARTED | 17 段完整纵切 |
+| 7 | PARTIAL（仅剩 T-7-2 GUI） | NovelAgent 七相位 + **D-36 结果驱动决策已落地（O-11 DONE）**；决策点 X→A / Y→B 有行为测试；GUI G1–G8 未验 |
+| 8 | **DONE（GATE_PASS，T-8-2R 2026-10-28）** | ①17 段全 ✓（段 4 由 D-36 的 X/Y + V3 有界 + V5 守卫补足）；②三边界绿（边界三为结构级，DSH 未接入）；③禁止项 18 条零引入；④P0–P6 slice 仍绿，P7 slice 转绿（O-11 DONE）。不证明：3000 字 / 真实 LLM / GUI / 重启持久化 / O-42 跨章 / 多 Variant 并发 / 边界三集成反测 |
 | 9 | DEFERRED | DSH；R7 未裁 |
 | 10 | PARTIAL | Desktop 有实现；UI 暂停；GUI G1–G8 未验 |
 
@@ -68,6 +68,8 @@
 | D-32 | 提交 3 的 whitespace gate 瑕疵 | DONE（裁决） | **接受 `5466f98`**：唯一问题是历史审计快照 `qianyan-project-worktree.md` 末尾空行（EOF blank line），而快照应**按原样归档、不改写**（符合"历史基线只加指针不改写"）；因此不对快照类文件套用 whitespace gate。**不 reset、不 amend、不追加修复提交**。流程错误（`git diff --cached --check` 与 `commit` 用 `;` 串联，未把 exit 0 作为前置）单独记录；批次 4/5 必须用 `&&` 串联（或用 `set -e` / `|| exit 1`），gate 失败即停 |
 | D-33 | T-7-1 决策点语义裁决（7 项） | DONE（裁决） | (a) 空 Pack 不新增 CONTEXT 拒绝（D-25）；Writing/Plan 现映射 `EXECUTION_FAILED` 属错误语义缺口 → O-34，不测为期望行为。(b) `Analysis.passed=false` 保持 COMPLETED（信息性结果），补"结果携带 passed/计数"断言。(c) CharacterConsistency 三态均 COMPLETED，补 PASS 结果级断言。(d) ActionPolicy `Denied/Allowed` 当前策略下不可达且 `ActionPolicyUseCases` 是 final class → **不测、不改结构**，登记 O-35。(e) `DecisionPolicySource` 只有 `RULE_MATRIX`/`DETERMINISTIC_DEFAULT`；`PREFERENCE` 是**规划层上一轮提示词的口径错误**，以代码为准，不新增枚举。(f) 防御/不可达分支（S7/C5/E6/R2）不纳入 T-7-1。(g) 已提交事实三入口：补 `bridgeCandidate` 幂等分支（G4），与 resume/refresh 对齐 |
 | D-34 | 词库 V1–V3 归属裁决 | DONE（裁决，FINALIZED） | 见 `docs/planning/qianyan-vocabulary-ownership-decision.md`。**文档优先级**：p20 FD-6 / Phase 4A J-1 / Phase 4C AC-30 > v3.1 §11A 禁止条款（按文档性质与形成时间，不以"代码已存在"倒推动机）。**V1-A** 承认现行独立词库域（唯一表族，不得再新增第二套）；**V2-①** 作用域 = NOVEL + VARIANT（VARIANT 合并 NOVEL，同名 canonical 由 VARIANT 覆盖），`scope_level` 降级为标注，GLOBAL/TASK 标注未启用，不做 BOOK/SERIES/AUTHOR；**V3-A** MVP 只做别名收敛进 prompt + 修预算不一致，Rule/Critic/TEMPLATE/UI 不做（O-37/O-38）。§11A 已加指针，本文件仅追加未改写 |
+| D-35 | 段 16「第二次 Agent」的产品语义 | DONE（用户裁决） | **显式"收敛评审轮"**：Commit 后由用户显式触发；第二轮**只读**——用新 Context（含刚写入的 WM Event/CharacterState）对已提交正文做一致性与偏离检查，输出 findings/suggestions；**不写正文、不自动进 Gate**；轮次上限 1。实现形态：一次新的 `NovelAgent.run`（新会话、`preferredSkillId`=只读 Skill），结果与 `sourceCommitId` 绑定。T-8-E 的 Proposal = 该结构化复审结果，不另造空泛类型 |
+| D-36 | O-11 决策点实现形态 | DONE（用户裁决） | **真实结果驱动决策**：同一 Task 内，`analysis_critique` 的 Result 决定下一步——PASS → 结束（COMPLETED，无产物）；含 ERROR → Agent **自行决定**再执行一次 `rewrite-revision`（产出 WorkingDraft → 正式 Gate，WAITING_HUMAN）。**有界（最多 1 次续步）**；不新增 Skill、不改 ANALYSIS_CRITIQUE 的只读契约；决策点可写 X→A / Y→B 两条行为测试 |
 
 ## 3. 未完成 / 部分完成 / 阻塞
 
@@ -77,7 +79,9 @@
 | O-29 | gap 信号已落 / token 预算延后 | **PARTIAL** | (1) 已由 D-23a 解决：`Basis.priorCanonicalGapChapterIds` 落 Result（`Models.kt:127`、`Validator.kt:651` 拷贝 + :107-112 去重/重叠校验），E2E V-6 断言。**(2) 仍开放**：当前稿/前章正文全量渲染、无 token 预算（与 DraftSource"原文不截断"一致但长文有溢出风险）；延后，不阻塞 |
 | O-30 | 其余 Skill 的"缺失输入"可见性 | **OPEN（3 项登记）** | D-25 已定语义为 Result 可见；CharacterConsistency 满足。**O-30-1** STORY_PLANNING：结果/Artifact 无 coverage，声明来源（含 STORY_FOUNDATION）缺失不可见。**O-30-2** WRITING：新章无 DRAFT 合法，但 foundation/vocab 缺失静默。**O-30-3** REWRITE_REVISION / ANALYSIS_CRITIQUE：非 Pack Skill，仅 DRAFT 缺失有 `BASE_DRAFT_NOT_FOUND` 兜底，其余声明来源不可见。均只登记，未改行为 |
 | O-31 | tool→AgentActionKind 映射 | **OPEN** | D-27 的 action 级 observed ⊆ expectedActions 需工具→动作类别映射；2C 只做工具级，未发明 |
-| O-32 | WRITING CONTINUE 用 latest draft 非 canonical | **OPEN（Phase 7）** | `NovelAgent.latestCanonicalDraftId`（:1190-1207）实调 `get_latest_draft`→`writer.latestDraft`（`ProductTools.kt:204-209`），违反 R3"Agent Context=Canonical 前文"；命名陷阱。早于 Phase 6，Phase 7 NovelAgent base-draft 对齐时修 |
+| O-32 | `latestCanonicalDraftId` 命名与实际语义 | **DONE（改判，2026-10-28）** | 复核 R3：**"Agent Context = Canonical 前文 + 当前章 Draft"** ⇒ 当前章生成基线取 latest draft **符合 R3**，不是违规。真实问题是**函数名**（`latestCanonicalDraftId` 实际返回 draft）与**前章正文**：`generateNewContent` 调 `planningContexts.assemble(writingRequest, contextPack)` 未传 `continuationReference`，故 NovelAgent 多章续写**不带前章 Canonical**。前者改名即可（非缺陷），后者登记 O-42（本 17 段场景是"同一章"，不受影响） |
+| O-42 | NovelAgent 多章续写缺前章 Canonical | **OPEN（Phase 8 之后）** | `NovelAgent.generateNewContent` / `planChapter` 调 `PlanningContextAssembly.assemble(request, pack)` 时未传 `continuationReference`（2A 链才有），故 NL 路径续写第 2 章起拿不到前章正文。17 段固定场景为"继续写这一章"，不受阻；跨章 NL 续写需另立单元 |
+| O-43 | 续步后无"对修订稿复评" | **OPEN（质量增强）** | D-36 选项文字写的是"有界 Revision → 再评审"；实现为"分析 → 续步（该路径内部 critique 基线 + revise）"，**没有对修订后文本再 critique**。Gate 判据（§20-12 的 X→A/Y→B）不因此失效，但"修订是否真的解决了 ERROR"未验证。属质量增强，不阻塞 Phase 8；如需，另立单元（会增加一次 LLM 调用） |
 | O-33 | Desktop 无 continueToNextChapter 接线 | **OPEN（UI 恢复时）** | 2A 续篇唯一生产 caller 是 Android `ChapterWritingViewModel.kt:87`（Android 暂停）；Desktop `WritePage.kt` 的"下一章"仅导航、`continueWriting` 是同章推进（非续篇）。UI 线恢复时补 |
 | O-34 | 空 Pack 的错误语义 | **OPEN** | D-33a：空 Pack 允许进入 EXECUTE（D-25），但 Writing/Plan 缺 payload 现映射为 `EXECUTION_FAILED`——把"缺输入"说成"执行失败"，语义不准。应改为可区分的类型化缺失输入错误；改与不改待裁，T-7-1 不测为期望行为 |
 | O-35 | ActionPolicy Denied/Allowed 不可达 | **DEFERRED** | D-33d：`COMMIT_CANONICAL` 在 `ActionPolicyUseCases` 恒 `NeedsHuman`，NovelAgent GATE 的 `Denied→ACTION_DENIED` / `Allowed→COMMIT` 当前不可达；且该类是 final（`ActionPolicyUseCases.kt:44`），测试替换需改结构。不为不可达分支改结构，暂不测 |
@@ -85,6 +89,7 @@
 | O-37 | `VocabularyRule` 执行语义 | **OPEN（V3-A 外）** | D-34/V3-A：Rule 有模型、无生产消费者，且"确定性替换"的执行位置（Writer 后处理？Revision？写回？）、`deterministicOnly` 语义均未定义。先有契约再实现，不用现状反推 |
 | O-38 | Critic/Revision 别名漂移检查 | **OPEN（V3-A 外）** | 当前 `CritiqueAgent` / `RevisionAgent` 不接收 vocabulary；别名漂移检查属新能力，需独立契约（判定标准、severity、是否自动修正） |
 | O-39 | `VocabularyEntry.variant_id` 无外键/归属校验 | **OPEN（残余完整性风险）** | `NovelVariant.variant_id` 是主键（`Schema.sq:22-34`）故合法数据下唯一；但 `VocabularyEntry.variant_id` 无 FK（`Schema.sq:56-68`），`findEntriesByVariant` 只按 variant_id 过滤（不带 novelId）。若未来错误写入跨作品 variant_id，会读到他人词条。当前无 VARIANT 生产写入路径，无实际泄漏样本；schema 级保证需另立单元（FK 或写入归属校验） |
+| O-40 | 第二次 NovelAgent 的产品语义 | **RESOLVED（D-35）** | 用户裁决：**显式"收敛评审轮"** —— Commit 后由用户显式触发，第二轮只读，用新 Context 对已提交正文做一致性与偏离检查，输出 findings/suggestions，**不写正文、不自动进 Gate**，轮次上限 1 |
 | O-03 | 2C Skill 契约收口 | **DONE** | T-2C-1/2/3 实施 + T-2C-4 核验，全量 1575/0 + 桌面 46/0；缺口转 O-30/O-31 |
 | O-04 | 词库别名收敛 / VocabularyRule / Critic 漂移 | **NOT_STARTED** | prompt 只渲染 canonical + replacement，aliases 被丢弃；Rule 无消费者；无 Critic 检查 |
 | O-05 | 多 TXT 全书章节顺序 | **NOT_STARTED** | R1–R5 已裁，功能未实现 |
@@ -93,7 +98,7 @@
 | O-08 | 知识更新 Desktop 入口 | **PARTIAL** | 后端 KU 链路存在；Desktop 入口按当前 UI 复核，历史台账 PARTIAL |
 | O-09 | 阅读位置写入的 L3 验收 | **PARTIAL** | 按 UI 记录已接；功能台账仍 PARTIAL，未按 L3 验收 |
 | O-10 | GUI G1–G8 | **PENDING_GUI** | 未执行真实点击/输入；不得标记 PASS |
-| O-11 | Phase 7 决策点行为测试 | **PARTIAL** | 缺 `Result X → A / Result Y → B` 行为测试 |
+| O-11 | Phase 7 决策点行为测试 | **DONE（2026-10-28，T-7-3）** | D-36 真实结果驱动已落地：同一 Task（同一 `userIntent="分析第一章"`）下，critic PASS → COMPLETED 无产物；critic ERROR → 同一 session 内自动续步一次 `rewrite-revision` → WorkingDraft + Artifact + pending Gate + WAITING_HUMAN。V1/V2 用**同一请求只换 critic Result** 对照，满足 §20-12 的 X→A / Y→B。附带记录：续步调用**不经过 `purposes` 选择**（由 Agent 决定触发，仅受 SkillExecutionGuard 约束），这是 D-36 的既定设计，不是漏洞 |
 | O-12 | Phase 8 17 段完整纵切 | **NOT_STARTED** | 无自然语言 → Canonical 的完整 E2E |
 | O-13 | DSH Runtime Adapter | **DEFERRED** | R7 产品动机未裁 |
 | O-14 | Android | **PAUSED** | 产品策略暂停 |
@@ -168,8 +173,27 @@
 - [x] `T-7-1-B` 依赖裁决项 — **DONE（登记，无需测试）**：G1 Denied/Allowed → O-35（不可达/final class）；C4 空 Pack → O-34（错误语义缺口，不测为期望）；D8 `PREFERENCE` → 已勘误（代码无此枚举）。
 - [x] `T-7-1-C` 防御/不可达分支 — **DONE（记录不测）**：S7/C5/E6/R2 为防御分支，当前不可达；不为不可达路径造 mock 内部状态的测试。
 - [ ] `T-7-2` P0-3B GUI G1–G8 真实验收
-- [ ] `T-8-1` 17 段完整纵切 E2E
-- [ ] `T-8-2` Phase 8 验收
+- [x] `T-8-0` 17 段现状只读重审 — **DONE（2026-10-28）**
+  按当前代码重判：✓ 1/2/3/6/8/9/10/14；△ 4/5/7/11/12/13/15/17；✗ 16。**5 个真实断点**：5→7（ContextPack 有 DRAFT 内容，但 `PlanningContext` 无当前稿字段，Writer 只看到 `rawText=userIntent`）；6→7（`get_latest_draft` 只取 draftId，正文不进 Context）；10→11（桥接条件性，需显式重试）；14→15（WM Event/CharacterState 不进下一 PlanningContext，WRITING 未允许 `get_world_context`）；15→16（无第二次 Agent 编排）；16→17（无 Proposal 回流契约）。已连接：7→8→9→10→11→12→13→14。
+- [x] `T-8-A` **5→7 胶水（P0 正确性）** — **DONE（2026-10-28）**
+  `PlanningContext.currentDraft: CurrentDraftLite?`（与 `sourceFinalDraft` 语义分开）；`CurrentDraftLite.toPromptSection()` 共享渲染；`PlanningContextAssembly.kt:103-109` **只从 Pack 的 DRAFT item** 取（`source==DRAFT && ref.chapterId==focus`），无 item → null 不回退；Planner :151 / Writer :154 同函数渲染。V-4 用"pack 旧稿 ≠ 仓库最新稿"夹具证明无回退。application **1128/0**（+4）、root **1597/0**、desktop 47/0。已知成本：当前稿同时进 Planner 与 Writer 两次请求。
+- [x] `T-8-C` **14→15 胶水** — **DONE（2026-10-28）**
+  `PlanningContext.worldModelPromptSection()`（:113-190）统一渲染【人物档案】【人物状态】【世界规则】【近期事件】；Planner :145 / Writer :135 共用；上限各 20 + `truncated=true; total=N`；排序确定（Characters `(name,id)`、States `(characterId,stateId)`、Rules `(category,ruleId)`、Events `createdAt DESC, eventId`）；只消费 Assembly 已解析的同一 `worldContext`（V-6 用"assemble 后新增 Event B 但 prompt 不含 B"证明无二次 resolve）。原 Planner【相关人物】内容（name+goals）无损迁移到【人物档案】。**V-1 证明 14→15**：同 DB 第二次 assemble 的 prompt 含第一轮 Commit 写入的 Event。application **1134/0**（+5）、root **1603/0**、desktop 47/0。
+- [x] `T-8-D` **15→16 编排（D-35）** — **DONE（2026-10-28）**
+  `ConvergenceReviewUseCase`（70 行）：`committedByArtifact` 校验 + novel/chapter 归属校验（失败 `EntityNotFound`）；构造**不带 sessionId** 的新请求（`preferredSkillId=skill.character-consistency`），只调既有 `novelAgent.run`（不重建 Pack / 不自行 resolve）；结果 `ConvergenceReviewResult(sourceCommitId, sourceArtifactId, round=2, result)`。DI +10 行。Desktop 最小入口：`launchConvergenceReview()`（commitId/artifactId/request/novel 逐级门控 + 作品一致性）+ `AgentPage` 按钮仅在 `commitId != null` 可见 + 两行摘要；无布局改版。
+  测试：`ConvergenceReviewUseCaseTest` 4/4（V-1 第二轮 prompt 含第一轮 Event；V-2 四类计数 + Canonical 不变；V-3 未提交先拒且 0 次 LLM；V-4 新会话且首轮 COMPLETED 不被改写）；`DesktopConvergenceReviewUiTest` 1/1（源码结构断言，仓内无 Compose 点击夹具）。
+- [x] `T-8-E` **16→17 契约（D-35）** — **DONE（2026-10-28）**
+  `ConvergenceOutcome` 四态（CONSISTENT/ISSUES_FOUND/INSUFFICIENT_EVIDENCE/REVIEW_FAILED，注释明写"REVIEW_FAILED 不得折叠成 CONSISTENT"）；`ConvergenceReviewResult` 扁平化 11 字段（身份 5 + 结论 4 + summary + 保留原始 `result`）；`convergenceOutcomeOf` 单一映射入口：仅 `COMPLETED` 且 `characterConsistency != null` 才进三业务态，其余一律 REVIEW_FAILED。测试 8/8（含"COMPLETED+null → REVIEW_FAILED"与 `assertNotEquals(CONSISTENT)`）。Desktop 摘要改读扁平字段，Common/AgentPage 均不再出现 `review.result.characterConsistency`。application **1142/0**（+4）、root **1611/0**、desktop 49/0。
+- [x] `T-8-1A` 最小可信 E2E（1–13 + WM 触发）— **DONE（2026-10-28）**
+  `Phase8PartialLoopE2ETest`（190 行，1 test）：S2/S3 userIntent+CONTINUE+keyword；S4 `skill.writing` + WAITING_HUMAN + BRIDGED；S5 pack DRAFT item 内容 == seed，Planner/Writer prompt 均含【本章当前稿】+ seed 正文；S6 ToolCallLog 有 `get_latest_draft`；S7/S9/S10 workingDraftId / artifactId / `diff.hasChanges`；S11 Gate PENDING；S12 history +1；S13 `canonicalRead` == resultingDraftId 且内容 == writerContent；S14 WM `replay=true` + ACCEPTED + resultingFactId。**测试名自带边界**（"leaves rounds 15 to 17 unproven"）。application **1129/0**、root **1598/0**、desktop 47/0。**不得据此宣称 Phase 8。**
+- [x] `T-8-1` 17 段完整纵切 E2E — **DONE（2026-10-28）**
+  `Phase8FullLoopE2ETest`（403 行，单测试按 S1→S17 顺序）：S1 作者偏好进两处 prompt；S2 userIntent 原样且进 rawText；S3 CONTINUE+关键词；S4 writing/WAITING_HUMAN/BRIDGED；S5 pack DRAFT item == seed 且两处含当前稿；S6 ToolCallLog 有 `get_latest_draft` 且在 white list；S7/S8 WorkingDraft 内容==writer；S9 diff.hasChanges；S10 Artifact 绑 WorkingDraft；S11 Gate PENDING；S12 history +1；S13 canonical == resultingDraftId 且内容==writerContent；S14 WM `replay=true` + ACCEPTED + resultingFactId；S15 第二次 assembly 的 prompt 含 S14 Event；S16 收敛轮 CONSISTENT（≠REVIEW_FAILED）+ 新 session；S17 扁平字段全可读。**R1** history 恰 +1、Canonical 只前进一次；**R2** S16 前后四类计数相等；**R3** 两次 pack 的 packId 与 items 均不同。application **1143/0**、root **1612/0**、desktop 49/0（合计 1661，与逐模块求和一致）。
+- [x] `T-8-2` Phase 8 验收（§12 四条）— **DONE：GATE_PASS（T-8-2R，2026-10-28）**
+  首次审查 GATE_FAIL（段 4 △ + P7 slice PARTIAL）→ T-7-3/D-36 补齐 → 复审：①17 段 17✓/0△/0✗；②三边界绿；③禁止项零引入；④P0–P7 slice 全绿。规划层亲验：V1/V2 同为 `request(w, analysisIntent)` 仅换 `PASS_JSON`/`ERROR_JSON`；`Phase8FullLoopE2ETest` XML 18:30:32 > `NovelAgent.kt` 18:28:47。限制见 O-29(2)/O-30/31/37/38/39/42/43 与"不证明"清单。
+  首次 FAIL 的判据保留追溯：①段 4 为 △（缺 Result 驱动）、④P7 slice 为 PARTIAL（O-11）——两者已由 D-36/T-7-3 关闭。复审要点：**段 4 purpose 说明**——续步由 `skillRegistry.get(...)` 直接取，不经 `purposes` 选择，属 D-36 既定设计且仍过 Guard（V5 反证），不影响 ✓；**Phase8FullLoopE2ETest 未被改写**（mtime 17:53:09）且在 T-7-3 之后的 18:30:32 XML 中 1/0。**GUI 的 T-7-2 不属 §21.2 P7 slice，也不属 17 段**，故不降级为 WITH_LIMITATIONS，但仍在"不证明"中保留。
+- [x] `T-7-3` **O-11 决策点（D-36）** — **DONE（2026-10-28）**
+  `NovelAgent.kt:238-292`：`SkillOutcome.Analysis` 后按 `errorCount` 决策——0 → `COMPLETED`（只读，`analysis` 入结果）；>0 → 取 `skill.rewrite-revision`、校验 `enabled`、记 `followUpSkillId`，**再走同一个 `executeSkill`**（含 `SkillExecutionGuard`）执行一次续步，要求 `Draft` 否则类型化失败；随后沿用既有 REVIEW → ActionPolicy → Bridge/Gate。有界 1 次、无循环。结果新增最小字段：`NovelAgentAnalysisSummary(passed/issueCount/errorCount)`、`analysis`、`followUpSkillId`。
+  测试：`DecisionPointAnalysisFollowUpTest` 4/4（V1 PASS→COMPLETED 且只读；V2 同一请求 ERROR→WAITING_HUMAN + WorkingDraft/Artifact + `followUpSkillId`；V3 EXECUTE 恰 2 次；V5 空 bindings → `SKILL_NOT_EXECUTABLE` 反证守卫未被绕过）；既有 `DecisionPointBehaviorTest.A7` 按 D-36 强化（null→notNull，summary 三条断言保留）。application **1147/0**、root **1616/0**、desktop 49/0（合计 1665）。
 
 ### 4.6 并行决策 / 治理
 
@@ -194,6 +218,8 @@
   6 批全部落本地：`c2c3681`(4) → `0530e2b`(141) → `77c5718`(5) → `5466f98`(7，D-32 接受) → `0919b86`(8) → `e3be34c`(7)。**六批文件数合计 172 = 清单全量**（独立一致性证明）；porcelain 0、staged 空、HEAD `e3be34c`、本地领先 `5b047b0` **8 commits**、**未 push / 未 tag / 未 amend / 未 reset**。
   提交 4/5 的 gate 均为 `set -e` + 短路，`--check` exit 0、敏感扫描 0 命中、staged 集合 MATCH；控制层四处状态一致（README / roadmap / feature-status / 任务树）。
   残留：远端 live 状态因网络不可达未复核（`ls-remote` exit 128），仅能证明本地未 push。
+- [x] `T-G2` 提交第二批（本批 13 项）— **DONE（2026-10-28）**
+  4 批：`2ab6da3`(3，T-7-1 测试) → `cdbbf14`(4，V3-A 别名进 prompt) → `dd9fb41`(3，V2-A 变体继承) → `42320c3`(3，D-34 文档+任务树)。**13 文件全覆盖**；HEAD `42320c3`、本地领先 **12**、porcelain 0、staged 空；`§11A` 仅 6 行新增（无删除）；**远端 live 复核成功 = `5b047b0`**（网络已恢复），未 push。
 - [ ] `T-LEGACY` `commitApprovedDraft`：删除或补齐 Gate 绑定
 
 ## 5. 更新日志
@@ -224,3 +250,16 @@
 | 2026-10-28 | T-V0 审计通过：T-V0/V1/V2/V3 → DONE；裁 **D-34**（V1-A / V2-① / V3-A，FINALIZED）；新增 `docs/planning/qianyan-vocabulary-ownership-decision.md` 并在 §11A 加指针（仅追加）；新增 O-37/O-38；下一步 T-V3-A 实施 | 规划层复核 16 项缺口：`Vocabulary.sq:12-16` 不按 `scope_level` 过滤（标签非查询键）；`ContextSources.kt:309-313` VARIANT 不合并 NOVEL；`VocabularyRule` 仅模型+备份读取、无 application 消费者；`ProductTools.kt:249-270` `search_vocabulary` 查候选不筛状态；`CritiqueAgent`/`RevisionAgent` 无 vocabulary 输入。文档冲突属实：§11A:496 禁止 vs FD-6:64-66 / J-1:67 / AC-30:129-136 → 按"后形成的冻结/裁决优先于规划条文"裁 V1-A |
 | 2026-10-28 | T-V3-A 审查通过 → DONE：共享 `toPromptLine()`，Planner/Writer 均渲染别名；预算不一致消除；application 1118/0（+1）、root 1587/0、desktop 47/0 | 规划层实测：`PlanningContext.kt:99-105` 空串过滤 + 别名原序 + `、` 分隔；无别名 `- 词 -> 替`、有别名 `- 词（别名：a、b）-> 替`，与 brief 逐字一致；`PlannerAgent.kt:157` 与 `WriterAgent.kt:159` 均 `appendLine(it.toPromptLine())`；`VocabularyPromptIntegrationTest` 4/4（新增 :114）；`VocabularySource.content` 未改动（`ContextSources.kt:117-132`）；TDD 先红后绿属实 |
 | 2026-10-28 | T-V2-A 审查通过 → DONE；**词库线收口**（V1/V2/V3/V3-A/V2-A 全 DONE，仅余 O-37/38/39 登记）；新增 O-39；application 1124/0（+6）、root 1593/0、desktop 47/0 | 规划层实测：`ContextSources.kt:322-339` `mergedApprovedEntries`（NOVEL 先入 → VARIANT 同 canonical 覆盖 → `(canonical, entryId)` 排序，两边均 APPROVED）；`activeVariantId==null` 分支与改前一致；legacy `PlanningContextAssembly.kt:202-204` 仅注释且 `NoPackAssemblyGuardTest` 3/0 佐证无生产调用；V-2/V-4 修复前为红（TDD 诚实）；`VocabularyVariantInheritanceTest` 6/6；未改 SQL/scope_level/Schema |
+| 2026-10-28 | **G2 收口**：T-G2 → DONE；4 批提交（`2ab6da3` 3 / `cdbbf14` 4 / `dd9fb41` 3 / `42320c3` 3），13 文件全覆盖；HEAD `42320c3`、领先 12、工作树 clean、staged 空 | 规划层独立复核：`git show --name-only` 四批集合与预期逐一相等（3/4/3/3）；`git status --porcelain` 空；`rev-list origin...HEAD = 0 12`；`§11A` staged diff 仅 6 行新增、无删除；**远端 live 复核成功**：`git ls-remote origin refs/heads/feature/novel-ide` = `5b047b0`（exit 0，网络已恢复），确认未 push。注：批 3 的全量/桌面为 cache/UP-TO-DATE——因其内容与提交前已验收的工作树完全一致，属有效证据，但不是 fresh rerun |
+| 2026-10-28 | T-8-0 重审通过 → DONE；Phase 8 → PARTIAL（✓8/△8/✗1，5 个断点）；新增 T-8-A/C/D/E 与 T-8-1A；下一单元 T-8-A（5→7 当前稿进 prompt） | 规划层复核关键事实：`PlanningContext` **无当前稿字段**（`PlanningContext.kt:32-60`），`NovelAgent.writingRequest:1243` 的 `rawText = request.userIntent`（用户指令，不是正文）⇒ NL 写作路径看不到本章现有正文；`get_latest_draft` 只取 draftId（`:1190-1223`）；9/10 确为生产链（`ChangeUseCases.computeChange:131`、`WriterFacade.proposalOf:90-98`、`CommitUseCases:176/557`）；14 已由 Commit 触发（`:758-765`）；两条入口（NovelAgent vs 旧 Workflow）并存但不互斥，单条 17 段 E2E 必须选 NovelAgent 作 2–4 段入口 |
+| 2026-10-28 | T-8-A 审查通过 → DONE：当前稿经 Pack 进 Planner/Writer prompt；application 1128/0（+4）、root 1597/0、desktop 47/0；下一单元 T-8-1A | 规划层实测：`PlanningContext.kt:49` `currentDraft` 与 `sourceFinalDraft` 分开；`CurrentDraftLite.toPromptSection()`（:111）单一格式；`PlanningContextAssembly.kt:102-109` 仅 `source==DRAFT && ref.chapterId==focus` 取 pack item、无则 null 不回退；Planner:151 / Writer:154 同函数；V-4 夹具 pack=旧稿 / repo=新稿，prompt 只含旧稿（来源纪律成立）；`CurrentDraftPromptTest` 4/4；未动 O-32/sourceFinalDraft/Schema |
+| 2026-10-28 | T-8-1A 审查通过 → DONE（部分闭环，非 Phase 8）：S2–S14 全 PASS，段 14 WM replay=true + ACCEPTED；application 1129/0（+1）、root 1598/0、desktop 47/0；下一单元 T-8-C | 规划层实测 `Phase8PartialLoopE2ETest`（190 行）：S5 断言 pack DRAFT item 内容 == seed 且两处 prompt 含该正文（T-8-A 回归锁）；S12 `historyBefore + 1`；S13 `canonicalRead.committedDraft.draftId == mainHistory.resultingDraftId` 且内容 == writerContent；S14 `outcome.replay==true` + accepted single + resultingFactId 非空；测试名自带 "leaves rounds 15 to 17 unproven"；XML 1/0/0/0 |
+| 2026-10-28 | T-8-C 审查通过 → DONE（14→15 打通）；新增 O-40（第二次 Agent 产品语义未定义）→ T-8-D BLOCKED；application 1134/0（+5）、root 1603/0、desktop 47/0 | 规划层实测：`worldModelPromptSection()`（PlanningContext:113-190）四类节 + 各 20 上限 + `truncated=true; total=N`；Planner:145 / Writer:135 同函数；**原【相关人物】内容（name+goals）无损失**（仅标题改为【人物档案】）；V-6 用"assemble 后新增 Event B、prompt 不含 B"证明单快照；V-1 第二轮 prompt 含第一轮 Commit 的 Event（14→15 成立）。T-8-D 因 §21.1 仅一句"基于新 Context 收敛"、无输入/触发/输出定义 → 按"不用现状反推动机"停，交用户裁决 |
+| 2026-10-28 | 用户裁决段 16 = 显式"收敛评审轮" → 新增 D-35、O-40 RESOLVED；T-8-D/T-8-E 解锁（只读第二轮 + 结构化复审结果） | 用户选择：Commit 后显式触发；第二轮只读、用新 Context 复审已提交正文，输出 findings/suggestions，不写正文、不自动进 Gate、轮次上限 1；实现为一次新的 `NovelAgent.run`（新会话 + 只读 Skill）并与 `sourceCommitId` 绑定 |
+| 2026-10-28 | T-8-D 审查通过 → DONE（15→16 显式收敛评审轮）；application 1138/0、root **1607/0**、desktop 48/0；下一单元 T-8-E | 规划层实测：`ConvergenceReviewUseCase.review` 先验 `committedByArtifact` + novel/chapter 归属（`EntityNotFound`），再以**无 sessionId** + `preferredSkillId=character-consistency` 调 `novelAgent.run`，不重建 Pack；Desktop `launchConvergenceReview` 四重门控 + 按钮仅 `commitId != null`；5 个新测试名义与内容一致。**勘误执行报告**：其"总 1425"只加了 application+storage+runtime+android，漏 core/model 66、core/engine 41、provider 35、agent 39、e2e 1 ⇒ 正确 root = **1607/0**（逐模块 XML 实测） |
+| 2026-10-28 | T-8-E 审查通过 → DONE（16→17 契约：四态 + 扁平化 + 单一映射）；**O-32 改判**为命名问题（R3 允许当前章用 draft），真实缺口另立 O-42（NL 多章续写缺前章 Canonical）；application 1142/0、root **1611/0**、desktop 49/0；下一单元 T-8-1 十七段 E2E | 规划层实测：`convergenceOutcomeOf` 仅 `COMPLETED && characterConsistency!=null` 进三业务态，其余 REVIEW_FAILED；Result 11 字段扁平；8 个测试含 `assertNotEquals(CONSISTENT)` 与 null 映射；UI 不再访问嵌套 result。**再次勘误执行报告**："总计 1478" 仍漏 core/model 66 + core/engine 41 + provider 35 + agent 39 + e2e 1 = 182 ⇒ 正确 root = **1611/0**。R3 复核结论：当前章基线用 latest draft 合规（"当前章 Draft"），故 O-32 非缺陷 |
+| 2026-10-28 | T-8-1 审查通过 → DONE：十七段 E2E 单测试 S1–S17 全 PASS + R1/R2/R3；application 1143/0、root 1612/0、desktop 49/0（合计 1661，逐模块求和一致，本次数字口径正确）；下一单元 T-8-2 Gate 验收 | 规划层实测 `Phase8FullLoopE2ETest`（403 行）：S16 `assertEquals(CONSISTENT)` + `assertNotEquals(REVIEW_FAILED)`；R2 在 review 前后取四类计数；R3 双严格（packId 与 items 均不同）；R1 history 恰 +1 且 Canonical 只前进一次；S14 `replay=true` + 单候选 ACCEPTED + resultingFactId；S15 第二次 pack 的 prompt 含 S14 Event。**不得以"E2E 绿"替代 T-8-2 验收** |
+| 2026-10-28 | **T-8-2 Gate 审查完成 → GATE_FAIL**（审查本身 DONE）；Phase 8 → GATE_FAIL；O-11 重新确认 PARTIAL 并写明判据；新增 T-7-3；**规划层自纠**：T-7-1 的 10 个测试不满足 v3.1 §20-12 的"同一 Task Result X→A / Result Y→B"，T-7-1 收口 ≠ O-11 关闭 | 执行层只读 Gate 报告 + 规划层复核原文：v3.1:841 四条；v3.1:796 "Agent Decision Point 存在且可测——至少包含同一 Task，Result X → A / Result Y → B 行为测试一条；**缺少该测试即视为 P7 未完成**（防止旧固定 Pipeline 换名）"；v3.1:965 `P7 → P8` 硬依赖。段 4 现状仍是固定七相位 + 确定性 Skill 偏好表（`NovelAgent.kt:191-360`、`:805-849`），T-7-1 测试只覆盖持久化 Gate 状态分支 ⇒ 条件①④均不满足，②③满足。**GATE_FAIL 判定正确，不得用 O-11 登记替代 Gate** |
+| 2026-10-28 | 用户裁决 O-11 形态 = 真实结果驱动 → 新增 D-36；T-7-3 定义为"analysis Result（PASS/ERROR）决定是否再执行一次 rewrite-revision，有界 1 次"；Phase 8 待 T-7-3 后重 Gate | 用户选择：不采用"既有数据分支交差"，也不改 v3.1 范围；决策点必须是 Result 驱动且可写 X→A / Y→B 两条行为测试；复用既有 ANALYSIS_CRITIQUE（保持只读）与 REWRITE_REVISION（写 WorkingDraft），不新增 Skill |
+| 2026-10-28 | T-7-3 审查通过 → DONE；**O-11 → DONE**（D-36 真实结果驱动已落地）；Phase 7 → PARTIAL（仅剩 T-7-2 GUI）；application 1147/0、root 1616/0、desktop 49/0（合计 1665）；下一单元 **重跑 T-8-2 Gate** | 规划层实测：`NovelAgent.kt:238-292` 按 `errorCount` 分支，续步走**同一个 `executeSkill`**（含 Guard）且要求 `Draft`；`NovelAgentModels.kt:129/158/160` 三字段最小；`DecisionPointAnalysisFollowUpTest` V1/V2 使用**同一请求**只换 critic Result（X→A / Y→B 成立）；V3 `EXECUTE` 恰 2 次（有界）；V5 空 bindings → `SKILL_NOT_EXECUTABLE`（守卫反证）；A7 适配为强化（null→notNull，summary 三断言保留）。记录：续步不经 `purposes` 选择，是 D-36 既定设计 |
+| 2026-10-28 | **T-8-2R 复审 → GATE_PASS；Phase 8 → DONE**：①17 段全 ✓（段 4 由 D-36 补齐）；②三边界绿；③禁止项零引入；④P0–P7 slice 全绿（O-11 DONE）。新增 O-43（续步后无对修订稿复评，质量增强不阻塞） | 规划层亲验：V1/V2 均为 `request(w, analysisIntent)`，仅 fixture 由 `PASS_JSON`→`ERROR_JSON`（同一请求只换 Result）；`Phase8FullLoopE2ETest` XML 18:30:32 > `NovelAgent.kt` 18:28:47、`NovelAgentModels.kt` 18:27:47（证据时效成立）；17 段 E2E 未被改写（mtime 17:53:09）且在 T-7-3 后运行。**判定边界**：GUI（T-7-2）不属 §21.2 P7 slice 也不算 17 段，故不降级；"再评审"仅指续步路径内对基线的 critique，**不是**对修订稿复评 → 记 O-43 |
