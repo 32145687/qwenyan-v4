@@ -1,6 +1,7 @@
 package com.qianyan.application.usecase.writing
 
 import com.qianyan.application.di.ApplicationContainer
+import com.qianyan.application.usecase.workflow.ChapterPhase
 import com.qianyan.engine.markdown.MarkdownBlock
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
@@ -174,12 +175,20 @@ class AuthorSaveCanonicalTest {
     fun `ai rewrite does not create canonical and reader stays empty`() {
         val app = ApplicationContainer.open(analysisGateway = aiGateway())
         val novelId = app.novels.createOriginal(title = "测试书")
+        app.projects.openProject(novelId)
         val chapter = app.chapters.createNextChapter(title = "第一章", novelId = novelId)
         app.draftRepository.save(draft(novelId, chapter.chapterId, "d-orig", "原正文"))
 
-        val revised = app.writerGateway.rewrite(novelId, null, chapter.chapterId)
+        val progress = app.writerGateway.rewrite(novelId, null, chapter.chapterId)
 
-        assertEquals(DraftStatus.REVISED, revised.status, "AI 改写产出修订稿")
+        assertEquals(ChapterPhase.WAITING_CONFIRMATION, progress.phase, "AI 改写停在人工门")
+        assertTrue(progress.waitingForUser)
+        assertEquals(
+            "修订后的正文",
+            assertNotNull(app.writerGateway.loadContext(novelId, null, chapter.chapterId).pendingProposal).candidateContent,
+            "候选留在 WorkingDraft（不是 Draft）",
+        )
+        assertEquals(1, app.draftRepository.listByChapter(chapter.chapterId).size, "批准前不写 Draft 表")
         assertNull(app.canonicalRead.committedContent(chapter.chapterId), "AI 产出不得自动成为 Canonical")
         assertTrue(app.commits.history(app.projects.projectOf(novelId).projectId).isEmpty(), "AI 路径不得写 CommitHistory")
         assertTrue(

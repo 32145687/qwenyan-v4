@@ -29,7 +29,7 @@ class ContextScopeTest {
 
         assertTrue(pack.items.isNotEmpty(), "Project A 自身应有内容")
         assertTrue(
-            pack.items.none { it.itemId.contains(b.novelId.value) || it.itemId.contains(b.chapter1.value) || it.itemId.contains(b.chapter2.value) || it.itemId.contains(b.candidateId.value) },
+            pack.items.none { it.itemId.contains(b.novelId.value) || it.itemId.contains(b.chapter1.value) || it.itemId.contains(b.chapter2.value) || it.itemId.contains(b.entryId.value) },
             "条目 id 不得引用 Project B：${pack.items.map { it.itemId }}",
         )
         assertTrue(

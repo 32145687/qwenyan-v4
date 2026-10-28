@@ -36,10 +36,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.qianyan.app.desktop.adapter.DesktopFilePicker
 import com.qianyan.app.desktop.ui.DesktopAppState
+import com.qianyan.app.desktop.ui.importTxtFromPicker
 import com.qianyan.app.desktop.ui.HLine
-import com.qianyan.app.desktop.ui.NavItem
+import com.qianyan.app.desktop.ui.hoverBackground
+import com.qianyan.app.desktop.ui.Workspace
 import com.qianyan.app.desktop.ui.PanelToggle
 import com.qianyan.app.desktop.ui.SectionLabel
 import com.qianyan.app.desktop.ui.consumeClicks
@@ -94,19 +95,19 @@ fun CommandPalette(state: DesktopAppState) {
         contentAlignment = Alignment.TopCenter,
     ) {
         Column(
-            Modifier.padding(top = 96.dp)
-                .width(560.dp)
-                .clip(RoundedCornerShape(QianyanShapes.r3))
+            Modifier.padding(top = 92.dp)
+                .width(552.dp)
+                .clip(RoundedCornerShape(QianyanShapes.window))
                 .background(palette.raised)
-                .border(1.dp, palette.lineStrong, RoundedCornerShape(QianyanShapes.r3))
+                .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.window))
                 .consumeClicks(),
         ) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("›", style = MaterialTheme.typography.bodyLarge, color = palette.text3)
-                Spacer(Modifier.width(9.dp))
+                Spacer(Modifier.width(11.dp))
                 BasicTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -125,16 +126,15 @@ fun CommandPalette(state: DesktopAppState) {
                     },
                     decorationBox = { inner ->
                         if (query.isEmpty()) {
-                            Text("输入命令或搜索…", style = MaterialTheme.typography.bodyLarge, color = palette.text3)
+                            Text("输入命令…", style = MaterialTheme.typography.bodyLarge, color = palette.text3)
                         }
                         inner()
                     },
                 )
-                Text("Enter 执行 · Esc 关闭", style = QianyanCodeStyle, color = palette.text3)
             }
             HLine()
 
-            Column(Modifier.fillMaxWidth().height(330.dp).verticalScroll(rememberScrollState()).padding(vertical = 6.dp)) {
+            Column(Modifier.fillMaxWidth().height(332.dp).verticalScroll(rememberScrollState()).padding(vertical = 7.dp)) {
                 if (filtered.isEmpty()) {
                     Text(
                         "没有匹配的命令",
@@ -155,6 +155,7 @@ fun CommandPalette(state: DesktopAppState) {
                             .padding(horizontal = 8.dp)
                             .clip(RoundedCornerShape(QianyanShapes.r))
                             .background(if (on) palette.selection else Color.Transparent)
+                            .hoverBackground(RoundedCornerShape(QianyanShapes.r), enabled = !on)
                             .clickable { index = i; execute() }
                             .padding(horizontal = 8.dp, vertical = 7.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -172,6 +173,15 @@ fun CommandPalette(state: DesktopAppState) {
                 }
                 Spacer(Modifier.height(6.dp))
             }
+            HLine()
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 9.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
+            ) {
+                Text("↑ ↓ 选择", style = MaterialTheme.typography.labelSmall, color = palette.text3)
+                Text("⏎ 执行", style = MaterialTheme.typography.labelSmall, color = palette.text3)
+                Text("Esc 关闭", style = MaterialTheme.typography.labelSmall, color = palette.text3)
+            }
         }
     }
 }
@@ -180,25 +190,26 @@ private fun buildCommands(state: DesktopAppState): List<PaletteCommand> {
     val out = mutableListOf<PaletteCommand>()
     val mod = shortcutLabel()
 
-    NavItem.entries.filter { it != NavItem.SETTINGS }.forEach { item ->
+    Workspace.entries.forEach { item ->
         out += PaletteCommand(
             group = "导航",
             label = "打开 · ${item.title}",
-            hint = item.shortcut?.let { "$mod+$it" } ?: "",
-        ) { state.nav = item }
+            hint = "$mod+${item.shortcut}",
+        ) { state.openWorkspace(item) }
     }
 
     out += PaletteCommand("操作", "设置", "$mod+,") { state.settingsOpen = true }
-    out += PaletteCommand("操作", "新建作品", "") { state.createNovelOpen = true }
-    out += PaletteCommand("操作", "导入 TXT", "") {
-        val file = DesktopFilePicker.chooseTxt()
-        if (file == null) {
-            state.toast("已取消导入")
-        } else {
-            state.launchTxtImport(file.name, file.readBytes())
-        }
+    out += PaletteCommand("操作", "新建作品", "") {
+        if (state.busy) state.toast("任务进行中，请等待完成后再新建作品")
+        else state.createNovelOpen = true
     }
-    out += PaletteCommand("操作", "AI Provider 设置", "") { state.providerSettingsOpen = true }
+    out += PaletteCommand("操作", "导入 TXT", "") {
+        state.importTxtFromPicker()
+    }
+    out += PaletteCommand("操作", "AI Provider 设置", "") {
+        if (state.busy) state.toast("任务进行中，请等待完成后再修改模型配置")
+        else state.providerSettingsOpen = true
+    }
     out += PaletteCommand("视图", "折叠 / 展开左侧导航", "$mod+B") { state.toggle(PanelToggle.SIDEBAR) }
     out += PaletteCommand("视图", "折叠 / 展开检查器", "$mod+\\") { state.toggle(PanelToggle.INSPECTOR) }
     out += PaletteCommand("视图", "专注模式", "$mod+Shift+E") { state.toggle(PanelToggle.FOCUS) }

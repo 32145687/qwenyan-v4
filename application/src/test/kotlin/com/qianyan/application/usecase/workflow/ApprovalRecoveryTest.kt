@@ -192,8 +192,9 @@ class ApprovalRecoveryTest {
         app.workflowService.rejectGate(gateId, HumanDecision.REJECTED)
         val llmBefore = gw.snapshot()
 
-        app.workflowOrchestrator.approveGate(gateId)
-        app.workflowOrchestrator.approveGate(gateId)
+        // P0-2.1：已拒 Gate 不得被"批准"（类型化拒绝；不进入批准恢复、不改写决议）。
+        assertFailsWith<ApplicationException> { app.workflowOrchestrator.approveGate(gateId) }
+        assertFailsWith<ApplicationException> { app.workflowOrchestrator.approveGate(gateId) }
 
         assertNull(app.canonicalRead.committedContent(chapterId), "REJECTED 不得产生 Canonical")
         assertTrue(app.commits.history(projectId(app, novelId)).isEmpty(), "REJECTED 不得写 CommitHistory")

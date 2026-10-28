@@ -61,7 +61,7 @@ class NovelAgentBoundaryTest {
     }
 
     @Test
-    fun `five existing writing agents and legacy orchestration are preserved`() {
+    fun `five existing writing agents are preserved and legacy direct write chain is retired`() {
         // 五个旧 Agent 必须仍然存在，且 agentId 未被改写（保留原 Prompt / Parser / Snapshot 语义）
         val agents = mapOf(
             "src/main/kotlin/com/qianyan/application/usecase/writing/planning/PlannerAgent.kt" to "story-planner",
@@ -76,9 +76,8 @@ class NovelAgentBoundaryTest {
             assertTrue(agentId in file.readText(), "既有 Agent 的 agentId 不得被改写：$path（期望 $agentId）")
         }
 
-        // 旧写作链 / Workflow / Task / AgentSession 仍在（I11 不删除、不重写）
+        // 既有写作链 / Workflow / Task / AgentSession 仍在（除 v3.1 Phase 1 明确删除的 AI 直写链）
         listOf(
-            "src/main/kotlin/com/qianyan/application/usecase/chapter/ChapterWritingUseCases.kt",
             "src/main/kotlin/com/qianyan/application/usecase/workflow/WorkflowService.kt",
             "src/main/kotlin/com/qianyan/application/usecase/workflow/WorkflowOrchestrator.kt",
             "src/main/kotlin/com/qianyan/application/usecase/session/AgentSessionUseCases.kt",
@@ -102,8 +101,12 @@ class NovelAgentBoundaryTest {
             f.app.knowledgeUpdater::class.qualifiedName ==
                 "com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent",
         )
-        // 旧写作链入口仍在（I11 逐步接管，未一次性重写）
-        assertTrue(f.app.chapterWriting.open(w.chapterId, w.novelId, null).current().chapterId == w.chapterId)
+        // v3.1 Phase 1：旧 ChapterWritingSession 直写链已删除；生产写作入口是 WorkingDraft
+        assertTrue(
+            !File("src/main/kotlin/com/qianyan/application/usecase/chapter/ChapterWritingUseCases.kt").exists(),
+            "legacy ChapterWritingUseCases 不得恢复（AI 直写边界）",
+        )
+        assertTrue(f.app.workingDrafts.list(f.app.projects.projectOf(w.novelId).projectId).isEmpty())
         f.close()
     }
 

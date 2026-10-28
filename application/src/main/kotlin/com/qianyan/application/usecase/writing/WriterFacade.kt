@@ -16,7 +16,12 @@ import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
+import com.qianyan.model.change.TextDiff
+import com.qianyan.model.change.TextDiffer
 import com.qianyan.model.task.TaskType
+import com.qianyan.model.workingdraft.WorkingDraft
+import com.qianyan.model.workingdraft.WorkingDraftTarget
+import com.qianyan.model.workflow.WorkflowKind
 import com.qianyan.model.writing.Draft
 import com.qianyan.storage.repository.NovelRepository
 
@@ -55,28 +60,47 @@ class WriterFacade(
     override fun loadContext(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): WriterChapterContext {
         val chapter = guard { chapters.findById(chapterId) }
             ?: throw ApplicationException(ApplicationError.EntityNotFound("Chapter 不存在: ${chapterId.value}"))
+        val progress = workflow.getChapterProgress(chapterId)
+        // P1-02c+d：AI 待审工作产物（WorkingDraft）——按 Project 内的章节工作产物投影；
+        // 它是 WorkingDraftId（非 DraftId），只投影**正文**，不伪装成 Draft。
+        val pending = latestWorking(guard { projects.projectOf(novelId) }.projectId, chapterId)
         return WriterChapterContext(
             novelId = novelId,
             novelTitle = guard { novelRepository.getNovel(novelId) }?.title ?: "",
             chapterId = chapterId,
             chapterTitle = chapter.title,
             draft = drafts.latestDraft(chapterId),
-            phase = workflow.getChapterProgress(chapterId).phase,
-            // P1-02c+d：AI 待审工作产物（WorkingDraft）——按 Project 内的章节工作产物投影；
-            // 它是 WorkingDraftId（非 DraftId），只投影**正文**，不伪装成 Draft。
-            pendingWorkingContent = pendingWorkingContent(guard { projects.projectOf(novelId) }.projectId, chapterId),
+            phase = progress.phase,
+            waitingForUser = progress.waitingForUser,
+            pendingWorkingContent = pending?.content,
+            // 只有 Gate 仍 PENDING 时才投影候选/原文/Diff；已拒绝的候选不再作为待审内容展示。
+            pendingProposal = pending
+                ?.takeIf { progress.waitingForUser }
+                ?.let { proposalOf(it) },
         )
     }
 
-    /** 该章节当前 AI 待审工作产物正文（无 / 已丢弃 → null）。 */
-    private fun pendingWorkingContent(projectId: com.qianyan.model.ProjectId, chapterId: ChapterId): String? =
+    /** 该章节**最新创建**的 AI 待审工作产物（无 / 已丢弃 → null；同时间按 id 稳定）。 */
+    private fun latestWorking(projectId: com.qianyan.model.ProjectId, chapterId: ChapterId): WorkingDraft? =
         guard { workingDrafts.list(projectId) }
-            .lastOrNull { it.target.chapterId == chapterId && !it.status.isTerminal }
-            ?.content
+            .filter { it.target.chapterId == chapterId && !it.status.isTerminal }
+            .maxWithOrNull(compareBy({ it.createdAt }, { it.workingDraftId.value }))
+
+    /** 候选审查投影：原文（基线） + 候选正文 + 既有 TextDiffer 行级 Diff。 */
+    private fun proposalOf(working: WorkingDraft): WriterPendingProposal {
+        val baseContent = working.base.baseDraftId
+            ?.let { baseDraftId -> drafts.draft(baseDraftId)?.content }
+            .orEmpty()
+        return WriterPendingProposal(
+            baseContent = baseContent,
+            candidateContent = working.content,
+            diff = TextDiffer.diff(baseContent, working.content),
+        )
+    }
 
     /** **作者手动保存正文**（P1-01f「保存即批准」）：保存后经既有 [CommitUseCases] 形成 **Canonical Commit**
      *  （同一 DB 事务：正文与 Canonical 一起成功或一起回滚）。
-     *  AI 产出**不走**本入口（continue / rewrite 走既有 Workflow / Critique+Revision），因此不会被自动 Canonical 化。 */
+     *  AI 产出**不走**本入口（continue / rewrite 走既有 Workflow + Human Gate），因此不会被自动 Canonical 化。 */
     override fun saveContent(draftId: DraftId, content: String): Draft {
         commits.commitAuthorSave(draftId, content)
         return drafts.draft(draftId)
@@ -102,18 +126,80 @@ class WriterFacade(
         return progress
     }
 
+    /** 拒绝当前待决 Gate（薄委托既有章节 Workflow reject；Canonical 不变）。 */
+    override fun rejectGate(chapterId: ChapterId): ChapterWorkflowProgress = workflow.reject(chapterId)
+
     /**
-     * AI 改写：对章节最新 Draft 复用既有 Critique → Revision（新 draftId、status=REVISED，原稿不破坏）。
-     * 无 Draft → [ApplicationError.EntityNotFound]（不伪造草稿）。
+     * AI 改写：对章节最新 Draft 复用既有 Critique → Revision，但产物进入 **WorkingDraft**，
+     * 再经既有章节 Workflow 进入 **CONFIRMATION → Human Gate**。
+     *
+     * 硬保证：本入口**不写** `ChapterDraft`、不产生 Canonical；只有人工批准后才由既有
+     * Change/Commit 链形成正式正文。原稿在批准前保持不变。
      */
-    override fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): Draft {
+    override fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress {
         val current = drafts.latestDraft(chapterId)
             ?: throw ApplicationException(ApplicationError.EntityNotFound("章节 $chapterId 尚无 Draft，无法改写"))
+        // 已有未决候选 / 工作流仍在进行 ⇒ 先收敛当前轮次，避免并行提案与无谓 LLM 调用。
+        val progress = workflow.getChapterProgress(chapterId)
+        if (progress.waitingForUser) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation("chapter $chapterId 已有待确认的 AI 提案，请先批准或拒绝"),
+            )
+        }
+        when (progress.phase) {
+            ChapterPhase.PLANNING,
+            ChapterPhase.WRITING,
+            ChapterPhase.REVIEWING,
+            ChapterPhase.REVISING,
+            ChapterPhase.UPDATING_STORY,
+            -> throw ApplicationException(
+                ApplicationError.InvalidOperation(
+                    "chapter $chapterId 当前工作流仍在进行（${progress.phase.name}），请先继续或恢复",
+                ),
+            )
+            else -> Unit
+        }
+        val projectId = guard { projects.projectOf(novelId) }.projectId
+        // 先建工作产物（基线 = 当前 Draft），修订结果写回同一 WorkingDraft（不产生新 Draft 行）。
+        val working = workingDrafts.create(
+            projectId = projectId,
+            target = WorkingDraftTarget(novelId, chapterId, variantId),
+            content = current.content,
+            baseDraftId = current.draftId,
+        )
         val verdict = critique.execute(taskManager.create(TaskType.WRITING), current)
-        val revised = revision.execute(taskManager.create(TaskType.WRITING), current, verdict)
-        return drafts.stampControlledMarkdown(revised)
+        val revised = revision.reviseWorking(
+            taskManager.create(TaskType.WRITING),
+            working.workingDraftId.value,
+            current.content,
+            verdict,
+            novelId,
+        )
+        workingDrafts.replace(working.workingDraftId, revised)
+        // 无实际变化 ⇒ 不建立无法提交的 Human Gate（Commit 会以 NO_CHANGES 拒绝）。
+        if (revised == current.content) {
+            workingDrafts.discard(working.workingDraftId)
+            throw ApplicationException(
+                ApplicationError.InvalidOperation("AI 改写未产生实际变化，未进入人工确认"),
+            )
+        }
+        workflow.startChapter(novelId, variantId, chapterId, WorkflowKind.REWRITE_CHAPTER)
+        return try {
+            workflow.proposeRewrite(chapterId, working.workingDraftId)
+        } catch (t: Throwable) {
+            // 提案失败不得留下无 Gate 的孤儿候选污染后续投影。
+            runCatching { workingDrafts.discard(working.workingDraftId) }
+            throw t
+        }
     }
 }
+
+/** AI 候选审查投影（原文 + 候选 + 行级 Diff；不是 Draft，也不可直接保存）。 */
+data class WriterPendingProposal(
+    val baseContent: String,
+    val candidateContent: String,
+    val diff: TextDiff,
+)
 
 /** Writer 用户层上下文（章节信息 + 最新 Draft + 阶段投影；不含 Repository / Agent / Workflow 内部对象）。 */
 data class WriterChapterContext(
@@ -125,12 +211,16 @@ data class WriterChapterContext(
     val draft: Draft?,
     /** durable Workflow 阶段投影（[ChapterPhase]；无 Workflow → NOT_STARTED）。 */
     val phase: ChapterPhase,
+    /** 当前是否停在**未决** Human Gate（已拒绝/已批准后收敛中均为 false）。 */
+    val waitingForUser: Boolean = false,
     /**
      * P1-02c+d：AI **待审工作产物**正文（WorkingDraft）。
      * 它不是章节 Draft（无 DraftId、不可直接保存）；作者批准（人工门）后经正式 Commit 才产生 Canonical 载体 Draft。
      * 无待审工作产物 → null。
      */
     val pendingWorkingContent: String? = null,
+    /** 审批前的候选审查投影；仅当 Gate 仍 PENDING 时非空（已拒绝的候选不再作为待审内容展示）。 */
+    val pendingProposal: WriterPendingProposal? = null,
 )
 
 /**
@@ -142,5 +232,8 @@ interface WriterGateway {
     fun loadContext(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): WriterChapterContext
     fun saveContent(draftId: DraftId, content: String): Draft
     fun continueWriting(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress
-    fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): Draft
+    /** AI 改写 ⇒ WorkingDraft + Human Gate（批准前不产生 Draft / Canonical）。 */
+    fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress
+    /** 拒绝当前待决 Gate（幂等；委托既有章节 Workflow 生产入口）。 */
+    fun rejectGate(chapterId: ChapterId): ChapterWorkflowProgress
 }

@@ -182,7 +182,16 @@ data class CommitHistoryEntry(
  * 必须先经既有 Human Gate 得到 `RESOLVED + APPROVED`，本凭据只是那一决议的**引用**。
  */
 @Serializable
-data class CommitApproval(val gateId: WorkflowHumanGateId)
+data class CommitApproval(
+    val gateId: WorkflowHumanGateId,
+    /**
+     * P0-3B D8 · 显式兼容开关（**仅限测试 / 历史兼容场景**）：
+     * 无 WorkflowStep 绑定的 Gate 一律不得用于正式 Commit；置 true 表示调用方明确知晓并
+     * 接受"无 Step 绑定 Gate"的兼容语义（生产装配路径恒为 false，不得置 true）。
+     * Gate 复用检查（同 Gate 不得提交不同 Artifact）不受本开关影响，始终执行。
+     */
+    val allowUnboundGate: Boolean = false,
+)
 
 /**
  * Commit 预备结果（`prepareCommit` 产物）：**事实**，不是执行命令。
@@ -215,6 +224,12 @@ data class CommitResult(
     val resultingDraftId: DraftId,
     val createdAt: Instant,
     val historyEntry: CommitHistoryEntry,
+    /**
+     * P0-3B D9 · 事务后收尾警告（非致命）：Commit 本身已**成功**（CommitHistory 为准），
+     * 但事务外的收尾动作（WorkingDraft 丢弃 / World Model 更新）失败时记录原因；
+     * 调用方据此识别真实提交结果，而不是把成功提交误报为失败。
+     */
+    val postCommitWarning: String? = null,
 )
 
 /**
@@ -288,6 +303,9 @@ object CommitErrorCodes {
 
     /** I2 ActionPolicy 判定为 `NeedsHuman`，但未提供（或未通过）既有 Human Gate 的批准凭据。 */
     const val HUMAN_APPROVAL_REQUIRED: String = "HUMAN_APPROVAL_REQUIRED"
+
+    /** 批准的 Gate 与待提交 Artifact 的 Workflow / Chapter / WorkingDraft 绑定不一致（或 Gate 已用于其他 Artifact）。 */
+    const val GATE_TARGET_MISMATCH: String = "GATE_TARGET_MISMATCH"
 
     /** 调用方传入的 Project 与目标对象不一致（越界统一表现为不存在，不泄漏存在性）。 */
     const val PROJECT_SCOPE_MISMATCH: String = "PROJECT_SCOPE_MISMATCH"

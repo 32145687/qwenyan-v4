@@ -13,6 +13,8 @@ import com.qianyan.model.context.ContextRequest
 import com.qianyan.model.context.ContextSelection
 import com.qianyan.model.context.ContextSelector
 import com.qianyan.model.context.ContextSizeEstimators
+import com.qianyan.model.context.ContextSourceKind
+import com.qianyan.model.VariantId
 import kotlinx.datetime.Clock
 import kotlinx.datetime.Instant
 
@@ -42,13 +44,32 @@ class ContextEngineUseCases(
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
+    /** 当前 Engine 配置的 Source 类型（供 Skill.requiredContext 的生产一致性校验）。 */
+    val sourceKinds: Set<ContextSourceKind> = sources.map { it.kind }.toSet()
+
     /**
      * 构建一次 Context Pack（确定性；同输入 ⇒ 同 packVersion ⇒ 同 items）。
      *
      * @throws ApplicationError.InvalidOperation 非法 budget / 候选边界 / 未知尺寸估算器。
      * @throws ApplicationError.EntityNotFound Project 不存在、Session 不属于该 Project、焦点章节越界。
      */
-    fun build(request: ContextRequest): ContextPack {
+    fun build(request: ContextRequest): ContextPack = buildInternal(request, projectVariant = true, variantOverride = null)
+
+    /**
+     * 同一 Engine 入口的内部 Variant 重载：旧 Task/Workflow 显式携带 Variant，
+     * 但 ProjectState 未切换 active Variant。只供 Application 内部旧执行链使用。
+     *
+     * 复用同一 Source / Selector / 版本指纹，不构成第二套 Context 构建；
+     * Agent 任务仍走 [build]（以 ProjectState 为准，J-3 fail-fast）。
+     */
+    internal fun build(request: ContextRequest, variantOverride: VariantId?): ContextPack =
+        buildInternal(request, projectVariant = false, variantOverride = variantOverride)
+
+    private fun buildInternal(
+        request: ContextRequest,
+        projectVariant: Boolean,
+        variantOverride: VariantId?,
+    ): ContextPack {
         requireValid(request)
 
         val estimator = ContextSizeEstimators.of(request.budget.estimator)
@@ -75,24 +96,25 @@ class ContextEngineUseCases(
             chapterId
         }
 
+        val activeVariantId = if (projectVariant) project.state.activeVariantId else variantOverride
         val scope = ContextBuildScope(
             projectId = project.projectId,
             novelId = project.novelId,
-            activeVariantId = project.state.activeVariantId,
+            activeVariantId = activeVariantId,
             state = project.state,
             focusChapterId = focusChapterId,
         )
 
         val candidates = sources.flatMap { source -> guard { source.candidates(scope, request) } }
         val selection: ContextSelection = ContextSelector.select(candidates, request.budget, estimator)
-        val version = ContextPackVersion.of(request, project.novelId, project.state.activeVariantId, selection)
+        val version = ContextPackVersion.of(request, project.novelId, activeVariantId, selection)
 
         return ContextPack(
             packId = "ctx-${project.projectId.value}-${request.purpose.name.lowercase()}-" +
                 "${focusChapterId?.value ?: "none"}-$version",
             request = request.copy(focusChapterId = focusChapterId),
             novelId = project.novelId,
-            activeVariantId = project.state.activeVariantId,
+            activeVariantId = activeVariantId,
             items = selection.items,
             budgetGuard = selection.budgetGuard,
             packVersion = version,

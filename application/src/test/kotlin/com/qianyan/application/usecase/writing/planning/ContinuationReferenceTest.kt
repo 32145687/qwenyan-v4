@@ -86,7 +86,7 @@ class ContinuationReferenceTest {
         val novelId = app.novels.createOriginal(title = "仙侠")
 
         val ch1 = createChapter(app, novelId, null, VariantScope.ORIGINAL, "e2e-ch1")
-        val draft1 = createFinal(app, ch1.chapterId, novelId, null, "e2e-d1")
+        val draft1 = createCanonical(app, ch1.chapterId, novelId, null, "e2e-d1")
 
         val ref = ContinuationReference(ch1.chapterId, draft1.draftId)
         val plan2 = app.taskRunner.executePlanning(app.tasks.create(TaskType.PLANNING), request(novelId), ref)
@@ -107,7 +107,7 @@ class ContinuationReferenceTest {
         val app = ApplicationContainer.open(analysisGateway = gateway())
         val novelId = app.novels.createOriginal(title = "仙侠")
         val ch1 = createChapter(app, novelId, null, VariantScope.ORIGINAL, "t2-ch1")
-        val draft1 = createFinal(app, ch1.chapterId, novelId, null, "t2-d1")
+        val draft1 = createCanonical(app, ch1.chapterId, novelId, null, "t2-d1")
 
         val ref = ContinuationReference(ch1.chapterId, draft1.draftId)
         val resolved = app.continuationResolver.resolve(request(novelId), ref)
@@ -233,9 +233,9 @@ class ContinuationReferenceTest {
         val app = ApplicationContainer.open(analysisGateway = gateway())
         val novelId = app.novels.createOriginal(title = "仙侠")
         val ch1 = createChapter(app, novelId, null, VariantScope.ORIGINAL, "t8-ch1")
-        val draft1 = createFinal(app, ch1.chapterId, novelId, null, "t8-d1")
+        val draft1 = createCanonical(app, ch1.chapterId, novelId, null, "t8-d1")
         val ch2 = createChapter(app, novelId, null, VariantScope.ORIGINAL, "t8-ch2")
-        createFinal(app, ch2.chapterId, novelId, null, "t8-d2") // 更新的 Draft 存在
+        createFinal(app, ch2.chapterId, novelId, null, "t8-d2") // 更新的 Draft 存在（非 Canonical）
 
         val ref = ContinuationReference(ch1.chapterId, draft1.draftId)
         val resolved = app.continuationResolver.resolve(request(novelId), ref)
@@ -278,16 +278,70 @@ class ContinuationReferenceTest {
         val app = ApplicationContainer.open(analysisGateway = gateway(captured))
         val novelId = app.novels.createOriginal(title = "仙侠")
         val ch1 = createChapter(app, novelId, null, VariantScope.ORIGINAL, "t10-ch1")
-        val draft1 = createFinal(app, ch1.chapterId, novelId, null, "t10-d1")
+        val draft1 = createCanonical(
+            app, ch1.chapterId, novelId, null, "t10-d1",
+            content = "第一章正典正文A",
+        )
 
         val ref = ContinuationReference(ch1.chapterId, draft1.draftId)
+        captured.clear() // createCanonical 的 World Model Update 也会走同一 Mock；只保留本次 Planning 的输入
         app.taskRunner.executePlanning(app.tasks.create(TaskType.PLANNING), request(novelId), ref)
 
-        assertTrue(captured.isNotEmpty())
-        val rendered = captured.first()
+        assertEquals(1, captured.size, "本次 Planning 应恰好调用一次 Planner LLM")
+        val rendered = captured.single()
         assertTrue(rendered.contains("【续篇来源】"), "Planner 输入应包含续篇来源标记")
         assertTrue(rendered.contains(ch1.chapterId.value), "Planner 输入应包含 sourceChapterId")
         assertTrue(rendered.contains(draft1.draftId.value), "Planner 输入应包含 sourceDraftId")
+        assertTrue(rendered.contains("【前章 Canonical 摘录】"), "Planner 输入应包含前章 Canonical 摘录")
+        assertTrue(rendered.contains("第一章正典正文A"), "Planner 输入应包含前章 Canonical 正文")
+    }
+
+    /* ====================================================================
+     * Test 11 — 过期 reference：续篇建立后，新 Canonical carrier 出现 → 必须拒绝
+     * ==================================================================== */
+    @Test
+    fun `test11 resolver rejects stale reference after canonical carrier changes`() {
+        val app = ApplicationContainer.open(analysisGateway = gateway())
+        val novelId = app.novels.createOriginal(title = "仙侠")
+        val ch1 = createChapter(app, novelId, null, VariantScope.ORIGINAL, "t11-ch1")
+        val oldCarrier = createCanonical(app, ch1.chapterId, novelId, null, "t11-a")
+        val newCarrier = createFinal(
+            app, ch1.chapterId, novelId, null, "t11-b",
+            status = DraftStatus.CONFIRMED, content = "新的正典正文B",
+        )
+        app.commits.commitAuthorSave(newCarrier.draftId, newCarrier.content)
+        assertEquals(newCarrier.draftId, app.canonicalRead.committedDraft(ch1.chapterId)!!.draftId)
+
+        val ex = assertFailsWith<ApplicationException> {
+            app.continuationResolver.resolve(
+                request(novelId),
+                ContinuationReference(ch1.chapterId, oldCarrier.draftId),
+            )
+        }
+        assertIs<ApplicationError.InvalidContinuationSource>(ex.error)
+    }
+
+    /* ====================================================================
+     * Test 12 — reference 指向未提交的 FINAL Draft → 必须拒绝
+     * ==================================================================== */
+    @Test
+    fun `test12 resolver rejects uncommitted final draft`() {
+        val app = ApplicationContainer.open(analysisGateway = gateway())
+        val novelId = app.novels.createOriginal(title = "仙侠")
+        val ch1 = createChapter(app, novelId, null, VariantScope.ORIGINAL, "t12-ch1")
+        createCanonical(app, ch1.chapterId, novelId, null, "t12-a")
+        val uncommitted = createFinal(
+            app, ch1.chapterId, novelId, null, "t12-b",
+            status = DraftStatus.FINAL, content = "未提交的最终稿",
+        )
+
+        val ex = assertFailsWith<ApplicationException> {
+            app.continuationResolver.resolve(
+                request(novelId),
+                ContinuationReference(ch1.chapterId, uncommitted.draftId),
+            )
+        }
+        assertIs<ApplicationError.InvalidContinuationSource>(ex.error)
     }
 
     /* ---- helper ---- */
@@ -319,14 +373,28 @@ class ContinuationReferenceTest {
     private fun createFinal(
         app: ApplicationContainer, chapterId: ChapterId, novelId: NovelId,
         variantId: VariantId?, id: String, status: DraftStatus = DraftStatus.FINAL,
+        content: String = "正文",
     ): Draft {
         val now = Clock.System.now()
         val draft = Draft(
             draftId = DraftId(id), novelId = novelId, variantId = variantId,
-            chapterId = chapterId, content = "正文", status = status,
+            chapterId = chapterId, content = content, status = status,
             createdAt = now, updatedAt = now,
         )
         app.draftRepository.save(draft)
         return draft
+    }
+
+    /** 真实 Canonical：已确认载体 + CommitHistory（经唯一作者保存入口），供续篇解析。 */
+    private fun createCanonical(
+        app: ApplicationContainer, chapterId: ChapterId, novelId: NovelId,
+        variantId: VariantId?, id: String, content: String = "正文",
+    ): Draft {
+        val draft = createFinal(
+            app, chapterId, novelId, variantId, id,
+            status = DraftStatus.CONFIRMED, content = content,
+        )
+        app.commits.commitAuthorSave(draft.draftId, content)
+        return app.draftRepository.getById(draft.draftId)!!
     }
 }

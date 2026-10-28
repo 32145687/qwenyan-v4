@@ -89,6 +89,11 @@ data class ContextItem(
     val ref: ContextItemRef? = null,
     val sourceVersion: String = "",
     val reason: String = "",
+    /**
+     * Phase 4B.1：类型化载荷（Addendum canonical-v1）。additive 可选字段；
+     * **不参与** `(source, refKey)` 唯一性；只允许由 Source 从同一领域对象构造。
+     */
+    val payload: ContextPayload? = null,
 )
 
 // ---- 预算 ----
@@ -200,43 +205,83 @@ data class ContextPack(
 // ---- 纯函数：选择 ----
 
 /**
- * 确定性选择器（§11 / §12 / §13）：候选 → 优先级排序 → 预算裁剪 → 入选。
+ * 确定性选择器（§11 / §12 / §13；Phase 4B.1 两阶段预算）。
  *
  * 规则（全部确定性、无 LLM / 无随机 / 无时间）：
- *  1. 依据 [ContextPriority.rank] **稳定排序**（同级保持候选声明顺序）；
- *  2. 逐条按序累加估算尺寸；**单条超预算 → 淘汰该条并继续**（不中断：小体积高价值条目仍可入选）；
- *  3. 淘汰条目全部记录在 [ContextBudgetGuard.omittedItemIds]（可解释）。
+ *  1. 按 `itemId`（`source:refKey`）去重，保留声明顺序中的首个；重复项进入 omitted；
+ *  2. 依据 [ContextPriority.rank] **稳定排序**（同级保持候选声明顺序）；
+ *  3. **阶段 1（关键来源）**：`NOVEL → STORY_FOUNDATION → VOCABULARY`，按来源声明顺序逐条尝试；
+ *     能放入剩余预算 ⇒ 入选；单条超剩余预算 ⇒ 淘汰该条并继续（不中断）；
+ *  4. **阶段 2（普通来源）**：其余来源按 `priority.rank` 稳定排序，用剩余预算选择，规则同上；
+ *  5. 最终 [ContextSelection.items] 仍按 `priority.rank` 稳定顺序输出（不改为"关键优先"排列）；
+ *  6. 淘汰条目按"重复项（声明顺序）+ 关键淘汰（关键顺序）+ 普通淘汰（既有顺序）"记录，去重保留首次出现位置。
  */
 object ContextSelector {
+
+    /** 关键来源的确定性顺序（Phase 4A J-2 冻结）。 */
+    private val KEY_SOURCES = listOf(
+        ContextSourceKind.NOVEL,
+        ContextSourceKind.STORY_FOUNDATION,
+        ContextSourceKind.VOCABULARY,
+    )
 
     fun select(
         candidates: List<ContextItem>,
         budget: ContextBudget,
         estimator: ContextSizeEstimator = ApproxTokenSizeEstimator,
     ): ContextSelection {
-        val ordered = candidates.sortedBy { it.priority.rank }
-        var remaining = budget.maxTokens
-        val kept = mutableListOf<ContextItem>()
-        val omitted = mutableListOf<String>()
+        // D2 / AC-10：同一 itemId（= source:refKey）只允许入选一次；重复候选按声明顺序保留首个。
+        val duplicates = mutableListOf<String>()
+        val seen = mutableSetOf<String>()
+        val unique = mutableListOf<ContextItem>()
+        candidates.forEach { item ->
+            if (seen.add(item.itemId)) unique += item else duplicates += item.itemId
+        }
 
-        for (item in ordered) {
+        val ordered = unique.sortedBy { it.priority.rank }
+        val selected = BooleanArray(ordered.size)
+        var remaining = budget.maxTokens
+        val omitted = duplicates.toMutableList()
+
+        // 阶段 1：关键来源（顺序固定；同一来源内保持候选声明顺序）
+        for (kind in KEY_SOURCES) {
+            for (index in ordered.indices) {
+                val item = ordered[index]
+                if (item.source != kind) continue
+                val size = estimator.estimate(item.content)
+                if (size in 0..remaining) {
+                    selected[index] = true
+                    remaining -= size
+                } else {
+                    omitted += item.itemId
+                }
+            }
+        }
+
+        // 阶段 2：普通来源（既有 priority 稳定顺序）
+        val keySources = KEY_SOURCES.toSet()
+        for (index in ordered.indices) {
+            val item = ordered[index]
+            if (item.source in keySources) continue
             val size = estimator.estimate(item.content)
             if (size in 0..remaining) {
-                kept += item
+                selected[index] = true
                 remaining -= size
             } else {
                 omitted += item.itemId
             }
         }
 
+        val kept = ordered.filterIndexed { index, _ -> selected[index] }
+        val omittedIds = omitted.distinct() // 保留首次出现位置；不改变选择结果
         return ContextSelection(
             items = kept,
             budgetGuard = ContextBudgetGuard(
                 budgetTokens = budget.maxTokens,
                 estimatedTokens = budget.maxTokens - remaining,
-                isTruncated = omitted.isNotEmpty(),
-                omittedItemIds = omitted,
-                omittedCount = omitted.size,
+                isTruncated = omittedIds.isNotEmpty(),
+                omittedItemIds = omittedIds,
+                omittedCount = omittedIds.size,
             ),
         )
     }
@@ -275,7 +320,8 @@ object ContextPackVersion {
                     .append(item.source.name).append('#')
                     .append(item.priority.name).append('#')
                     .append(item.sourceVersion).append('#')
-                    .append(item.content).append(';')
+                    .append(item.content).append('#')
+                    .append(ContextPayloadCanonical.encode(item.payload)).append(';')
             }
             append('|')
             append(selection.budgetGuard.omittedItemIds.joinToString(","))

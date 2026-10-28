@@ -1,6 +1,7 @@
 package com.qianyan.app.desktop.ui.pages
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,19 +31,24 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.qianyan.app.desktop.ui.ActionButton
+import com.qianyan.app.desktop.ui.ActionLevel
 import com.qianyan.app.desktop.ui.DesktopAppState
 import com.qianyan.app.desktop.ui.EmptyState
 import com.qianyan.app.desktop.ui.HLine
 import com.qianyan.app.desktop.ui.ListRow
 import com.qianyan.app.desktop.ui.LoadingState
-import com.qianyan.app.desktop.ui.NavItem
+import com.qianyan.app.desktop.ui.Workspace
 import com.qianyan.app.desktop.ui.PageHeader
 import com.qianyan.app.desktop.ui.PendingNote
+import com.qianyan.app.desktop.ui.QuietField
 import com.qianyan.app.desktop.ui.QianyanTabs
 import com.qianyan.app.desktop.ui.SectionLabel
 import com.qianyan.app.desktop.ui.SourceNote
 import com.qianyan.app.desktop.ui.Tag
+import com.qianyan.app.desktop.ui.UiCard
 import com.qianyan.app.desktop.ui.chapterTitleOnly
+import com.qianyan.app.desktop.ui.consumeClicks
 import com.qianyan.app.desktop.ui.formatCount
 import com.qianyan.app.desktop.ui.preview
 import com.qianyan.app.desktop.ui.shortTime
@@ -61,6 +67,7 @@ import com.qianyan.model.core.VariantContext
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.task.Task
 import com.qianyan.model.taskqueue.TaskQueueItem
+import com.qianyan.model.WorldRuleId
 import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
 
@@ -85,6 +92,7 @@ fun ChaptersPage(state: DesktopAppState) {
     var chapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var draftInfo by remember { mutableStateOf<Map<String, Pair<String?, Int>>>(emptyMap()) }
     var loading by remember { mutableStateOf(true) }
+    var creating by remember { mutableStateOf(false) }
 
     EnableListKeys(state)
 
@@ -112,22 +120,28 @@ fun ChaptersPage(state: DesktopAppState) {
         ws.registerList(chapters.size) { index ->
             val ch = chapters.getOrNull(index) ?: return@registerList
             ws.select(WorkspaceSelection.chapter(state.novel!!.projectId, state.novel!!.novelId, ch.chapterId))
-            state.nav = NavItem.WRITE
+            state.nav = Workspace.WRITE
         }
     }
 
     Column(Modifier.fillMaxSize()) {
-        PageHeader("章节", meta = if (chapters.isEmpty()) null else "共 ${chapters.size} 章")
+        PageHeader(
+            "章节",
+            meta = if (chapters.isEmpty()) null else "共 ${chapters.size} 章",
+            actions = {
+                ActionButton("新建章节", ActionLevel.PRIMARY, !state.busy) { creating = true }
+            },
+        )
 
         when {
             state.novel == null -> Box(Modifier.padding(QianyanDimens.PageX)) {
-                EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             }
 
             loading -> Box(Modifier.padding(QianyanDimens.PageX)) { LoadingState() }
 
             chapters.isEmpty() -> Box(Modifier.padding(QianyanDimens.PageX)) {
-                EmptyState("还没有章节", "这部作品还没有章节")
+                EmptyState("还没有章节", "点右上角「新建章节」开始，或导入 TXT 自动建立章节")
             }
 
             else -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(vertical = 4.dp)) {
@@ -144,7 +158,7 @@ fun ChaptersPage(state: DesktopAppState) {
                         onClick = {
                             ws.listIndex = index
                             ws.select(WorkspaceSelection.chapter(state.novel!!.projectId, state.novel!!.novelId, ch.chapterId))
-                            state.nav = NavItem.WRITE
+                            state.nav = Workspace.WRITE
                         },
                     )
                 }
@@ -155,6 +169,85 @@ fun ChaptersPage(state: DesktopAppState) {
                     color = palette.text3,
                     modifier = Modifier.padding(horizontal = QianyanDimens.PageX),
                 )
+            }
+        }
+    }
+
+    if (creating) {
+        CreateChapterDialog(state) { creating = false }
+    }
+}
+
+/**
+ * 新建章节：追加到当前作品末尾（走既有 `chapters.createNextChapter`）。
+ * 只收集标题；章节内容仍在正文页生成 / 编辑。
+ */
+@Composable
+private fun CreateChapterDialog(state: DesktopAppState, onClose: () -> Unit) {
+    val palette = QianyanTheme.palette
+    val novel = state.novel
+    var title by remember { mutableStateOf("") }
+    var working by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        state.modalOpen = true
+        onDispose { state.modalOpen = false }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier.fillMaxSize()
+                .background(Color.Black.copy(alpha = if (QianyanTheme.isDark) 0.55f else 0.32f))
+                .clickable { if (!working) onClose() },
+        )
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.width(420.dp)
+                    .clip(RoundedCornerShape(QianyanShapes.r3))
+                    .background(palette.raised)
+                    .consumeClicks()
+                    .padding(18.dp),
+            ) {
+                Text("新建章节", style = MaterialTheme.typography.titleLarge, color = palette.text)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "在《${novel?.title ?: "未打开作品"}》末尾追加一章；标题可留空，正文在「正文」页写。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text3,
+                )
+                Spacer(Modifier.height(14.dp))
+                QuietField(
+                    value = title,
+                    onValueChange = { title = it },
+                    placeholder = "章节标题（可留空）",
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ActionButton("取消", ActionLevel.TEXT, !working, onClose)
+                    Spacer(Modifier.width(8.dp))
+                    ActionButton("创建", ActionLevel.PRIMARY, novel != null && !working && !state.busy) {
+                        val target = novel ?: return@ActionButton
+                        working = true
+                        state.io(
+                            then = { chapter ->
+                                working = false
+                                onClose()
+                                state.workspace.select(
+                                    WorkspaceSelection.chapter(target.projectId, target.novelId, chapter.chapterId),
+                                )
+                                state.openWorkspace(Workspace.WRITE, 0)
+                                state.toast("已创建第 ${chapter.order} 章")
+                            },
+                            onFailure = { working = false },
+                        ) {
+                            state.container.chapters.createNextChapter(
+                                title = title.trim().ifBlank { "未命名" },
+                                novelId = target.novelId,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -222,7 +315,7 @@ fun CharactersPage(state: DesktopAppState) {
 
         when {
             state.novel == null -> Box(Modifier.padding(QianyanDimens.PageX)) {
-                EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             }
 
             loading -> Box(Modifier.padding(QianyanDimens.PageX)) { LoadingState() }
@@ -317,6 +410,128 @@ fun CharactersPage(state: DesktopAppState) {
 }
 
 /**
+ * 资料 · 总览（HTML 对齐版）：人物与世界规则的暖白卡片墙。
+ *
+ * 数据全部来自既有 Story State（人物档案 / 世界规则），点击卡片把 Workspace 当前对象
+ * 切到该条目并进入对应详情页；不新增业务能力。
+ */
+@Composable
+fun MaterialsOverview(state: DesktopAppState) {
+    val palette = QianyanTheme.palette
+    var characters by remember { mutableStateOf<List<Character>>(emptyList()) }
+    var rules by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(state.novel?.novelId, state.refreshKey) {
+        val novelId = state.novel?.novelId
+        if (novelId == null) {
+            loading = false
+            return@LaunchedEffect
+        }
+        loading = true
+        state.load {
+            characters = it.storyState.listCharacters(novelId, null)
+            rules = it.storyState.listWorldRules(novelId, null)
+                .map { r -> r.ruleId.value to r.content }
+                .filter { (_, content) -> content.isNotBlank() }
+        }
+        loading = false
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        PageHeader(
+            "资料",
+            meta = if (state.novel == null) null else "人物 ${characters.size} · 世界规则 ${rules.size}",
+        )
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
+            when {
+                state.novel == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
+                loading -> LoadingState()
+                else -> {
+                    SectionLabel("人物 · ${characters.size}")
+                    if (characters.isEmpty()) {
+                        EmptyState("还没有人物", "Story State 里还没有人物档案")
+                    } else {
+                        characters.chunked(2).forEach { pair ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                                pair.forEach { person ->
+                                    UiCard(
+                                        modifier = Modifier.weight(1f),
+                                        title = person.name,
+                                        meta = "人物",
+                                        tags = (person.personality + person.goals).filter { it.isNotBlank() }.take(2),
+                                        onClick = {
+                                            state.workspace.select(
+                                                WorkspaceSelection.character(
+                                                    state.novel!!.projectId,
+                                                    state.novel!!.novelId,
+                                                    person.characterId,
+                                                ),
+                                            )
+                                            state.openWorkspace(Workspace.MATERIALS, 1)
+                                        },
+                                    ) {
+                                        if (person.description.isNotBlank()) {
+                                            Spacer(Modifier.height(9.dp))
+                                            Text(
+                                                person.description,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = palette.text2,
+                                                maxLines = 3,
+                                            )
+                                        }
+                                    }
+                                }
+                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                            Spacer(Modifier.height(13.dp))
+                        }
+                    }
+
+                    Spacer(Modifier.height(9.dp))
+                    SectionLabel("世界观 · ${rules.size}")
+                    if (rules.isEmpty()) {
+                        EmptyState("还没有世界规则", "Story State 里还没有世界规则记录")
+                    } else {
+                        rules.chunked(2).forEach { pair ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                                pair.forEach { (id, content) ->
+                                    UiCard(
+                                        modifier = Modifier.weight(1f),
+                                        title = preview(content, 42),
+                                        meta = "世界规则",
+                                        onClick = {
+                                            state.workspace.select(
+                                                WorkspaceSelection(
+                                                    projectId = state.novel!!.projectId,
+                                                    kind = WorkspaceObjectKind.WORLD_RULE,
+                                                    novelId = state.novel!!.novelId,
+                                                    worldRuleId = WorldRuleId(id),
+                                                ),
+                                            )
+                                            state.openWorkspace(Workspace.MATERIALS, 2)
+                                        },
+                                    ) {}
+                                }
+                                if (pair.size == 1) Spacer(Modifier.weight(1f))
+                            }
+                            Spacer(Modifier.height(13.dp))
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "以上为只读展示：数据来自既有 Story State；点击卡片会把「当前对象」切到该条目。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.text3,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
  * 12.7 · 任务（IDE 任务列表：按状态分组，不做卡片墙、不做进度环）。
  *
  * 状态语义来自既有 `Task` / `TaskQueueItem`；任务类型与状态映射为用户语言。
@@ -327,6 +542,7 @@ fun TasksPage(state: DesktopAppState) {
     val ws = state.workspace
     var rows by remember { mutableStateOf<List<Pair<TaskQueueItem?, Task>>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var cancelTarget by remember { mutableStateOf<Task?>(null) }
 
     EnableListKeys(state)
 
@@ -361,7 +577,7 @@ fun TasksPage(state: DesktopAppState) {
 
         when {
             state.projectId == null -> Box(Modifier.padding(QianyanDimens.PageX)) {
-                EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             }
 
             loading -> Box(Modifier.padding(QianyanDimens.PageX)) { LoadingState() }
@@ -388,6 +604,30 @@ fun TasksPage(state: DesktopAppState) {
                                 ws.listIndex = globalIndex
                                 ws.select(WorkspaceSelection.task(state.projectId!!, task.taskId, state.novel?.novelId))
                             },
+                            trailing = {
+                                val paused = task.status.name == "PAUSED" || item?.paused == true
+                                if (item != null) {
+                                    if (paused) {
+                                        ActionButton("恢复", ActionLevel.TEXT, !state.busy) {
+                                            state.io(then = { state.toast("已恢复任务") }) {
+                                                state.container.taskQueue.resume(task.taskId)
+                                                Unit
+                                            }
+                                        }
+                                    } else if (task.status.name == "RUNNING") {
+                                        ActionButton("暂停", ActionLevel.TEXT, !state.busy) {
+                                            state.io(then = { state.toast("已暂停任务") }) {
+                                                state.container.taskQueue.pause(task.taskId)
+                                                Unit
+                                            }
+                                        }
+                                    }
+                                }
+                                if (task.status.name !in setOf("CANCELLED", "COMPLETED", "FAILED")) {
+                                    Spacer(Modifier.width(2.dp))
+                                    ActionButton("取消", ActionLevel.TEXT, !state.busy) { cancelTarget = task }
+                                }
+                            },
                         )
                         (item?.lastError ?: task.error)?.takeIf { it.isNotBlank() }?.let { err ->
                             Text(
@@ -403,9 +643,74 @@ fun TasksPage(state: DesktopAppState) {
                 }
                 Spacer(Modifier.height(8.dp))
                 PendingNote(
-                    "tasks.start / pause / resume / cancel / complete / saveCheckpoint / restoreCheckpoint",
-                    "任务生命周期操作本轮未接入（状态机校验与终态保护由后端保证）。",
+                    "tasks.start / complete / saveCheckpoint / restoreCheckpoint",
+                    "任务启动 / 完成 / 检查点操作仍未接入；暂停、恢复、取消已接既有 TaskQueueUseCases。",
                 )
+            }
+        }
+    }
+
+    cancelTarget?.let { target ->
+        ConfirmCancelTaskDialog(state, target) { cancelTarget = null }
+    }
+}
+
+/** 取消任务确认（取消是不可撤销的操作，先确认再调用既有队列状态机）。 */
+@Composable
+private fun ConfirmCancelTaskDialog(state: DesktopAppState, task: Task, onClose: () -> Unit) {
+    val palette = QianyanTheme.palette
+    var working by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        state.modalOpen = true
+        onDispose { state.modalOpen = false }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier.fillMaxSize()
+                .background(Color.Black.copy(alpha = if (QianyanTheme.isDark) 0.55f else 0.32f))
+                .clickable { if (!working) onClose() },
+        )
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.width(420.dp)
+                    .clip(RoundedCornerShape(QianyanShapes.r3))
+                    .background(palette.raised)
+                    .consumeClicks()
+                    .padding(18.dp),
+            ) {
+                Text("取消任务", style = MaterialTheme.typography.titleLarge, color = palette.text)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "任务类型：${taskTypeLabel(task.type.name)}。排队中的任务会立即取消；执行中的任务只会在执行边界收敛为取消。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text3,
+                )
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ActionButton("返回", ActionLevel.TEXT, !working, onClose)
+                    Spacer(Modifier.width(8.dp))
+                    ActionButton("取消任务", ActionLevel.PRIMARY, !working && !state.busy) {
+                        working = true
+                        state.io(
+                            then = { disposition ->
+                                working = false
+                                onClose()
+                                state.toast(
+                                    if (disposition.name == "CANCELLATION_REQUESTED") {
+                                        "已请求取消，将在执行边界收敛"
+                                    } else {
+                                        "任务已取消"
+                                    },
+                                )
+                            },
+                            onFailure = { working = false },
+                        ) {
+                            state.container.taskQueue.cancel(task.taskId)
+                        }
+                    }
+                }
             }
         }
     }
@@ -461,7 +766,7 @@ fun HistoryPage(state: DesktopAppState) {
 
         when {
             state.projectId == null -> Box(Modifier.padding(QianyanDimens.PageX)) {
-                EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             }
 
             loading -> Box(Modifier.padding(QianyanDimens.PageX)) { LoadingState() }
@@ -473,54 +778,62 @@ fun HistoryPage(state: DesktopAppState) {
             }
 
             else -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
-                entries.reversed().forEachIndexed { reverseIndex, entry ->
-                    val index = entries.size - 1 - reverseIndex
-                    val selected = ws.selection?.historyId == entry.historyId
-                    Row(Modifier.fillMaxWidth()) {
-                        // 提交轴：节点 + 竖线
-                        Column(Modifier.width(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                            Box(
-                                Modifier.width(7.dp).height(7.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(if (selected) palette.accent else palette.lineStrong),
-                            )
-                            if (reverseIndex != entries.size - 1) {
-                                Box(Modifier.width(1.dp).height(38.dp).background(palette.line))
-                            }
-                        }
-                        Spacer(Modifier.width(10.dp))
-                        Column(
-                            Modifier.weight(1f)
-                                .clip(RoundedCornerShape(QianyanShapes.r))
+                Column(
+                    Modifier.fillMaxWidth()
+                        .clip(RoundedCornerShape(QianyanShapes.r3))
+                        .background(palette.raised)
+                        .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.r3)),
+                ) {
+                    entries.reversed().forEachIndexed { reverseIndex, entry ->
+                        val index = entries.size - 1 - reverseIndex
+                        val selected = ws.selection?.historyId == entry.historyId
+                        Row(
+                            Modifier.fillMaxWidth()
                                 .background(if (selected) palette.selection else Color.Transparent)
                                 .clickable {
                                     ws.listIndex = index
                                     ws.select(WorkspaceSelection.history(state.projectId!!, entry.historyId, state.novel?.novelId))
                                 }
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                entry.summary.ifBlank { statusLabel(entry.operation.name) },
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
-                                color = palette.text,
-                                maxLines = 2,
-                            )
-                            Spacer(Modifier.height(3.dp))
-                            Text(
-                                listOfNotNull(
-                                    statusLabel(entry.operation.name),
-                                    shortTime(entry.createdAt),
-                                    chapterTitles[entry.target.chapterId.value],
-                                ).joinToString("  ·  "),
-                                style = QianyanCodeStyle,
-                                color = palette.text3,
-                                maxLines = 1,
-                            )
+                            val time = shortTime(entry.createdAt)
+                            Column(Modifier.width(88.dp)) {
+                                Text(time.take(10), style = QianyanCodeStyle, color = palette.text3, maxLines = 1)
+                                Text(time.takeLast(5), style = QianyanCodeStyle, color = palette.text2, maxLines = 1)
+                            }
+                            Spacer(Modifier.width(14.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    entry.summary.ifBlank { statusLabel(entry.operation.name) },
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+                                    color = palette.text,
+                                    maxLines = 2,
+                                )
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    listOfNotNull(
+                                        chapterTitles[entry.target.chapterId.value],
+                                        entry.revertedHistoryId?.let { "回退提交" },
+                                    ).joinToString("  ·  ").ifBlank { "项目级提交" },
+                                    style = QianyanCodeStyle,
+                                    color = palette.text3,
+                                    maxLines = 1,
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Tag(statusLabel(entry.operation.name), palette.text2)
                         }
+                        if (reverseIndex != entries.size - 1) HLine(Modifier.padding(horizontal = 16.dp))
                     }
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "提交来自既有 I10 原子提交链路；回退入口尚未接入，不在 UI 上放假按钮。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.text3,
+                )
             }
         }
     }

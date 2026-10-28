@@ -166,7 +166,7 @@ internal fun approvedCommitGate(
             resolvedBy = if (status == HumanGateStatus.RESOLVED) "user" else null,
         ),
     )
-    return CommitApproval(WorkflowHumanGateId(gateId))
+    return CommitApproval(WorkflowHumanGateId(gateId), allowUnboundGate = true)
 }
 
 /** 用自定义 SkillRegistry 装配 NovelAgent（用于 disabled Skill / 无匹配 / allowedTools 边界测试）。 */
@@ -175,6 +175,7 @@ internal fun novelAgentWithRegistry(f: NovelAgentFixture, registry: SkillRegistr
     chapters = f.app.chapters,
     sessions = f.app.agentSessions,
     activities = f.app.activities,
+    toolCallLogs = f.app.toolCallLogs,
     skillRegistry = registry,
     contextEngine = f.app.contextEngine,
     productTools = f.app.productTools,
@@ -186,6 +187,8 @@ internal fun novelAgentWithRegistry(f: NovelAgentFixture, registry: SkillRegistr
     writer = f.app.writer,
     critic = f.app.critic,
     rewriter = f.app.rewriter,
+    characterConsistency = f.app.characterConsistency,
+    characterConsistencyAgent = f.app.characterConsistencyAgent,
     planningContexts = f.app.planningContextAssembly,
     reader = f.app.writerUseCases,
     errorMapper = f.app.errorMapper,

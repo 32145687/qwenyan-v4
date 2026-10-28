@@ -242,5 +242,5 @@ internal fun approvedGate(f: WorkspaceFixture, w: WorkspaceWorld, gateId: String
             resolvedBy = "user",
         ),
     )
-    return CommitApproval(WorkflowHumanGateId(gateId))
+    return CommitApproval(WorkflowHumanGateId(gateId), allowUnboundGate = true)
 }

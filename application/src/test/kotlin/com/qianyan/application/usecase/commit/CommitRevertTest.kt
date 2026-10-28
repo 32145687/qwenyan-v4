@@ -73,12 +73,14 @@ class CommitRevertTest {
         val f = commitFixture()
         val w = commitWorld(f)
         val approval = approvedGate(f, w)
+        // P0-3B D8：两个 Artifact 必须使用各自的批准 Gate
+        val secondApproval = approvedGate(f, w, gateId = "gate-i10-revert-head-2")
 
         val first = f.app.commits.commit(w.projectId, artifactFor(f, w, firstContent).artifactId, approval)
         val second = f.app.commits.commit(
             w.projectId,
             artifactFor(f, w, secondContent, baseDraftId = first.resultingDraftId).artifactId,
-            approval,
+            secondApproval,
         )
         val draftsBefore = f.app.draftRepository.listByChapter(w.chapter2).map { it.draftId }
         val historyBefore = f.app.commits.history(w.projectId)

@@ -13,13 +13,22 @@ import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
 
 /**
+ * 检查器面板（桌面 UI 层）。
+ *
+ * `core/model` 的 [InspectorTab] 仍是 LOCKED 的「上下文 / 活动 / 修改」三值；
+ * 「任务」是桌面端新增的只读总览页（任务 + 活动 + 待审批入口），
+ * 只在本层存在，不改变领域模型与边界契约。
+ */
+enum class InspectorPane { TASK, CONTEXT, ACTIVITY, CHANGES }
+
+/**
  * I14-UI · Workspace 控制器（**UI 会话态**；不落库、不写 Canonical）。
  *
- * 职责：持有"当前对象"（[WorkspaceSelection]）与 Inspector 标签（[tab]），
+ * 职责：持有"当前对象"（[WorkspaceSelection]）与 Inspector 标签（[pane] / [tab]），
  * 经既有 I14 `WorkspaceUseCases`（Application 薄 Facade）读取**只读投影**。
  *
  * LOCKED 行为：
- *  - **Selection 变化** ⇒ 三个 Tab 数据重新读取 + [tab] 重置为「上下文」（§14）；
+ *  - **Selection 变化** ⇒ 数据重新读取 + 面板回到默认页（§14）；
  *  - **对象已不存在** ⇒ 清除 Selection + Inspector 进入统一空状态（§15）；
  *  - 面板折叠 / 专注模式 / Command Palette 开关在 [DesktopAppState]（纯 UI）。
  *
@@ -31,7 +40,10 @@ class WorkspaceController(private val app: DesktopAppState) {
     var selection by mutableStateOf<WorkspaceSelection?>(null)
         private set
 
-    /** Inspector 当前标签（**固定三个**：上下文 / 活动 / 修改，§8）。 */
+    /** 检查器当前页（桌面 UI 四页：任务 / 上下文 / 活动 / 修改）。 */
+    var pane by mutableStateOf(InspectorPane.TASK)
+
+    /** 领域侧三标签投影（保持既有 LOCKED 契约；由 [selectPane] 同步）。 */
     var tab by mutableStateOf(InspectorTab.CONTEXT)
 
     /** 最近一次 Inspector 读取结果（只读投影）。 */
@@ -82,11 +94,12 @@ class WorkspaceController(private val app: DesktopAppState) {
     }
 
     /**
-     * 设置当前对象：**Selection 变化即重置 Inspector 到「上下文」**（§14）。
+     * 设置当前对象：**Selection 变化即重置检查器**（§14；桌面端默认回到「任务」）。
      */
     fun select(selection: WorkspaceSelection) {
         if (this.selection != selection) {
             this.selection = selection
+            this.pane = InspectorPane.TASK
             this.tab = InspectorTab.CONTEXT
             this.view = null
             this.message = null
@@ -94,8 +107,22 @@ class WorkspaceController(private val app: DesktopAppState) {
         }
     }
 
+    fun selectPane(pane: InspectorPane) {
+        this.pane = pane
+        this.tab = when (pane) {
+            InspectorPane.TASK, InspectorPane.CONTEXT -> InspectorTab.CONTEXT
+            InspectorPane.ACTIVITY -> InspectorTab.ACTIVITY
+            InspectorPane.CHANGES -> InspectorTab.CHANGES
+        }
+    }
+
     fun openInspector(tab: InspectorTab) {
         this.tab = tab
+        pane = when (tab) {
+            InspectorTab.CONTEXT -> InspectorPane.CONTEXT
+            InspectorTab.ACTIVITY -> InspectorPane.ACTIVITY
+            InspectorTab.CHANGES -> InspectorPane.CHANGES
+        }
         app.inspectorOpen = true
     }
 
@@ -104,6 +131,22 @@ class WorkspaceController(private val app: DesktopAppState) {
         selection = null
         view = null
         message = null
+    }
+
+    /**
+     * 作品切换时的**整体重置**（同一状态转换内完成，避免旧作品状态短暂残留）。
+     *
+     * 只清 UI 会话态（Selection / 投影 / 候选 / Tab / 列表导航），不触碰任何持久化数据。
+     */
+    fun resetForNovelSwitch() {
+        selection = null
+        view = null
+        candidates = emptyList()
+        message = null
+        loading = false
+        pane = InspectorPane.TASK
+        tab = InspectorTab.CONTEXT
+        clearList()
     }
 
     /** UI 默认落点：ProjectState 的当前章节 → 否则 Project。 */
@@ -143,7 +186,11 @@ class WorkspaceController(private val app: DesktopAppState) {
             }
             if (selection != current) selection = current
             message = null
-            view = app.load { it.workspace.inspector(projectId, current) }
+            // A2：只传入最近一次 Agent 任务的 session，供 Inspector 读取已发布 Pack；不触发 build。
+            val agentSessionId = app.lastAgentResult
+                ?.takeIf { it.projectId == projectId }
+                ?.sessionId
+            view = app.load { it.workspace.inspector(projectId, current, agentSessionId) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             // 协程被取消（页面切换 / 快速重读）不是错误：必须继续抛出，不能变成用户可见的失败。
             throw e

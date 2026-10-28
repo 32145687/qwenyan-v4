@@ -56,6 +56,7 @@ import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.WorkflowRepository
 import java.util.UUID
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -167,6 +168,122 @@ class WorkflowOrchestrator(
             }
         }
         return last
+    }
+
+    /**
+     * **AI 改写提案 → 既有章节 Workflow 的人工门**（P0-2.1）。
+     *
+     * 复用既有 Step / Gate / 批准收敛链路，不新开 Workflow、不重跑 LLM：
+     *  1. 已有 PENDING Gate → 拒绝（必须先决议，防止并行提案）；
+     *  2. 旧 CONFIRMATION 若已批准但尚未收敛 → 仅补完成该 Step 与既有后继（不重跑 LLM）；
+     *     其余未决 / 已拒绝 CONFIRMATION → `SKIPPED` 关闭旧轮（旧 Gate 决议不改写）；
+     *  3. 其他未完成 Step（WRITING / CRITIQUE / REVISION …）→ 明确拒绝，避免与在途轮次混写；
+     *  4. 追加一个携带 `WORKING:<id>` 的已完成 REVISION Step + 新 CONFIRMATION Step + 新 PENDING Gate。
+     *
+     * 批准仍走 [approveGate]（Change → Commit）；拒绝走 `WorkflowService.rejectGate`。
+     */
+    fun proposeRewrite(workflowId: WorkflowId, workingDraftId: WorkingDraftId): WorkflowRunResult {
+        val working = workingDrafts.get(workingDraftId)
+        val chapterId = working.target.chapterId
+        val wf = requireWorkflow(workflowId)
+        if (wf.activeChapterId != chapterId) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation(
+                    "Working Draft 目标章节 ${chapterId.value} 与 Workflow ${workflowId.value} 的 active Chapter 不一致",
+                ),
+            )
+        }
+        if (working.target.novelId != wf.novelId || working.target.variantId != wf.variantId) {
+            throw ApplicationException(ApplicationError.InvalidOperation("Working Draft 作用域与 Workflow 不一致，不能进入人工门"))
+        }
+        val pendingGate = wf.pendingGateId?.let { workflowRepository.getGate(it) }
+        if (pendingGate?.status == HumanGateStatus.PENDING) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation("chapter ${chapterId.value} 已有待确认的 AI 提案，请先批准或拒绝"),
+            )
+        }
+        val unresolved = workflowRepository.listSteps(workflowId).filter {
+            it.chapterId == chapterId &&
+                it.status != WorkflowStepStatus.COMPLETED &&
+                it.status != WorkflowStepStatus.SKIPPED
+        }
+        val inFlight = unresolved.filter { it.phase != WorkflowStepPhase.CONFIRMATION }
+        if (inFlight.isNotEmpty()) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation(
+                    "chapter ${chapterId.value} 当前工作流尚有未完成步骤（${inFlight.joinToString { it.phase.name }}），请先继续或恢复",
+                ),
+            )
+        }
+
+        val validation = workingDrafts.validate(workingDraftId)
+        if (!validation.passed) {
+            throw ApplicationException(
+                ApplicationError.InvalidOperation(
+                    "AI 候选未通过确定性校验（${validation.issues.joinToString { it.field }}），不能进入人工确认",
+                ),
+            )
+        }
+        val now = Clock.System.now()
+        workflowRepository.inTransaction {
+            // 已批准的旧轮：提交事实已成立，仅补齐 Step 收敛与既有后继（绝不重跑 LLM）。
+            val approvedStepId = pendingGate
+                ?.takeIf { it.status == HumanGateStatus.RESOLVED && it.decision == HumanDecision.APPROVED }
+                ?.stepId
+            if (approvedStepId != null) {
+                val step = workflowRepository.getStep(approvedStepId)
+                if (step != null && step.status != WorkflowStepStatus.COMPLETED && step.status != WorkflowStepStatus.SKIPPED) {
+                    val done = step.copy(status = WorkflowStepStatus.COMPLETED, completedAt = now)
+                    workflowRepository.updateStep(done)
+                    createSuccessor(done)
+                }
+            }
+            // 被拒绝 / 未决的旧 CONFIRMATION：关闭旧轮（旧 Gate 行保持原决议）。
+            unresolved
+                .filter { it.phase == WorkflowStepPhase.CONFIRMATION && it.stepId != approvedStepId }
+                .forEach { updateStep(it.copy(status = WorkflowStepStatus.SKIPPED, completedAt = now)) }
+
+            val revisionNo = totalRevisionCount(workflowId, chapterId) + 1
+            val revision = WorkflowStep(
+                stepId = WorkflowStepId(UUID.randomUUID().toString()),
+                workflowId = workflowId,
+                chapterId = chapterId,
+                phase = WorkflowStepPhase.REVISION,
+                logicalStepKey = revisionKey(workflowId, chapterId, revisionNo),
+                status = WorkflowStepStatus.COMPLETED,
+                resultReference = workingRef(workingDraftId),
+                roundNo = 0,
+                createdAt = now,
+                completedAt = now,
+            )
+            workflowRepository.createStep(revision)
+
+            val suffix = nextRoundSuffix(workflowId, chapterId)
+            val confirmation = WorkflowStep(
+                stepId = WorkflowStepId(UUID.randomUUID().toString()),
+                workflowId = workflowId,
+                chapterId = chapterId,
+                phase = WorkflowStepPhase.CONFIRMATION,
+                logicalStepKey = phaseKey(workflowId, chapterId, WorkflowStepPhase.CONFIRMATION, suffix),
+                status = WorkflowStepStatus.PENDING,
+                roundNo = suffix,
+                // 同毫秒内保证确认 Step 晚于工作引用 Step 出现（listSteps 按 created_at 排序）。
+                createdAt = Instant.fromEpochMilliseconds(now.toEpochMilliseconds() + 1),
+            )
+            workflowRepository.createStep(confirmation)
+
+            val current = requireWorkflow(workflowId)
+            val gate = createPendingGate(current, confirmation, workingRef(workingDraftId))
+            updateWorkflow(
+                current.copy(
+                    status = WorkflowStatus.WAITING_HUMAN,
+                    pendingGateId = gate.gateId,
+                    currentStepId = confirmation.stepId,
+                    updatedAt = now,
+                ),
+            )
+        }
+        return WorkflowRunResult(status = WorkflowStatus.WAITING_HUMAN, stepCompleted = true)
     }
 
     /* ---------- 被拒绝 Gate 的重新进入（P1-02g） ---------- */
@@ -329,12 +446,18 @@ class WorkflowOrchestrator(
         val restored = requirePlanContextFor(wf, step, chapterId)
         val plan = restored.plan
         val request = buildRequest(wf.novelId, wf.variantId)
+        // 与 executePlanning 同源：续篇来源来自 durable WorkflowContinuation（首章 → null）。
+        val continuationRef = workflowRepository.getContinuationByTargetChapter(chapterId)?.let {
+            ContinuationReference(sourceChapterId = it.sourceChapterId ?: chapterId, sourceDraftId = it.sourceDraftId)
+        }
         return try {
             val taskId = taskManager.create(TaskType.WRITING)
             // P20-P5-fix（FD-4）：Writing 使用与 Planning **同一份** DecisionPolicy（旧 PLANJSON 无政策 → 空）；
             // Writer 不拥有 DecisionModel，绝不重新 Decision。
             // P1-02c+d：AI 产出进 WorkingDraft（工作区），**不写章节 Draft 表**；resultReference 为类型化工作引用。
-            val working = writing.executeIntoWorkingDraft(taskId, request, plan, restored.policies.orEmpty())
+            val working = writing.executeIntoWorkingDraft(
+                taskId, request, plan, restored.policies.orEmpty(), continuationRef,
+            )
             val workingRef = workingRef(working.workingDraftId)
             workflowRepository.inTransaction {
                 updateAttempt(attempt.copy(status = WorkflowAttemptStatus.COMPLETED, taskId = taskId.value, completedAt = Clock.System.now()))
@@ -473,12 +596,27 @@ class WorkflowOrchestrator(
      * 提交成功后才把 Workflow 置回 RUNNING。若提交失败，Gate 已 RESOLVED —— 重试（重复批准）会幂等补齐
      * （工作产物未 DISCARDED ⇒ 重新走 Change/Commit；已提交 ⇒ no-op）。
      */
+    /**
+     * 幂等批准：已批准 ⇒ 收敛；已拒绝 / 请求修订 ⇒ **类型化拒绝**（绝不把旧决议改写为批准）。
+     */
     fun approveGate(gateId: com.qianyan.model.workflow.WorkflowHumanGateId): GateOutcome {
         val gate = requireGate(gateId)
         if (gate.status == HumanGateStatus.RESOLVED) {
-            // 已批准：收敛未完成的后续步骤（幂等）。PENDING/REJECTED 不进入本分支。
-            if (gate.decision == HumanDecision.APPROVED) convergeApprovedGate(gate)
-            return GateOutcome.AlreadyApproved
+            // 已批准：收敛未完成的后续步骤（幂等）；已拒绝的 Gate 不可被改写为批准。
+            when (gate.decision) {
+                HumanDecision.APPROVED -> {
+                    convergeApprovedGate(gate)
+                    return GateOutcome.AlreadyApproved
+                }
+                HumanDecision.REJECTED, HumanDecision.REQUEST_REVISION -> throw ApplicationException(
+                    ApplicationError.InvalidOperation(
+                        "Gate ${gate.gateId.value} 已 ${gate.decision.name}，不能批准；如需新轮次请显式推进 Workflow",
+                    ),
+                )
+                else -> throw ApplicationException(
+                    ApplicationError.InvalidOperation("Gate ${gate.gateId.value} 决议状态异常"),
+                )
+            }
         }
         // P1-01：独立 Human Gate（workflowId=null）不参与 WAITING_HUMAN / pendingGateId 流转，本入口只处理 Workflow 绑定 Gate。
         val gateWorkflowId = gate.workflowId
@@ -539,7 +677,8 @@ class WorkflowOrchestrator(
             )
         }
         workingDrafts.validate(working.workingDraftId)
-        return ApprovalTarget.Ready(changes.prepare(working.workingDraftId))
+        // P0-3B D2：优先复用候选已有的 Artifact 身份（同一 WorkingDraft + 同一内容指纹）。
+        return ApprovalTarget.Ready(changes.prepareReusing(working.workingDraftId))
     }
 
     /** 已批准 Gate 的自愈收敛：重新判定目标（可能明确失败），成功则幂等收敛。 */
@@ -602,7 +741,7 @@ class WorkflowOrchestrator(
 
     /**
      * P12.2 Test E · Multi-Chapter Continuation（durable wire）。
-     * 前置：source Workflow 必须 COMPLETED，其 active Chapter 存在 CONFIRMED Final Draft。
+     * 前置：source Workflow 必须 COMPLETED，其 active Chapter 存在已提交 CONFIRMED Canonical carrier。
      * 职责（幂等，收敛到一个 durable business result）：
      *   1) 以 sourceDraftId 为幂等键解析 target Chapter：已有 continuation → 复用其 target；否则取「下一章」
      *      （同 novel+variant 按 order 紧跟 source Chapter 的既有 Chapter；无则原子创建），并用事务写入
@@ -618,8 +757,18 @@ class WorkflowOrchestrator(
         }
         val srcChapter = wf1.activeChapterId
             ?: throw ApplicationException(ApplicationError.InvalidOperation("source Workflow 无 active Chapter，无法续篇"))
-        val srcDraft = draftRepository.latestByChapter(srcChapter)?.takeIf { it.status == DraftStatus.CONFIRMED }
-            ?: throw ApplicationException(ApplicationError.DraftConfirmationRequired("续篇需要 source Chapter 的 CONFIRMED Final Draft"))
+        // L0=A：续篇来源必须来自已提交 Canonical（不是 latestByChapter）；正文只取 Canonical carrier。
+        val srcDraft = guard { canonicalRead.committedDraft(srcChapter) }
+            ?: throw ApplicationException(
+                ApplicationError.DraftConfirmationRequired("续篇需要 source Chapter 的已提交 Canonical Final Draft"),
+            )
+        if (srcDraft.status != DraftStatus.CONFIRMED) {
+            throw ApplicationException(
+                ApplicationError.DraftConfirmationRequired(
+                    "续篇需要 source Chapter 的 CONFIRMED Canonical carrier（当前 status=${srcDraft.status}）",
+                ),
+            )
+        }
 
         val targetChapterId = workflowRepository.getContinuationBySourceDraft(srcDraft.draftId)?.targetChapterId ?: run {
             val target = resolveNextChapter(wf1, srcChapter)

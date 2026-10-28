@@ -75,6 +75,22 @@ class ChangeUseCases(
         return artifact
     }
 
+    /**
+     * P0-3B D2 · 正式审批路径的 Artifact 身份复用：
+     * 同一 WorkingDraft 且内容指纹一致时，优先返回**既有** Artifact，避免审批对象与候选身份不一致。
+     * 内容已变化（指纹不同）→ 按现有语义新建 Artifact（旧 Artifact 保持冻结 / 可判定 superseded）。
+     */
+    @Synchronized
+    fun prepareReusing(workingDraftId: WorkingDraftId): ChangeArtifact {
+        val draft = workingDrafts.get(workingDraftId)
+        val change = computeChange(draft)
+        val fingerprint = ChangeFingerprint.of(change)
+        store.values
+            .lastOrNull { it.workingDraftId == workingDraftId && it.fingerprint == fingerprint }
+            ?.let { return it }
+        return prepare(workingDraftId)
+    }
+
     /** 读取 Artifact；不存在 → [ApplicationError.EntityNotFound]（不伪造）。 */
     @Synchronized
     fun get(artifactId: ChangeArtifactId): ChangeArtifact = store[artifactId]

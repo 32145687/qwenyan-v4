@@ -101,8 +101,9 @@ class ProviderDiTest {
         baseNovelId = BaseNovelId(novelId.value),
     )
 
-    private fun plan(novelId: NovelId) = ChapterPlan(
+    private fun plan(novelId: NovelId, chapterId: com.qianyan.model.ChapterId) = ChapterPlan(
         chapterPlanId = ChapterPlanId("plan-di"),
+        chapterId = chapterId,
         arcId = ArcId("arc"), actId = ActId("act"),
         novelId = novelId, scope = VariantScope.ORIGINAL,
         chapterGoal = "揭开秘辛",
@@ -126,9 +127,14 @@ class ProviderDiTest {
     fun `t14 writing uses configured deepseek gateway`() {
         val (app, client) = configuredApp()
         val novelId = app.novels.createOriginal(title = "仙侠")
-        val draft = app.taskRunner.executeWriting(app.tasks.create(TaskType.WRITING), request(novelId), plan(novelId))
+        val chapterId = app.chapters.createNextChapter("第一章", novelId).chapterId
+        val working = app.writingExecution.executeIntoWorkingDraft(
+            app.tasks.create(TaskType.WRITING),
+            request(novelId),
+            plan(novelId, chapterId),
+        )
 
-        assertTrue(draft.content.contains("正文被写就"))
+        assertTrue(working.content.contains("正文被写就"))
         assertTrue(client.lastUrl.startsWith("https://api.deepseek.com"))
         assertEquals("Bearer $secret", client.lastHeaders["Authorization"])
     }
@@ -161,11 +167,20 @@ class ProviderDiTest {
         // Planning → ChapterPlan + PLANNING checkpoint
         val planTask = app.tasks.create(TaskType.PLANNING)
         val plan = app.taskRunner.executePlanning(planTask, req)
-        // Writing → Draft(WRITTEN) + WRITING checkpoint
+        // Writing → WorkingDraft + WRITING checkpoint（AI 不写 ChapterDraft）
         val writeTask = app.tasks.create(TaskType.WRITING)
-        val draft = app.taskRunner.executeWriting(writeTask, req, plan)
-        // finalize + confirm
-        app.draftRepository.save(draft.copy(status = DraftStatus.FINAL))
+        val working = app.writingExecution.executeIntoWorkingDraft(writeTask, req, plan)
+        // finalize + confirm：KU 需要 CONFIRMED 章节载体（测试夹具直接构造，模拟已提交的正文）
+        val draft = com.qianyan.model.writing.Draft(
+            draftId = com.qianyan.model.DraftId("d-di-kanon"),
+            novelId = novelId,
+            chapterId = plan.chapterId,
+            content = working.content,
+            status = DraftStatus.FINAL,
+            createdAt = kotlinx.datetime.Clock.System.now(),
+            updatedAt = kotlinx.datetime.Clock.System.now(),
+        )
+        app.draftRepository.save(draft)
         val confirmed = app.confirmations.confirmFinalDraft(draft.draftId, novelId, null)
         // Knowledge Update → Memory(Story State 可读) + KNOWN_UPDATE checkpoint
         app.taskRunner.executeKnowledgeUpdate(writeTask, confirmed)

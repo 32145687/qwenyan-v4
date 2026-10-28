@@ -1,6 +1,7 @@
 package com.qianyan.application.error
 
 import com.qianyan.application.usecase.writing.WritingException
+import com.qianyan.application.usecase.writing.consistency.CharacterConsistencyException
 import com.qianyan.application.usecase.writing.critique.CritiqueException
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateException
 import com.qianyan.application.usecase.writing.planning.PlanningException
@@ -57,6 +58,11 @@ object ErrorMapper {
         // P11.5：Knowledge Update 候选解析 / 流程失败 → 类型化 Knowledge Update 错误（不经 String 判断类型）。
         is KnowledgeUpdateException.InvalidOutput -> ApplicationException(ApplicationError.InvalidKnowledgeUpdateOutput(throwable.message ?: ""))
         is KnowledgeUpdateException.Failed -> ApplicationException(ApplicationError.KnowledgeUpdateFailed(throwable.message ?: ""))
+        // Phase 6：CharacterConsistency Parser / Validator 失败 → 类型化 CharacterConsistency 错误。
+        is CharacterConsistencyException.InvalidOutput ->
+            ApplicationException(ApplicationError.InvalidCharacterConsistencyOutput("${throwable.code}: ${throwable.message}"))
+        is CharacterConsistencyException.InvalidResult ->
+            ApplicationException(ApplicationError.InvalidCharacterConsistencyResult("${throwable.code}: ${throwable.message}"))
         is TxtException.UnsupportedEncoding -> ApplicationException(ApplicationError.UnsupportedEncoding(throwable.message ?: ""))
         is TxtException.EmptyDocument -> ApplicationException(ApplicationError.EmptyDocument(throwable.message ?: ""))
         is TxtException.InvalidText -> ApplicationException(ApplicationError.InvalidText(throwable.message ?: ""))

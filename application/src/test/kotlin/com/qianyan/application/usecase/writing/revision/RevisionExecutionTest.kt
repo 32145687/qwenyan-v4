@@ -7,23 +7,21 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.model.ActId
 import com.qianyan.model.ArcId
 import com.qianyan.model.BaseNovelId
-import com.qianyan.model.ChapterId
 import com.qianyan.model.ChapterPlanId
 import com.qianyan.model.IntentType
 import com.qianyan.model.NovelId
 import com.qianyan.model.PlanningScope
 import com.qianyan.model.RequestId
-import com.qianyan.model.task.TaskType
 import com.qianyan.model.VariantScope
 import com.qianyan.model.context.TargetKind
 import com.qianyan.model.context.TargetRef
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.spec.ValidationResult
 import com.qianyan.model.story.ChapterPlan
-import com.qianyan.model.writing.DraftStatus
+import com.qianyan.model.task.TaskType
 import com.qianyan.provider.ChatMessage
 import com.qianyan.provider.ChatRole
 import com.qianyan.provider.FinishReason
-import com.qianyan.provider.ProviderRequest
 import com.qianyan.provider.ProviderResponse
 import com.qianyan.provider.Usage
 import com.qianyan.provider.impl.MockLLMGateway
@@ -37,17 +35,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
-import kotlin.test.assertNotEquals
-import kotlin.test.assertNotNull
 
 /**
- * P11.4 Revision 测试（manifest：Draft → Critique → Gate → Revision 闭环）。
+ * P11.4 Revision 测试（manifest：WorkingDraft 正文 → Critique → Gate → Revision 闭环）。
  *
  * 经 ApplicationContainer + Mock LLM（按 Agent 名返回不同产物）验证：
- *  - executeWriting 产原 Draft v1（P11.3 链路）
- *  - executeCritique 产 CRITIQUE Checkpoint
- *  - executeRevision 经 RevisionGate（allowed）产 REVISED Draft v2，revisionCount 增加、原 Draft 保留
- *  - reopen 后所有 Draft / Checkpoint 仍一致
+ *  - `executeIntoWorkingDraft` 产 WorkingDraft（不落 ChapterDraft）
+ *  - `reviseWorking` 经 RevisionGate（allowed）返回修订正文，revisionCount 增加
+ *  - 修订本体不持久化章节 Draft（Phase 1 直写边界）
  *  - revision 达上限 → RevisionNotAllowed，**不调用 LLM**
  * 全程 Mock LLM，无网络。
  */
@@ -57,14 +52,12 @@ class RevisionExecutionTest {
 
     private val originalContent = "女主推开古碑。"
     private val revisedContent = "女主推开古碑，雷劫降临。"
-    private val critiqueJson = """{"passed":false,"issues":[{"message":"结局张力不足"}]}"""
 
     /** 按 Agent 名返回对应产物的注入 Mock LLM（每次调用计数）。 */
     private fun gateway(): MockLLMGateway = MockLLMGateway { req ->
         llmCalls++
         val agent = req.messages.first { it.role == ChatRole.SYSTEM }.content
         val body = when {
-            "StoryCriticAgent" in agent -> critiqueJson
             "StoryRevisionAgent" in agent -> """{"content":"$revisedContent"}"""
             else -> """{"content":"$originalContent"}"""
         }
@@ -89,20 +82,23 @@ class RevisionExecutionTest {
         baseNovelId = BaseNovelId(novelId.value),
     )
 
-    private fun plan(novelId: NovelId) = ChapterPlan(
-        chapterPlanId = ChapterPlanId("plan-rev"),
-        chapterId = ChapterId("ch-rev"),
-        arcId = ArcId("arc-rev"),
-        actId = ActId("act-rev"),
-        novelId = novelId,
-        scope = VariantScope.ORIGINAL,
-        chapterGoal = "救下女主并揭开秘辛",
-        expectedEvents = listOf("发现古碑"),
-    )
+    private fun plan(app: ApplicationContainer, novelId: NovelId): ChapterPlan {
+        val chapterId = app.chapters.createNextChapter("第一章", novelId).chapterId
+        return ChapterPlan(
+            chapterPlanId = ChapterPlanId("plan-rev"),
+            chapterId = chapterId,
+            arcId = ArcId("arc-rev"),
+            actId = ActId("act-rev"),
+            novelId = novelId,
+            scope = VariantScope.ORIGINAL,
+            chapterGoal = "救下女主并揭开秘辛",
+            expectedEvents = listOf("发现古碑"),
+        )
+    }
 
-    /* 全闭环：write(Draft v1) → critique → gate(allowed) → revision(Draft v2) → REVISION Checkpoint → reopen 一致 */
+    /* 全闭环：WorkingDraft → critique → gate(allowed) → revision 正文 → REVISION Checkpoint */
     @Test
-    fun `draft critique gate revision closes loop and survives reopen`() {
+    fun `working draft critique gate revision closes loop and survives reopen`() {
         val tmp = Files.createTempFile("qianyan-revision", ".db").toString()
         val handles = mutableListOf<QianyanDbHandle>()
         try {
@@ -111,43 +107,39 @@ class RevisionExecutionTest {
             val novelId = app.novels.createOriginal(title = "测试仙侠")
             val taskId = app.tasks.create(TaskType.WRITING)
 
-            // P11.3：原 Draft v1
-            val v1 = app.taskRunner.executeWriting(taskId, request(novelId), plan(novelId))
-            assertEquals(DraftStatus.WRITTEN, v1.status)
-            assertEquals(originalContent, v1.content)
+            // P1-02c+d：AI 产物是 WorkingDraft
+            val working = app.writingExecution.executeIntoWorkingDraft(taskId, request(novelId), plan(app, novelId))
+            assertEquals(originalContent, working.content)
 
-            // Critique：返回 ValidationResult + CRITIQUE Checkpoint
-            val critique = app.taskRunner.executeCritique(taskId, v1)
-            assertIs<com.qianyan.model.spec.ValidationResult>(critique)
-            assertEquals(false, critique.passed)
+            // Critique 结果由调用方提供（内容门控不伪造 Draft）
+            val critique = ValidationResult(passed = false)
 
-            // Revision：gate allowed → REVISED Draft v2
-            val v2 = app.taskRunner.executeRevision(taskId, v1, critique)
-            assertNotEquals(v1.draftId, v2.draftId)
-            assertEquals(DraftStatus.REVISED, v2.status)
-            assertEquals(revisedContent, v2.content)
-            assertEquals(v1.novelId, v2.novelId)
+            // Revision：gate allowed → 修订正文（不落 ChapterDraft）
+            val revised = app.revision.reviseWorking(
+                taskId,
+                working.workingDraftId.value,
+                working.content,
+                critique,
+                novelId,
+            )
+            assertEquals(revisedContent, revised)
 
-            // revisionCount 已增加（WRITING + CRITIQUE + REVISION = 3 个 checkpoint）
-            assertEquals(3, app.tasks.findById(taskId).revisionCount)
+            // revisionCount 已增加（WRITING + REVISION = 2 个 checkpoint）
+            assertEquals(2, app.tasks.findById(taskId).revisionCount)
 
-            // 原 Draft 保留，修订 Draft 已持久化
-            assertEquals(originalContent, app.draftRepository.getById(v1.draftId)!!.content)
-            assertEquals(DraftStatus.WRITTEN, app.draftRepository.getById(v1.draftId)!!.status)
-            assertEquals(revisedContent, app.draftRepository.getById(v2.draftId)!!.content)
-            assertEquals(DraftStatus.REVISED, app.draftRepository.getById(v2.draftId)!!.status)
+            // Phase 1：AI 写作/修订都不写 ChapterDraft
+            assertEquals(0, app.draftRepository.listByNovel(novelId).size)
 
-            // Checkpoint 序列：WRITING / CRITIQUE / REVISION（最新为 REVISION）
+            // Checkpoint 序列：WRITING / REVISION（最新为 REVISION）
             val stages = app.tasks.findCheckpoints(taskId).map { it.stage }
-            assertEquals(listOf("WRITING", "CRITIQUE", "REVISION"), stages)
+            assertEquals(listOf("WRITING", "REVISION"), stages)
             assertEquals("REVISION", app.tasks.restoreCheckpoint(taskId).stage)
 
-            // reopen：所有状态一致
+            // reopen：任务级状态一致；WorkingDraft 是进程内工作区 → 引用失效必须显式返回 null
             app = containerFile("jdbc:sqlite:$tmp", handles, gateway())
-            assertEquals(originalContent, app.draftRepository.getById(v1.draftId)!!.content)
-            assertEquals(revisedContent, app.draftRepository.getById(v2.draftId)!!.content)
-            assertEquals(3, app.tasks.findById(taskId).revisionCount)
+            assertEquals(2, app.tasks.findById(taskId).revisionCount)
             assertEquals("REVISION", app.tasks.restoreCheckpoint(taskId).stage)
+            assertEquals(null, app.writingExecution.workingDraftFrom(app.tasks.restoreCheckpoint(taskId)))
         } finally {
             handles.forEach { (it.driver as JdbcSqliteDriver?)?.getConnection()?.close() }
             Files.deleteIfExists(Path(tmp))
@@ -160,30 +152,31 @@ class RevisionExecutionTest {
         val app = ApplicationContainer.open(analysisGateway = gateway())
         val novelId = app.novels.createOriginal(title = "测试")
         val taskId = app.tasks.create(TaskType.WRITING)
+        val working = app.writingExecution.executeIntoWorkingDraft(taskId, request(novelId), plan(app, novelId))
+        val critique = ValidationResult(passed = false)
 
-        val v1 = app.taskRunner.executeWriting(taskId, request(novelId), plan(novelId))
-        val critique = app.taskRunner.executeCritique(taskId, v1)
-        app.taskRunner.executeRevision(taskId, v1, critique)
-        // 现在 revisionCount == 3（WRITING+CRITIQUE+REVISION），已达上限
+        app.revision.reviseWorking(taskId, working.workingDraftId.value, working.content, critique, novelId)
+        app.revision.reviseWorking(taskId, working.workingDraftId.value, working.content, critique, novelId)
+        // 现在 revisionCount == 3（WRITING+REVISION+REVISION），已达上限
         assertEquals(3, app.tasks.findById(taskId).revisionCount)
 
         val callsBefore = llmCalls
         val ex = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeRevision(taskId, v1, critique)
+            app.revision.reviseWorking(taskId, working.workingDraftId.value, working.content, critique, novelId)
         }
         assertIs<ApplicationError.RevisionNotAllowed>(ex.error)
-        // Gate 拒绝 → 不进入 LLM / 不产生新 Draft
+        // Gate 拒绝 → 不进入 LLM / 不产生新 checkpoint
         assertEquals(callsBefore, llmCalls)
         assertEquals(3, app.tasks.findCheckpoints(taskId).size)
     }
 
-    /* 非 WRITING Task 经 executeRevision → InvalidOperation */
+    /* 非 WRITING Task 经 reviseWorking → InvalidOperation */
     @Test
     fun `non writing task rejected by revision`() {
         val app = ApplicationContainer.open(analysisGateway = gateway())
         val id = app.tasks.create(TaskType.PLANNING)
         val ex = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeRevision(id, originalDraft(), com.qianyan.model.spec.ValidationResult(passed = true))
+            app.revision.reviseWorking(id, "wd-standalone", originalContent, ValidationResult(passed = true), NovelId("novel-standalone"))
         }
         assertIs<ApplicationError.InvalidOperation>(ex.error)
     }
@@ -204,19 +197,10 @@ class RevisionExecutionTest {
         val app = ApplicationContainer.open(analysisGateway = bad)
         val id = app.tasks.create(TaskType.WRITING)
         val ex = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeRevision(id, originalDraft(), com.qianyan.model.spec.ValidationResult(passed = true))
+            app.revision.reviseWorking(id, "wd-standalone", originalContent, ValidationResult(passed = true), NovelId("novel-standalone"))
         }
         assertIs<ApplicationError.InvalidRevisionOutput>(ex.error)
         // 失败不产生 REVISION checkpoint
         assertEquals(0, app.tasks.findCheckpoints(id).size)
     }
-
-    private fun originalDraft(): com.qianyan.model.writing.Draft = com.qianyan.model.writing.Draft(
-        draftId = com.qianyan.model.DraftId("d-standalone"),
-        novelId = NovelId("novel-standalone"),
-        content = originalContent,
-        status = DraftStatus.WRITTEN,
-        createdAt = kotlinx.datetime.Instant.fromEpochMilliseconds(0),
-        updatedAt = kotlinx.datetime.Instant.fromEpochMilliseconds(0),
-    )
 }

@@ -39,12 +39,12 @@ import kotlin.test.assertTrue
  * REAL WRITING FUNCTIONAL E2E TEST（Qianyan 真实功能写作测试）
  *
  * 全链路用**真实生产代码**驱动：真实 ApplicationContainer、真实 IdeaFirstGateway、
- * 真实 FoundationDecisionGateway（Human Gate）、真实 TaskRunner → PlanningContextAssembly →
- * 真实 PlannerAgent / WriterAgent → 真实 DraftRepository → 真实 AuthorIntelligenceGateway。
+ * 真实 FoundationDecisionGateway（Human Gate）、真实 PlanningContextAssembly →
+ * 真实 PlannerAgent / WriterAgent → 真实 WorkingDraft 工作区 → 真实 AuthorIntelligenceGateway。
  *
  * 说明：本机/环境无任何 Provider API Key（DeepSeek/MiMo 会抛 CredentialMissing），因此通过
  * provider:api 的 `LLMGateway` 接口注入一个“脚本化模型适配器”按 Agent 名返回确定性内容。
- * 这是项目既有 E2E 的一致做法（见 P11_7WritingSliceE2ETest）。生成的"正文"由适配器按提示编撰，
+ * 这是项目既有 E2E 的一致做法（见 WorkflowContinuationE2ETest）。生成的"正文"由适配器按提示编撰，
  * **不是真实模型生成**；真实模型接入为准入 Block。- 这是验证管线的唯一可行方式。
  */
 class RealWritingFunctionalE2ETest {
@@ -162,20 +162,25 @@ class RealWritingFunctionalE2ETest {
         assertTrue(plannerPrompt.contains("已确认的故事基础"), "Planner 应读到确认后的 Story Foundation")
         assertTrue(plannerPrompt.contains("作者偏好"), "AuthorContext 应注入 PlanningContext,不经 Orchestrator/Repository")
 
-        // ============ 5. Writing：真实 WriterAgent → DraftRepository ============
+        // ============ 5. Writing：真实 WriterAgent → WorkingDraft（不写 ChapterDraft） ============
         val writeTaskId = app.tasks.create(TaskType.WRITING)
-        val v1 = app.taskRunner.executeWriting(writeTaskId, request(novelId), plan)
-        assertEquals(DraftStatus.WRITTEN, v1.status)
+        val v1 = app.writingExecution.executeIntoWorkingDraft(writeTaskId, request(novelId), plan)
         assertTrue(v1.content.length > 120, "应产出足够篇幅的真实小说正文")
+        assertEquals(0, app.draftRepository.listByNovel(novelId).size, "AI 写作不得直写 ChapterDraft")
         // 贴出真实正文供核验
-        println("\n===== 第一章正文（Draft v1） =====\n${v1.content}\n==============================\n")
+        println("\n===== 第一章正文（WorkingDraft v1） =====\n${v1.content}\n==============================\n")
 
         // ============ 6. 用户修改正文 → 记录 Author Evidence（不自动变 Stable）= ============
-        // 模拟用户修改正文：写一条修订版草稿
-        val edited = v1.copy(
+        // 模拟用户修改正文：写一条修订版草稿（测试夹具，代表作者已保存的正文）
+        val now = kotlinx.datetime.Clock.System.now()
+        val edited = com.qianyan.model.writing.Draft(
             draftId = com.qianyan.model.DraftId("d-edited"),
+            novelId = novelId,
+            chapterId = plan.chapterId,
             content = v1.content + "\n\n后来林越才明白，正是那枚他几乎要放下的铭牌，把整件事拖回了正轨。",
             status = DraftStatus.REVISED,
+            createdAt = now,
+            updatedAt = now,
         )
         app.draftRepository.save(edited)
         // 用户修改 → 记录一条 Author MODIFY Evidence（本次真实进入 Author Intelligence）

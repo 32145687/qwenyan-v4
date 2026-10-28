@@ -37,7 +37,7 @@ import com.qianyan.app.desktop.ui.theme.QianyanTheme
  *
  * 走**既有** seam：`WriterGateway.rewrite(novelId, variantId, chapterId)`
  * → Application 内复用既有 Critique → Revision（与 WorkflowOrchestrator 的 CRITIQUE / REVISION 同一对
- * UseCase），产出**新 draftId、status=REVISED**，原稿仍在版本链上（`previousDraftId`），不破坏现有内容。
+ * UseCase），产物进入 **WorkingDraft** 并停在既有 Human Gate；批准前不产生新 Draft / Canonical。
  *
  * 边界说明（重要）：当前 `WriterGateway.rewrite` **不接收「修改方向」参数**。为不伪造输入、
  * 也不擅自改动共享 Writer 契约，本浮层**不提供**「修改要求」输入框——它只会是一个不生效的死输入。
@@ -66,7 +66,7 @@ fun RewriteDialog(
                 Text("让 Qianyan 修改", style = MaterialTheme.typography.titleLarge, color = palette.text, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    "对「${state.chapterTitle.ifBlank { "本章" }}」的最新草稿执行一次评审 + 修订；新草稿保留在版本链上，现有正文不会被破坏。",
+                    "对「${state.chapterTitle.ifBlank { "本章" }}」的最新草稿执行一次评审 + 修订；结果作为 AI 候选进入人工确认，批准前不会写入正文。",
                     style = MaterialTheme.typography.bodyMedium,
                     color = palette.text2,
                 )
@@ -83,7 +83,7 @@ fun RewriteDialog(
 
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "真实链路：WriterGateway.rewrite → 既有 Critique → Revision。" +
+                    "真实链路：WriterGateway.rewrite → 既有 Critique → Revision → WorkingDraft → Human Gate。" +
                         "当前 Provider 为 MOCK 时是离线示意稿，切到真实 Provider 即为真实生成。",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.text3,
@@ -91,7 +91,7 @@ fun RewriteDialog(
                 if (state.isLegacyFormat) {
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "本章现有草稿是 legacy 纯文本（format=null）：改写产生的新草稿会标记为受控 Markdown v1，原稿格式不变。",
+                        "本章现有草稿是 legacy 纯文本（format=null）：批准后的正式提交仍生成受控 Markdown v1 正文，原稿格式不变。",
                         style = MaterialTheme.typography.bodySmall,
                         color = palette.text3,
                     )

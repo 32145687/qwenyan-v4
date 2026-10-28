@@ -38,7 +38,7 @@ class ContextEngineBuildTest {
         assertNotNull(byId["project_state:${w.projectId.value}"])
         assertNotNull(byId["novel:${w.novelId.value}"])
         assertNotNull(byId["story_foundation:${w.novelId.value}@v0"])
-        assertNotNull(byId["vocabulary:${w.candidateId.value}"])
+        assertNotNull(byId["vocabulary:${w.entryId.value}"])
 
         // 入选顺序：优先级降序
         val ranks = pack.items.map { it.priority.rank }
@@ -72,12 +72,12 @@ class ContextEngineBuildTest {
         seedProject(f, "书B", "B")
         val scope = ContextBuildScope(a.projectId, a.novelId, null, f.app.projects.state(a.projectId), a.chapter2)
 
-        val items = VocabularySource(f.app.vocabularies).candidates(
+        val items = VocabularySource(f.app.vocabularyRepository).candidates(
             scope,
             ContextRequest(projectId = a.projectId, purpose = IntentType.CONTINUE),
         )
 
-        assertEquals(listOf("vocabulary:${a.candidateId.value}"), items.map { it.itemId }, "只产出本次作用域 Novel 的词汇")
+        assertEquals(listOf("vocabulary:${a.entryId.value}"), items.map { it.itemId }, "只产出本次作用域 Novel 的 approved entry（不含 pending candidate）")
         f.close()
     }
 
@@ -161,6 +161,26 @@ class ContextEngineBuildTest {
             pack.items.all { it.priority == ContextPriority.HIGH },
             "预算紧时只保留高优先级内容：${pack.items.map { it.itemId }}",
         )
+        f.close()
+    }
+
+    @Test
+    fun `zero candidates produce a valid empty pack`() {
+        val f = contextFixture()
+        val w = seedProject(f, "空书", "E")
+        val engine = ContextEngineUseCases(
+            projects = f.app.projects,
+            chapters = f.app.chapters,
+            sessions = f.app.agentSessions,
+            sources = emptyList(),
+            errorMapper = f.app.errorMapper,
+        )
+
+        val pack = engine.build(ContextRequest(projectId = w.projectId, purpose = IntentType.CONTINUE))
+
+        assertTrue(pack.items.isEmpty(), "零候选必须返回空 items，不得伪造条目")
+        assertFalse(pack.budgetGuard.isTruncated)
+        assertTrue(pack.budgetGuard.omittedItemIds.isEmpty())
         f.close()
     }
 

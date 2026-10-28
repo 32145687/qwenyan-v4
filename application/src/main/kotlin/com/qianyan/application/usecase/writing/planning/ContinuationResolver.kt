@@ -4,6 +4,7 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
+import com.qianyan.application.usecase.canonical.CanonicalReadUseCases
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.context.UserWritingRequest
@@ -18,7 +19,7 @@ import com.qianyan.storage.repository.DraftRepository
  * Continuation 来源解析与校验（P12.1.3）。
  *
  * 把显式 [ContinuationReference]（sourceChapterId + sourceDraftId）解析为真实的
- * source [Chapter] + source Final [Draft]，并在调用 PlannerAgent 之前完成全部确定性校验。
+ * source [Chapter] + **当前已提交 Canonical carrier** [Draft]，并在调用 PlannerAgent 之前完成全部确定性校验。
  * 任何校验失败 → 类型化业务错误（缺实体 → [ApplicationError.EntityNotFound]；其余 → 
  * [ApplicationError.InvalidContinuationSource]），绝不抛普通 RuntimeException。
  *
@@ -27,13 +28,17 @@ import com.qianyan.storage.repository.DraftRepository
  *  2. Chapter/Draft identity + lineage：source Draft 必须属于 source Chapter（draft.chapterId == chapter.chapterId）；
  *  3. Novel isolation：chapter.novelId == draft.novelId == request.baseNovelId；
  *  4. Variant isolation：chapter.variantId == draft.variantId == request.variantId；
- *  5. Original / Variant scope 不得混淆：结合 request.variantId 推导的有效 scope 必须等于 source Chapter 的 scope。
+ *  5. Original / Variant scope 不得混淆：结合 request.variantId 推导的有效 scope 必须等于 source Chapter 的 scope；
+ *  6. Canonical 主判据：Chapter 必须已有已提交 Canonical，且 carrier.draftId == reference.sourceDraftId
+ *     （不一致 → [ApplicationError.InvalidContinuationSource]，禁止静默换源）；carrier 必须是 CONFIRMED。
+ *     正文只取 carrier，不取调用方传入的 Draft 副本。
  *
  * 本类只读仓储，不做任何持久化；PlannerAgent 不查询数据库、不判断 scope、不猜 continuation。
  */
 class ContinuationResolver(
     private val chapterRepository: ChapterRepository,
     private val draftRepository: DraftRepository,
+    private val canonicalRead: CanonicalReadUseCases,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -99,12 +104,35 @@ class ContinuationResolver(
             )
         }
 
-        return ResolvedContinuation(reference = reference, sourceChapter = chapter, sourceFinalDraft = draft)
+        // 6) L0=A：续篇来源以 Canonical 为主判据；正文只取当前 Canonical carrier。
+        val carrier = guard { canonicalRead.committedDraft(chapter.chapterId) }
+            ?: throw ApplicationException(
+                ApplicationError.DraftConfirmationRequired(
+                    "continuation source Chapter(${chapter.chapterId.value}) 无已提交 Canonical，不能续篇",
+                ),
+            )
+        if (carrier.draftId != draft.draftId) {
+            throw ApplicationException(
+                ApplicationError.InvalidContinuationSource(
+                    "continuation reference 指向 Draft(${draft.draftId.value})，但 Chapter(${chapter.chapterId.value}) 当前 Canonical carrier 是 ${carrier.draftId.value}；禁止静默换源",
+                ),
+            )
+        }
+        if (carrier.status != DraftStatus.CONFIRMED) {
+            throw ApplicationException(
+                ApplicationError.InvalidContinuationSource(
+                    "continuation source Canonical carrier(${carrier.draftId.value}) 非 CONFIRMED（当前 status=${carrier.status}），不可作为续篇来源",
+                ),
+            )
+        }
+
+        return ResolvedContinuation(reference = reference, sourceChapter = chapter, sourceFinalDraft = carrier)
     }
 }
 
 /**
- * 已解析的续篇来源（P12.1.3）：reference + 其指向的真实 source Chapter + source Final Draft。
+ * 已解析的续篇来源（P12.1.3 / Phase 6）：reference + 其指向的真实 source Chapter +
+ * **当前已提交 Canonical carrier**（CONFIRMED）。
  * 仅作为已组装 Context（reference-only 执行时解析），不持久化正文。
  */
 data class ResolvedContinuation(

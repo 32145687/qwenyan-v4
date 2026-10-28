@@ -9,6 +9,7 @@ import com.qianyan.model.TaskId
 import com.qianyan.model.VariantId
 import com.qianyan.model.change.ChangeArtifactId
 import com.qianyan.model.change.ChangeArtifactStatus
+import com.qianyan.model.characterconsistency.CharacterConsistencyResult
 import com.qianyan.model.commit.CommitHistoryId
 import com.qianyan.model.commit.CommitId
 import com.qianyan.model.context.ContextBudget
@@ -85,14 +86,31 @@ enum class NovelAgentOutcome {
     /** 运行结束且无需人工介入（含：分析 / 规划类任务、无变化、已成功提交）。 */
     COMPLETED,
 
-    /** 变更已就绪但 Canonical 写入需人工确认（I2 判定 NeedsHuman）：等待既有 Human Gate 决议。 */
+    /** 变更已就绪并**已桥接进正式章节 Workflow**：等待既有 Human Gate 决议（P0-3B D2）。 */
     WAITING_HUMAN,
+
+    /** 候选已生成但**未能接入**正式 Workflow（P0-3B D5）：候选保留、可显式重试；不是失败、不是待审批。 */
+    CANDIDATE_UNBRIDGED,
 
     /** 运行失败（类型化 [NovelAgentResult.failure]）。 */
     FAILED,
 
     /** 运行被取消（会话已取消 / 人工拒绝）。 */
     CANCELLED,
+}
+
+/**
+ * P0-3B · 候选与正式审批的接入状态（D2 / D5；UI 不得仅凭 outcome 判断"是否可批准"）。
+ *
+ *  - [NOT_REQUIRED]：本次运行不产生正文候选（分析 / 规划 / 无变化 / 已直连提交）。
+ *  - [BRIDGED]：候选已进入正式章节 Workflow 的人工门（批准 / 拒绝以 `ChapterWorkflowProgress` 为准）。
+ *  - [UNBRIDGED]：候选已生成但未接入正式审批（原因见 [NovelAgentResult.failure]）；不构成正式审批。
+ */
+@Serializable
+enum class NovelAgentApprovalState {
+    NOT_REQUIRED,
+    BRIDGED,
+    UNBRIDGED,
 }
 
 /** 类型化失败（稳定错误码 + 细节；不吞异常，不泄漏底层原始异常）。 */
@@ -122,10 +140,14 @@ data class NovelAgentResult(
     val activityIds: List<ActivityId> = emptyList(),
     val toolCallCount: Int = 0,
     val planChapterId: ChapterId? = null,
+    /** T-2B-3：CharacterConsistency 只读结果；其他 Skill / 未执行时为 null。 */
+    val characterConsistency: CharacterConsistencyResult? = null,
     val workingDraftId: WorkingDraftId? = null,
     val artifactId: ChangeArtifactId? = null,
     val artifactStatus: ChangeArtifactStatus? = null,
     val approvalGateId: WorkflowHumanGateId? = null,
+    /** P0-3B · 候选与正式审批的接入状态（见 [NovelAgentApprovalState]；UI 事实源仍是正式 Workflow 投影）。 */
+    val approvalState: NovelAgentApprovalState = NovelAgentApprovalState.NOT_REQUIRED,
     val commitId: CommitId? = null,
     val historyId: CommitHistoryId? = null,
     val summary: String = "",
@@ -153,6 +175,24 @@ object NovelAgentErrorCodes {
 
     /** 会话已被取消。 */
     const val SESSION_CANCELLED: String = "SESSION_CANCELLED"
+
+    /** P0-3B D3：续跑 / 拒绝必须携带原 sessionId（禁止隐式新建会话操作旧候选）。 */
+    const val SESSION_REQUIRED: String = "SESSION_REQUIRED"
+
+    /** P0-3B D3：候选（WorkingDraft）不属于请求声明的会话。 */
+    const val CANDIDATE_SESSION_MISMATCH: String = "CANDIDATE_SESSION_MISMATCH"
+
+    /** P0-3B D3/D9：候选已被正式提交，不能再拒绝 / 丢弃。 */
+    const val CANDIDATE_ALREADY_COMMITTED: String = "CANDIDATE_ALREADY_COMMITTED"
+
+    /** P0-3B D6：候选仍在正式 Gate 待决中；必须先经正式 reject 决议，不能直接丢弃。 */
+    const val CANDIDATE_PENDING_GATE: String = "CANDIDATE_PENDING_GATE"
+
+    /** P0-3B D6/D9：候选已获正式批准但尚未观察到提交事实；不能丢弃，需先完成正式收敛。 */
+    const val CANDIDATE_APPROVED_NOT_COMMITTED: String = "CANDIDATE_APPROVED_NOT_COMMITTED"
+
+    /** P0-3B D5：候选未能接入正式 Workflow（原因见 detail；候选保留、可显式重试）。 */
+    const val BRIDGE_FAILED: String = "BRIDGE_FAILED"
 
     /** 请求声明的 Variant 作用域与 Project 运行态不一致。 */
     const val SCOPE_MISMATCH: String = "SCOPE_MISMATCH"

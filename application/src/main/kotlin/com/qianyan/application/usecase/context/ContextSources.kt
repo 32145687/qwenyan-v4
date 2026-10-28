@@ -3,15 +3,23 @@ package com.qianyan.application.usecase.context
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
-import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.writing.WriterUseCases
 import com.qianyan.model.IntentType
 import com.qianyan.model.context.ContextItem
 import com.qianyan.model.context.ContextItemRef
+import com.qianyan.model.context.ContextPayload
 import com.qianyan.model.context.ContextPriority
 import com.qianyan.model.context.ContextRequest
 import com.qianyan.model.context.ContextSourceKind
+import com.qianyan.model.context.FoundationPayload
+import com.qianyan.model.context.NovelPayload
+import com.qianyan.model.context.VocabularyPayload
+import com.qianyan.model.core.Novel
+import com.qianyan.model.foundation.StoryFoundation
+import com.qianyan.model.vocabulary.VocabularyEntry
+import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.storage.repository.StoryFoundationRepository
+import com.qianyan.storage.repository.VocabularyRepository
 
 /*
  * I6 · 第一批 Context Source（§20 / §21）。
@@ -54,6 +62,7 @@ internal fun contextItem(
     ref: ContextItemRef? = null,
     sourceVersion: String = "",
     reason: String = "",
+    payload: ContextPayload? = null,
 ): ContextItem = ContextItem(
     itemId = "${source.name.lowercase()}:$refKey",
     source = source,
@@ -63,6 +72,64 @@ internal fun contextItem(
     ref = ref,
     sourceVersion = sourceVersion,
     reason = reason,
+    payload = payload,
+)
+
+// ---- Phase 4B.1：结构化载荷专用工厂（content 与 payload 来自同一领域对象） ----
+
+/** NOVEL：content 文本模板保持不变；payload 由同一 [Novel] 构造。 */
+internal fun novelItem(novel: Novel, priority: ContextPriority): ContextItem = contextItem(
+    source = ContextSourceKind.NOVEL,
+    refKey = novel.novelId.value,
+    content = "《${novel.title}》 genre=${novel.genre.joinToString(",")} " +
+        "status=${novel.status.name} synopsis=${novel.synopsis}",
+    priority = priority,
+    ref = ContextItemRef(novelId = novel.novelId),
+    sourceVersion = "updatedAt=${novel.updatedAt}",
+    reason = "作品级背景（低优先，预算紧时先淘汰）",
+    payload = NovelPayload(title = novel.title, genre = novel.genre, synopsis = novel.synopsis),
+)
+
+/** STORY_FOUNDATION：content 文本模板保持不变；payload 由同一 [StoryFoundation] 构造。 */
+internal fun foundationItem(foundation: StoryFoundation, priority: ContextPriority): ContextItem = contextItem(
+    source = ContextSourceKind.STORY_FOUNDATION,
+    refKey = "${foundation.novelId.value}@v${foundation.version}",
+    content = "genre=${foundation.genre.joinToString(",") { it.value }}; " +
+        "theme=${foundation.direction.theme}; conflict=${foundation.direction.conflict}; " +
+        "promise=${foundation.direction.promise}; pov=${foundation.audience.pov}; " +
+        "tone=${foundation.audience.readerTone}; rules=${foundation.policy.rules.joinToString("|")}",
+    priority = priority,
+    ref = ContextItemRef(novelId = foundation.novelId),
+    sourceVersion = "version=${foundation.version}",
+    reason = "已确认的故事基础（本书级创作约束）",
+    payload = FoundationPayload(
+        genre = foundation.genre,
+        direction = foundation.direction,
+        audience = foundation.audience,
+        policy = foundation.policy,
+    ),
+)
+
+/** VOCABULARY（J-1=A）：与正式 Assembly 相同的 approved [VocabularyEntry] 数据集。 */
+internal fun vocabularyItem(entry: VocabularyEntry, priority: ContextPriority): ContextItem = contextItem(
+    source = ContextSourceKind.VOCABULARY,
+    refKey = entry.entryId.value,
+    content = buildString {
+        append(entry.canonical)
+        if (entry.aliases.isNotEmpty()) {
+            append(" / aliases=").append(entry.aliases.joinToString("|"))
+        }
+        entry.replacement?.let { append(" / replacement=").append(it) }
+    },
+    priority = priority,
+    ref = ContextItemRef(novelId = entry.novelId, variantId = entry.variantId),
+    sourceVersion = "status=${entry.status.name};type=${entry.type.name}",
+    reason = "作品词汇条目（术语一致性；低优先）",
+    payload = VocabularyPayload(
+        canonical = entry.canonical,
+        aliases = entry.aliases,
+        replacement = entry.replacement,
+    ),
 )
 
 // ---- PROJECT ----
@@ -124,18 +191,7 @@ class NovelSource(private val novels: NovelUseCases) : ContextSource {
         val novel = novels.getNovel(scope.novelId) ?: return emptyList()
         // Project 隔离：作品必须属于本次解析出的 Novel 作用域。
         if (novel.novelId != scope.novelId) return emptyList()
-        return listOf(
-            contextItem(
-                source = kind,
-                refKey = novel.novelId.value,
-                content = "《${novel.title}》 genre=${novel.genre.joinToString(",")} " +
-                    "status=${novel.status.name} synopsis=${novel.synopsis}",
-                priority = ContextPriorities.of(kind, request.purpose),
-                ref = ContextItemRef(novelId = novel.novelId),
-                sourceVersion = "updatedAt=${novel.updatedAt}",
-                reason = "作品级背景（低优先，预算紧时先淘汰）",
-            ),
-        )
+        return listOf(novelItem(novel, ContextPriorities.of(kind, request.purpose)))
     }
 }
 
@@ -229,52 +285,36 @@ class StoryFoundationSource(private val foundations: StoryFoundationRepository) 
     override fun candidates(scope: ContextBuildScope, request: ContextRequest): List<ContextItem> {
         val foundation = foundations.getStoryFoundation(scope.novelId) ?: return emptyList()
         if (foundation.novelId != scope.novelId) return emptyList()
-        return listOf(
-            contextItem(
-                source = kind,
-                refKey = "${foundation.novelId.value}@v${foundation.version}",
-                content = "genre=${foundation.genre.joinToString(",") { it.value }}; " +
-                    "theme=${foundation.direction.theme}; conflict=${foundation.direction.conflict}; " +
-                    "promise=${foundation.direction.promise}; pov=${foundation.audience.pov}; " +
-                    "tone=${foundation.audience.readerTone}; rules=${foundation.policy.rules.joinToString("|")}",
-                priority = ContextPriorities.of(kind, request.purpose),
-                ref = ContextItemRef(novelId = foundation.novelId),
-                sourceVersion = "version=${foundation.version}",
-                reason = "已确认的故事基础（本书级创作约束）",
-            ),
-        )
+        return listOf(foundationItem(foundation, ContextPriorities.of(kind, request.purpose)))
     }
 }
 
 // ---- VOCABULARY ----
 
-/** 来源：作品词汇候选（命名 / 术语一致性；按 canonical 确定性排序）。 */
-class VocabularySource(private val vocabularies: VocabularyUseCases) : ContextSource {
+/**
+ * 来源：作品词汇（J-1=A：与 `PlanningContextAssembly` 相同的 **approved `VocabularyEntry`** 数据集）。
+ *
+ * 与旧 candidate 来源的差异（已由 Phase 4A J-1 裁决）：
+ *  - 数据表：`VocabularyEntry`（不再使用 `VocabularyCandidate`）；
+ *  - 状态过滤：仅 `APPROVED`（pending/candidate 不进入正式 Context）；
+ *  - 排序：按 `(canonical, entryId)` 确定性排序（旧 Assembly 依赖仓储返回顺序，不保证确定）；
+ *  - 截断：本 Source 不截断；由 `ContextSelector` 的统一预算负责（J-2）。
+ */
+class VocabularySource(private val entries: VocabularyRepository) : ContextSource {
 
     override val kind: ContextSourceKind = ContextSourceKind.VOCABULARY
 
     override fun candidates(scope: ContextBuildScope, request: ContextRequest): List<ContextItem> {
-        val candidates = vocabularies.findCandidatesByNovel(scope.novelId)
-            .filter { it.novelId == scope.novelId }
-            .sortedWith(compareBy({ it.suggested.canonical }, { it.candidateId.value }))
-            .take(request.candidateHorizon)
-        return candidates.map { candidate ->
-            contextItem(
-                source = kind,
-                refKey = candidate.candidateId.value,
-                content = buildString {
-                    append(candidate.suggested.canonical)
-                    if (candidate.suggested.aliases.isNotEmpty()) {
-                        append(" / aliases=").append(candidate.suggested.aliases.joinToString("|"))
-                    }
-                    candidate.suggested.replacement?.let { append(" / replacement=").append(it) }
-                },
-                priority = ContextPriorities.of(kind, request.purpose),
-                ref = ContextItemRef(novelId = candidate.novelId, variantId = candidate.variantId),
-                sourceVersion = "status=${candidate.status.name};source=${candidate.source.name}",
-                reason = "作品词汇候选（术语一致性；低优先）",
-            )
+        // 与 PlanningContextAssembly 的作用域选择一致：Variant 作用域读 variant entry，否则读 Original entry。
+        val scoped = if (scope.activeVariantId != null) {
+            entries.findEntriesByVariant(scope.activeVariantId)
+        } else {
+            entries.findEntriesByNovel(scope.novelId)
         }
+        return scoped
+            .filter { it.status == VocabularyEntryStatus.APPROVED }
+            .sortedWith(compareBy({ it.canonical }, { it.entryId.value }))
+            .map { vocabularyItem(it, ContextPriorities.of(kind, request.purpose)) }
     }
 }
 
@@ -286,7 +326,7 @@ fun defaultContextSources(
     novels: NovelUseCases,
     chapters: ChapterUseCases,
     writer: WriterUseCases,
-    vocabularies: VocabularyUseCases,
+    vocabularyRepository: VocabularyRepository,
     foundations: StoryFoundationRepository,
 ): List<ContextSource> = listOf(
     ProjectSource(projects),
@@ -295,5 +335,5 @@ fun defaultContextSources(
     ChapterSource(chapters),
     DraftSource(chapters, writer),
     StoryFoundationSource(foundations),
-    VocabularySource(vocabularies),
+    VocabularySource(vocabularyRepository),
 )

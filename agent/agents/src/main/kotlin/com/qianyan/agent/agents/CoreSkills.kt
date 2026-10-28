@@ -11,19 +11,20 @@ import com.qianyan.model.skill.SkillBinding
 import com.qianyan.model.skill.SkillId
 
 /**
- * I7 · 五项核心 Skill（§6）。
+ * I7 · 六项核心 Skill（§6；CharacterConsistency 为 Phase 6 2B 新增）。
  *
  * 全部是**声明**：能力类别 + 适用目的 + 需要哪些 Context 类型 + 预期使用的既有 Product Tool +
  * 预期动作类别 + 实现该能力的**既有** Agent 绑定。本对象不含任何执行逻辑。
  *
- * 映射关系（architecture §11 的七项能力 → I7 五类）：
+ * 映射关系（architecture §11 的七项能力 → I7）：
  * ```
  * STORY_PLANNING          ← Planning Skill           → 既有 PlannerAgent
  * WRITING                 ← Writing Skill            → 既有 WriterAgent
  * REWRITE_REVISION        ← Revision Skill           → 既有 RevisionAgent
  * ANALYSIS_CRITIQUE       ← Critique Skill           → 既有 CritiqueAgent
- *                            （Consistency / Prose Quality 属未来能力，I7 不新建）
+ * CHARACTER_CONSISTENCY   ← Character Consistency    → CharacterConsistencyAgent（只读）
  * KNOWLEDGE_WORLD_MODEL   ← Knowledge Update Skill   → 既有 KnowledgeUpdateAgent
+ *                            （Prose Quality 属未来能力）
  * ```
  *
  * 绑定来源说明：`agentId` / `ToolName` 采用**字面稳定 ID**，由 `:application` 侧测试
@@ -37,6 +38,7 @@ object CoreSkills {
     const val CAPABILITY_WRITING = "writing"
     const val CAPABILITY_REWRITE_REVISION = "rewrite-revision"
     const val CAPABILITY_ANALYSIS_CRITIQUE = "analysis-critique"
+    const val CAPABILITY_CHARACTER_CONSISTENCY = "character-consistency"
     const val CAPABILITY_KNOWLEDGE_WORLD_MODEL = "knowledge-world-model"
 
     // ---- 既有 Agent 的稳定 ID（= 既有 AgentContract.agentId；不持有实现） ----
@@ -45,6 +47,7 @@ object CoreSkills {
     private const val AGENT_STORY_WRITER = "story-writer"
     private const val AGENT_STORY_REVISION = "story-writer-revision"
     private const val AGENT_STORY_CRITIC = "story-critic"
+    private const val AGENT_CHARACTER_CONSISTENCY = "story-character-consistency"
     private const val AGENT_KNOWLEDGE_UPDATE = "knowledge-update"
 
     // ---- 既有只读 Product Tool 注册名（I5；只声明，不执行） ----
@@ -193,12 +196,41 @@ object CoreSkills {
         bindings = listOf(SkillBinding(AgentId(AGENT_KNOWLEDGE_UPDATE), "既有 KnowledgeUpdateAgent（知识沉淀阶段）")),
     )
 
-    /** 五项核心 Skill（声明顺序固定；Registry 查询结果与顺序无关）。 */
+    /**
+     * 6 · Character Consistency：当前章与前章 Canonical 的人物一致性检查。
+     *
+     * **只读**：expectedActions 仅 READ；不写 Draft / WorkingDraft / Canonical。
+     * `get_world_context` 声明为只读证据源；实际 Context 由 Application UseCase 组装。
+     */
+    val CHARACTER_CONSISTENCY: Skill = Skill(
+        skillId = SkillId("skill.character-consistency"),
+        name = "人物一致性",
+        description = "检查当前章节与前章 Canonical 的人物一致性，输出结构化 findings 与证据（只读，不写 Draft/Canonical）",
+        capabilities = listOf(Capability(CAPABILITY_CHARACTER_CONSISTENCY, "人物一致性检查方法论")),
+        purposes = listOf(IntentType.ANALYZE, IntentType.CUSTOM),
+        requiredContext = listOf(
+            ContextSourceKind.PROJECT,
+            ContextSourceKind.NOVEL,
+            ContextSourceKind.CHAPTER,
+            ContextSourceKind.DRAFT,
+        ),
+        allowedTools = emptyList(),
+        expectedActions = listOf(AgentActionKind.READ),
+        bindings = listOf(
+            SkillBinding(
+                AgentId(AGENT_CHARACTER_CONSISTENCY),
+                "只读 CharacterConsistencyAgent（LLM → Parser；Validator 在 UseCase）",
+            ),
+        ),
+    )
+
+    /** 六项核心 Skill（声明顺序固定；Registry 查询结果与顺序无关）。 */
     fun all(): List<Skill> = listOf(
         STORY_PLANNING,
         WRITING,
         REWRITE_REVISION,
         ANALYSIS_CRITIQUE,
         KNOWLEDGE_WORLD_MODEL,
+        CHARACTER_CONSISTENCY,
     )
 }

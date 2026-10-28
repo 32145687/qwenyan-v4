@@ -4,10 +4,12 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
+import com.qianyan.application.usecase.writing.WritingSnapshot
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
+import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.HumanGateStatus
 import com.qianyan.model.workflow.Workflow
 import com.qianyan.model.workflow.WorkflowId
@@ -15,6 +17,7 @@ import com.qianyan.model.workflow.WorkflowKind
 import com.qianyan.model.workflow.WorkflowStatus
 import com.qianyan.model.workflow.WorkflowStepPhase
 import com.qianyan.model.workflow.WorkflowStepStatus
+import com.qianyan.model.workingdraft.WorkingDraftId
 import com.qianyan.storage.repository.DraftRepository
 import com.qianyan.storage.repository.WorkflowRepository
 import java.util.UUID
@@ -41,6 +44,7 @@ class ChapterWorkflowFacade(
     private val workflowRepository: WorkflowRepository,
     private val draftRepository: DraftRepository,
     private val orchestrator: WorkflowOrchestrator,
+    private val workflowService: WorkflowService,
     errorMapper: ErrorMapper,
 ) : ChapterWorkflowGateway, UseCase(errorMapper) {
 
@@ -106,6 +110,41 @@ class ChapterWorkflowFacade(
     }
 
     /**
+     * HITL：拒绝当前待确认闸门（幂等）。复用既有 [WorkflowService.rejectGate]：
+     * PENDING → RESOLVED+REJECTED；Canonical 不变；旧 Gate 永不复用。
+     * 已批准 → 类型化拒绝（批准只能走 [approve] 收敛，绝不改写为拒绝）。
+     * 拒绝后 Workflow 保持 `WAITING_HUMAN` 且 `pendingGateId` 指向已决议 Gate；
+     * 仅显式 [advance] 才会由既有 `reopenRejectedRound` 开启**新**决议轮次。
+     */
+    override fun reject(chapterId: ChapterId): ChapterWorkflowProgress {
+        val wf = requireWorkflowByChapter(chapterId)
+        val gateId = wf.pendingGateId
+            ?: throw ApplicationException(ApplicationError.InvalidOperation("chapter $chapterId 无待确认闸门"))
+        val gate = guard { workflowRepository.getGate(gateId) }
+            ?: throw ApplicationException(ApplicationError.EntityNotFound("Gate 不存在: ${gateId.value}"))
+        if (gate.status == HumanGateStatus.RESOLVED) {
+            if (gate.decision != HumanDecision.REJECTED) {
+                throw ApplicationException(
+                    ApplicationError.InvalidOperation("Gate ${gateId.value} 已 ${gate.decision.name}，不能拒绝"),
+                )
+            }
+            return getChapterProgress(chapterId)
+        }
+        guard { workflowService.rejectGate(gateId, HumanDecision.REJECTED) }
+        return getChapterProgress(chapterId)
+    }
+
+    /**
+     * AI 改写提案进入既有章节 Workflow 的人工门（不新开 Workflow / 不重跑 Writing）。
+     * 具体 Step/Gate 追加由 [WorkflowOrchestrator.proposeRewrite] 承担。
+     */
+    override fun proposeRewrite(chapterId: ChapterId, workingDraftId: WorkingDraftId): ChapterWorkflowProgress {
+        val wf = requireWorkflowByChapter(chapterId)
+        guard { orchestrator.proposeRewrite(wf.workflowId, workingDraftId) }
+        return getChapterProgress(chapterId)
+    }
+
+    /**
      * **显式作废失效轮次**（P1-02j A1）：当前 Gate 已被拒绝、但其工作产物已失效时，关闭该轮并在同一
      * Workflow 上开启新一轮（只建立新一轮骨架，**不**重跑 LLM —— 由后续显式 [advance] 驱动生成）。
      *
@@ -136,6 +175,17 @@ class ChapterWorkflowFacade(
         val gate = wf.pendingGateId?.let { guard { workflowRepository.getGate(it) } }
         val waitingForUser = gate?.status == HumanGateStatus.PENDING
         val draftId = guard { draftRepository.latestByChapter(chapterId) }?.draftId
+        // P0-3B D4：当前审批轮次绑定的候选工作产物引用。
+        // 绑定由 Workflow 的最近一个 WRITING/REVISION Step 的 `WORKING:<id>` 承载（CONFIRMATION Step 本身不写 resultReference）。
+        val pendingWorkingRef = gate?.let {
+            steps.lastOrNull { step ->
+                step.chapterId == chapterId &&
+                    (step.phase == WorkflowStepPhase.WRITING || step.phase == WorkflowStepPhase.REVISION) &&
+                    step.resultReference?.startsWith(WritingSnapshot.WORKING_REF_PREFIX) == true
+            }?.resultReference
+        }
+        // P0-3B D6：当前 Gate 的决议（PENDING/APPROVED/REJECTED/REQUEST_REVISION；无 Gate → null）。
+        val pendingGateDecision = gate?.decision
 
         return ChapterWorkflowProgress(
             chapterId = chapterId,
@@ -145,6 +195,8 @@ class ChapterWorkflowFacade(
             waitingForUser = waitingForUser,
             revisionCount = revisionCount,
             draftId = draftId,
+            pendingWorkingRef = pendingWorkingRef,
+            pendingGateDecision = pendingGateDecision,
         )
     }
 
@@ -208,6 +260,16 @@ data class ChapterWorkflowProgress(
     val waitingForUser: Boolean,
     val revisionCount: Int,
     val draftId: DraftId?,
+    /**
+     * P0-3B D4 · 当前待决 Gate 绑定的**工作产物引用**（`WORKING:<workingDraftId>`；无待决 Gate / 非 AI 候选 → null）。
+     * 供幂等桥接判定"待确认审批是否属于本候选"；原始 resultReference 透传，不解析语义。
+     */
+    val pendingWorkingRef: String? = null,
+    /**
+     * P0-3B D6 · 当前 Gate 的决议（无 Gate → null）。
+     * 供 Agent 侧收敛判断"正式 Gate 是否已拒绝/已批准"；不改变 Gate 状态。
+     */
+    val pendingGateDecision: HumanDecision? = null,
 ) {
     companion object {
         fun blank(chapterId: ChapterId): ChapterWorkflowProgress = ChapterWorkflowProgress(
@@ -228,6 +290,10 @@ interface ChapterWorkflowGateway {
     fun resume(chapterId: ChapterId): ChapterWorkflowProgress
     fun getChapterProgress(chapterId: ChapterId): ChapterWorkflowProgress
     fun approve(chapterId: ChapterId): ChapterWorkflowProgress
+    /** P0-2.1：拒绝当前待决 Gate（幂等；旧 Gate 复用禁止；Canonical 不变）。 */
+    fun reject(chapterId: ChapterId): ChapterWorkflowProgress
+    /** P0-2.1：把 AI 改写产生的 WorkingDraft 送入既有章节 Workflow 的人工门。 */
+    fun proposeRewrite(chapterId: ChapterId, workingDraftId: WorkingDraftId): ChapterWorkflowProgress
     /** P1-02j A1：显式作废失效轮次并在同一 Workflow 上开启新一轮（非自动；只读路径绝不触发）。 */
     fun abandonRound(chapterId: ChapterId): ChapterWorkflowProgress
     fun continueToNextChapter(chapterId: ChapterId): ChapterWorkflowProgress

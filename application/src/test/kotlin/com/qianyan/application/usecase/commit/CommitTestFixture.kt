@@ -69,7 +69,7 @@ internal fun approvedGate(
             resolvedBy = if (status == HumanGateStatus.RESOLVED) "user" else null,
         ),
     )
-    return CommitApproval(WorkflowHumanGateId(gateId))
+    return CommitApproval(WorkflowHumanGateId(gateId), allowUnboundGate = true)
 }
 
 /** 走完整 I8 → I9 链路产出 Change Artifact（默认基于章节当前 Canonical 正文载体）。 */

@@ -1,12 +1,17 @@
 package com.qianyan.application.usecase.workflow
 
+import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.qianyan.application.di.ApplicationContainer
+import com.qianyan.application.error.ApplicationError
+import com.qianyan.application.error.ApplicationException
+import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.workflow.Workflow
 import com.qianyan.model.workflow.WorkflowId
 import com.qianyan.model.workflow.WorkflowKind
 import com.qianyan.model.workflow.WorkflowStatus
+import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftStatus
 import com.qianyan.provider.ChatMessage
 import com.qianyan.provider.ChatRole
@@ -17,12 +22,17 @@ import com.qianyan.provider.impl.MockLLMGateway
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
 import kotlinx.datetime.Clock
+import kotlinx.datetime.Instant
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.nio.file.Files
 import kotlin.io.path.Path
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -234,4 +244,144 @@ class WorkflowContinuationE2ETest {
         // Ch1 Draft 不增加（没有重复生成 Chapter1）
         assertEquals(ch1DraftCount, app.draftRepository.listByChapter(ch1).size)
     }
+
+    /** T1 — 来源必须是 Canonical，而不是 latestByChapter 上更新的未提交 Draft。 */
+    @Test
+    fun `T1 continuation uses canonical source not newer uncommitted draft`() {
+        val plannerInputs = mutableListOf<String>()
+        val writerInputs = mutableListOf<String>()
+        val app = ApplicationContainer.open(analysisGateway = gateway(plannerInputs, writerInputs))
+        val novelId = app.novels.createOriginal(title = "仙侠")
+        val (ch1, wf1) = newChapterWorkflow(app, novelId)
+        completeChapter(app, wf1)
+
+        val canonical = app.canonicalRead.committedDraft(ch1)!!
+        val newer = saveDraft(
+            app, ch1, novelId, "t1-newer", "未提交的新版本B", DraftStatus.WRITTEN,
+            createdAt = Instant.fromEpochMilliseconds(Clock.System.now().toEpochMilliseconds() + 1_000),
+        )
+        assertEquals(newer.draftId, app.draftRepository.latestByChapter(ch1)!!.draftId, "夹具必须让未提交 Draft 成为 latestByChapter")
+
+        val wf2 = app.workflowOrchestrator.continueToNextWorkflow(wf1)
+        val cont = app.workflowRepository.getContinuationBySourceDraft(canonical.draftId)!!
+        assertEquals(canonical.draftId, cont.sourceDraftId)
+        assertNull(app.workflowRepository.getContinuationBySourceDraft(newer.draftId), "未提交 Draft 不得成为续篇来源")
+
+        val result = app.workflowOrchestrator.runForward(wf2)
+        assertEquals(WorkflowStatus.WAITING_HUMAN, result.status)
+        val ch2Planner = plannerInputs.last()
+        val ch2Writer = writerInputs.last()
+        assertTrue(ch2Planner.contains("【前章 Canonical 摘录】"), "Ch2 Planner 应收到前章 Canonical 摘录")
+        assertTrue(ch2Planner.contains(canonical.content), "Ch2 Planner 应收到 Canonical 正文 A")
+        assertFalse(ch2Planner.contains("未提交的新版本B"), "Ch2 Planner 不得收到未提交 Draft B")
+        assertTrue(ch2Writer.contains("【前章 Canonical 摘录】"), "Ch2 Writer 应收到前章 Canonical 摘录")
+        assertTrue(ch2Writer.contains(canonical.content), "Ch2 Writer 应收到 Canonical 正文 A")
+        assertFalse(ch2Writer.contains("未提交的新版本B"), "Ch2 Writer 不得收到未提交 Draft B")
+    }
+
+    /** T2 — 无 Canonical 时拒绝续篇；不建 continuation / 下一章 / Workflow2，不调用 LLM。 */
+    @Test
+    fun `T2 continuation rejects chapter without canonical`() {
+        val tmp = Files.createTempFile("qianyan-T2", ".db").toString()
+        val handles = mutableListOf<QianyanDbHandle>()
+        try {
+            val plannerInputs = mutableListOf<String>()
+            val writerInputs = mutableListOf<String>()
+            val app = open("jdbc:sqlite:$tmp", handles, plannerInputs, writerInputs)
+            val novelId = app.novels.createOriginal(title = "仙侠")
+            val (ch1, wf1) = newChapterWorkflow(app, novelId)
+            val uncommitted = saveDraft(app, ch1, novelId, "t2-confirmed", "未提交的确认稿", DraftStatus.CONFIRMED)
+            val wf = app.workflowRepository.getWorkflow(wf1)!!
+            app.workflowRepository.updateWorkflow(wf.copy(status = WorkflowStatus.COMPLETED))
+
+            val ex = assertFailsWith<ApplicationException> {
+                app.workflowOrchestrator.continueToNextWorkflow(wf1)
+            }
+            assertIs<ApplicationError.DraftConfirmationRequired>(ex.error)
+            assertNull(app.workflowRepository.getContinuationBySourceDraft(uncommitted.draftId))
+            assertEquals(1, app.chapters.listByNovel(novelId).size, "拒绝时不得创建下一章")
+            assertEquals(1L, countRows(handles.last(), "Workflow"), "拒绝时不得创建 Workflow2")
+            assertEquals(0L, countRows(handles.last(), "WorkflowContinuation"), "拒绝时不得写 continuation")
+            assertTrue(plannerInputs.isEmpty(), "拒绝时不得调用 Planner LLM")
+            assertTrue(writerInputs.isEmpty(), "拒绝时不得调用 Writer LLM")
+        } finally {
+            closeAll(handles)
+            Files.deleteIfExists(Path(tmp))
+        }
+    }
+
+    /** T3 — continuation 建立后 Canonical carrier 变化 → Ch2 Planning 类型化拒绝，Task FAILED。 */
+    @Test
+    fun `T3 stale continuation is rejected after canonical carrier changes`() {
+        val tmp = Files.createTempFile("qianyan-T3", ".db").toString()
+        val handles = mutableListOf<QianyanDbHandle>()
+        try {
+            val planner = mutableListOf<String>()
+            val writer = mutableListOf<String>()
+            val app = open("jdbc:sqlite:$tmp", handles, planner, writer)
+            val novelId = app.novels.createOriginal(title = "仙侠")
+            val (ch1, wf1) = newChapterWorkflow(app, novelId)
+            completeChapter(app, wf1)
+            val oldCarrier = app.canonicalRead.committedDraft(ch1)!!
+            val wf2 = app.workflowOrchestrator.continueToNextWorkflow(wf1)
+            val cont = app.workflowRepository.getContinuationBySourceDraft(oldCarrier.draftId)!!
+            assertEquals(oldCarrier.draftId, cont.sourceDraftId)
+
+            planner.clear()
+            writer.clear()
+            val newCarrier = saveDraft(app, ch1, novelId, "t3-newer", "新的正式稿B", DraftStatus.CONFIRMED)
+            app.commits.commitAuthorSave(newCarrier.draftId, newCarrier.content)
+            assertEquals(newCarrier.draftId, app.canonicalRead.committedDraft(ch1)!!.draftId)
+
+            val ex = assertFailsWith<ApplicationException> {
+                app.workflowOrchestrator.runForward(wf2)
+            }
+            assertIs<ApplicationError.InvalidContinuationSource>(ex.error)
+            assertTrue(planner.isEmpty(), "过期续篇必须在 Planner 之前失败")
+            assertTrue(writer.isEmpty(), "过期续篇必须在 Writer 之前失败")
+            assertEquals("FAILED", latestPlanningTaskStatus(handles.last()))
+        } finally {
+            closeAll(handles)
+            Files.deleteIfExists(Path(tmp))
+        }
+    }
+
+    private fun saveDraft(
+        app: ApplicationContainer,
+        chapterId: com.qianyan.model.ChapterId,
+        novelId: NovelId,
+        id: String,
+        content: String,
+        status: DraftStatus,
+        createdAt: Instant = Clock.System.now(),
+    ): Draft {
+        val draft = Draft(
+            draftId = DraftId(id), novelId = novelId, chapterId = chapterId,
+            content = content, status = status, createdAt = createdAt, updatedAt = createdAt,
+        )
+        app.draftRepository.save(draft)
+        return draft
+    }
+
+    private fun latestPlanningTaskStatus(handle: QianyanDbHandle): String? =
+        handle.driver.executeQuery(
+            null,
+            "SELECT status FROM Task WHERE type = 'PLANNING' ORDER BY rowid DESC LIMIT 1",
+            { cursor ->
+                val hasRow = cursor.next().value
+                QueryResult.Value(if (hasRow) cursor.getString(0) else null)
+            },
+            0,
+        ).value
+
+    private fun countRows(handle: QianyanDbHandle, table: String): Long =
+        handle.driver.executeQuery(
+            null,
+            "SELECT COUNT(*) FROM $table",
+            { cursor ->
+                cursor.next()
+                QueryResult.Value(cursor.getLong(0) ?: 0L)
+            },
+            0,
+        ).value
 }

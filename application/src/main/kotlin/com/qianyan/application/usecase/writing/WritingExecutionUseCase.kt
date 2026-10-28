@@ -4,14 +4,18 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
+import com.qianyan.application.usecase.context.ContextEngineUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
+import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.model.TaskId
+import com.qianyan.model.context.ContextRequest
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.story.ChapterPlan
+import com.qianyan.model.story.ContinuationReference
 import com.qianyan.model.task.Checkpoint
 import com.qianyan.model.task.TaskType
 import com.qianyan.model.workingdraft.WorkingDraft
@@ -46,6 +50,8 @@ class WritingExecutionUseCase(
     private val draftRepository: DraftRepository,
     private val workingDrafts: WorkingDraftUseCases,
     private val projects: ProjectUseCases,
+    private val contextEngine: ContextEngineUseCases,
+    private val continuationResolver: ContinuationResolver,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -68,6 +74,7 @@ class WritingExecutionUseCase(
         request: UserWritingRequest,
         plan: ChapterPlan,
         decisionPolicies: List<DecisionPolicy> = emptyList(),
+        continuationReference: ContinuationReference? = null,
     ): WorkingDraft {
         val task = taskManager.findById(taskId)
         if (task.type != TaskType.WRITING) {
@@ -86,10 +93,21 @@ class WritingExecutionUseCase(
 
         taskManager.start(taskId)
         try {
+            // 续篇：在产生任何 AI 产出之前解析/校验；失败 → Task FAILED，不调用 LLM。
+            val resolved = continuationReference?.let { continuationResolver.resolve(request, it) }
             // 工作产物归属需要 Project 运行态（WorkingDraftUseCases.create 按 ProjectId 校验 Project）；
             // openProject 幂等（已存在则不写），与 I1「IDE 打开项目」语义一致。
             val project = guard { projects.openProject(plan.novelId) }
-            val context = contextAssembly.assemble(request)
+            val pack = contextEngine.build(
+                ContextRequest(
+                    projectId = project.projectId,
+                    purpose = request.intentType,
+                    taskId = taskId,
+                    focusChapterId = chapterId,
+                ),
+                plan.variantId,
+            )
+            val context = contextAssembly.assemble(request, pack, continuationReference, resolved)
             // writer 产出仍是内存 Draft 值（正文来源），**不落 DraftRepository**（P1-02c+d）。
             val produced = writer.write(context, plan, decisionPolicies)
             val baseDraftId = guard { draftRepository.latestByChapter(chapterId) }?.draftId
@@ -128,44 +146,6 @@ class WritingExecutionUseCase(
             workingDrafts.get(id)
         } catch (e: ApplicationException) {
             null
-        }
-    }
-
-    /**
-     * **遗留入口（非生产可达）**：仅 [com.qianyan.application.usecase.task.TaskRunner] 与
-     * 孤立会话 [com.qianyan.application.usecase.chapter.ChapterWritingSession] 使用；AI 写作生产链
-     * **不再**经此入口（改用 [executeIntoWorkingDraft]）。保留其既有 Draft 行为与测试，属后续清理项。
-     */
-    fun execute(
-        taskId: TaskId,
-        request: UserWritingRequest,
-        plan: ChapterPlan,
-        decisionPolicies: List<com.qianyan.model.decision.DecisionPolicy> = emptyList(),
-    ): Draft {
-        val task = taskManager.findById(taskId)
-        if (task.type != TaskType.WRITING) {
-            throw ApplicationException(
-                ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行写作"),
-            )
-        }
-        // P12.0.1 P3：在进入 WriterAgent 之前确定性校验 Request ↔ Plan 作用域一致（不调用 LLM 后才发现错误）。
-        requirePlanMatchesRequest(request, plan)
-
-        taskManager.start(taskId)
-        try {
-            val context = contextAssembly.assemble(request)
-            val draft = writer.write(context, plan, decisionPolicies)
-            guard { draftRepository.save(draft) }
-            taskManager.saveCheckpoint(taskId, WritingSnapshot.STAGE, WritingSnapshot.encode(draft, decisionPolicies))
-            taskManager.complete(taskId)
-            return draft
-        } catch (e: ApplicationException) {
-            taskManager.fail(taskId, describe(e.error))
-            throw e
-        } catch (t: Throwable) {
-            val mapped = errorMapper.map(t)
-            taskManager.fail(taskId, describe(mapped.error))
-            throw mapped
         }
     }
 

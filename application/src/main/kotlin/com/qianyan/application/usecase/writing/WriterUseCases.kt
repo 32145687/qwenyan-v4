@@ -47,7 +47,7 @@ class WriterUseCases(
      *
      * @throws [ApplicationError.EntityNotFound] Draft 不存在。
      */
-    fun saveContent(draftId: DraftId, content: String): Draft {
+    internal fun saveContent(draftId: DraftId, content: String): Draft {
         val current = guard { draftRepository.getById(draftId) }
             ?: throw ApplicationException(ApplicationError.EntityNotFound("Draft 不存在: ${draftId.value}"))
         val saved = current.copy(content = content, updatedAt = Clock.System.now())
@@ -60,7 +60,7 @@ class WriterUseCases(
      * 格式由调用方**显式给出**，不做任何标记升级——目前仅供 revert 恢复路径使用
      * （恢复载体的 format 必须继承被恢复版本的格式语义，见 `com.qianyan.model.commit.CommitFormatHistory`）。
      */
-    fun save(draft: Draft): Draft {
+    internal fun save(draft: Draft): Draft {
         guard { draftRepository.save(draft) }
         return draft
     }
@@ -69,7 +69,7 @@ class WriterUseCases(
      * P2/FD-1：**新产生**的 Draft 标记为受控 Markdown v1（`markdown:controlled:v1`）。
      * 已有 format 的 Draft 原样返回（幂等，不覆盖既有格式）。
      */
-    fun stampControlledMarkdown(draft: Draft): Draft {
+    internal fun stampControlledMarkdown(draft: Draft): Draft {
         if (draft.format != null) return draft
         val stamped = draft.copy(format = DraftFormat.CONTROLLED_MARKDOWN, updatedAt = Clock.System.now())
         guard { draftRepository.save(stamped) }

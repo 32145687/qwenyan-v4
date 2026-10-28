@@ -1,6 +1,7 @@
 package com.qianyan.app.desktop.ui.write
 
 import com.qianyan.application.usecase.workflow.ChapterPhase
+import com.qianyan.application.usecase.writing.WriterPendingProposal
 import com.qianyan.model.DraftId
 
 /**
@@ -61,12 +62,15 @@ data class WriterUiState(
     val taskStatus: WriterTaskStatus = WriterTaskStatus.IDLE,
     /** durable Workflow 人工门：等待用户确认（HITL，不自动通过）。 */
     val waitingForUser: Boolean = false,
+    /** AI 候选审查投影（原文 / 候选 / Diff）；仅在 Gate PENDING 时非空。 */
+    val pendingProposal: WriterPendingProposal? = null,
     val revisionCount: Int = 0,
     val error: String? = null,
     val isLoaded: Boolean = false,
     val isSaving: Boolean = false,
     val isGenerating: Boolean = false,
     val isApproving: Boolean = false,
+    val isRejecting: Boolean = false,
 ) {
     val hasDraft: Boolean get() = draftId != null
 
@@ -75,15 +79,22 @@ data class WriterUiState(
 
     val formatLabel: String get() = draftFormat ?: "legacy 纯文本（format=null）"
 
-    val busy: Boolean get() = isSaving || isGenerating || isApproving
+    val busy: Boolean get() = isSaving || isGenerating || isApproving || isRejecting
 
-    /** 尚无 Draft 不可保存（不伪造草稿；需先经「继续写作」生成初稿）。 */
-    val canSave: Boolean get() = isLoaded && draftId != null && !busy
+    /**
+     * 尚无 Draft 不可保存（不伪造草稿；需先经「继续写作」生成初稿）。
+     * **待审期间禁止普通保存**：未批准的 AI 候选不得经「保存」绕过 Human Gate。
+     */
+    val canSave: Boolean get() = isLoaded && draftId != null && !busy && !waitingForUser
 
     val canGenerate: Boolean get() = isLoaded && !busy
 
-    val canRewrite: Boolean get() = isLoaded && draftId != null && !busy
+    /** 待审期间不再发起新的改写（必须先批准或拒绝当前候选）。 */
+    val canRewrite: Boolean get() = isLoaded && draftId != null && !busy && !waitingForUser
 
     /** HITL：仅当 Workflow 确实停在人工门时可用（不绕过、不自动批准）。 */
     val canApprove: Boolean get() = isLoaded && waitingForUser && !busy
+
+    /** HITL：拒绝当前待决候选（幂等；Canonical 不变）。 */
+    val canReject: Boolean get() = isLoaded && waitingForUser && !busy
 }

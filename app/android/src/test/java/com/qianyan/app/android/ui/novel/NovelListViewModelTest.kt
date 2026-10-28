@@ -327,4 +327,19 @@ class NovelListViewModelTest {
         assertFalse(msg.contains("TXT 已导入"), "导入失败不得声称已导入：$msg")
         assertEquals("文件内容为空，没有可导入的内容", msg)
     }
+
+    @Test
+    fun `character consistency errors map to fixed messages without leaking codes`() {
+        val output = novelImportErrorMessage(
+            ApplicationError.InvalidCharacterConsistencyOutput("INVALID_OUTPUT: x"),
+        )
+        assertEquals("人物一致性结果无效，请重试", output)
+        assertFalse(output.contains("INVALID_OUTPUT"), "不得泄露内部错误码：$output")
+
+        val result = novelImportErrorMessage(
+            ApplicationError.InvalidCharacterConsistencyResult("BASIS_INVALID: y"),
+        )
+        assertEquals("人物一致性校验未通过，请重试", result)
+        assertFalse(result.contains("BASIS_INVALID"), "不得泄露内部错误码：$result")
+    }
 }

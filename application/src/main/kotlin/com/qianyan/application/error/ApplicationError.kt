@@ -146,6 +146,16 @@ sealed interface ApplicationError {
     /** Knowledge Update 被确定性拒绝（如 immutable canon 不允许 UPDATE/REMOVE），足以拒绝整体执行。 */
     data class KnowledgeUpdateRejected(val detail: String) : ApplicationError
 
+    // ---- Phase 6 新增：CharacterConsistency 相关错误（Parser / Validator） ----
+    // 类型化错误，不经 String message 判断类型；Parser / Validator 抛 CharacterConsistencyException，
+    // ErrorMapper 按具体子类映射到此处。
+
+    /** LLM 输出无法解析为合法 CharacterConsistency 结果（空 / 非 JSON / 缺字段 / 类型错误 / 非法枚举 / 未知字段）。 */
+    data class InvalidCharacterConsistencyOutput(val detail: String) : ApplicationError
+
+    /** CharacterConsistency 语义校验失败（状态/人物/证据/字段/quote/offset/严重度组合等）。 */
+    data class InvalidCharacterConsistencyResult(val detail: String) : ApplicationError
+
     // ---- P12.1.3 新增：Explicit ContinuationReference 续篇来源非法 ----
     // 类型化错误，绝不靠 String message 判断类型；ContinuationResolver 对续篇来源校验失败时抛出。
 

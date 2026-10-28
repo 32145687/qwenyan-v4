@@ -96,12 +96,17 @@ class NovelAgentRoutingTest {
         assertEquals(NovelAgentOutcome.FAILED, unmatched.outcome)
         assertEquals(NovelAgentErrorCodes.SKILL_NOT_MATCHED, unmatched.failure?.code)
 
-        // 世界模型 Skill 本阶段没有执行绑定（属既有 Knowledge Update 链）
+        // 世界模型 Skill 本阶段没有执行绑定（属既有 Knowledge Update 链）→ 选择阶段即解释性拒绝
         val notExecutable = f.app.novelAgent.run(
             request(w, "分析第一章", preferredSkillId = CoreSkills.KNOWLEDGE_WORLD_MODEL.skillId),
         )
-        assertEquals(CoreSkills.KNOWLEDGE_WORLD_MODEL.skillId, notExecutable.skillId)
+        assertEquals(NovelAgentOutcome.FAILED, notExecutable.outcome)
+        assertNull(notExecutable.skillId, "不可执行 Skill 不得进入选中状态")
         assertEquals(NovelAgentErrorCodes.SKILL_NOT_EXECUTABLE, notExecutable.failure?.code)
+        assertTrue(
+            notExecutable.failure?.detail.orEmpty().contains("Knowledge Update"),
+            notExecutable.failure?.detail.orEmpty(),
+        )
         f.close()
     }
 
@@ -110,7 +115,7 @@ class NovelAgentRoutingTest {
         val f = novelAgentFixture()
         val w = seedNovelWorld(f)
 
-        // 单项 disabled：writing 不再参与匹配 → CONTINUE 落到 knowledge-world-model（证明 disabled 被排除）
+        // 单项 disabled：writing 不再参与匹配 → 仅剩 knowledge-world-model（无执行绑定），选择阶段解释性拒绝
         val writingDisabled = novelAgentWithRegistry(
             f,
             SkillRegistry.of(
@@ -118,8 +123,13 @@ class NovelAgentRoutingTest {
             ),
         )
         val fallback = writingDisabled.run(request(w, "继续写第一章"))
-        assertEquals(CoreSkills.KNOWLEDGE_WORLD_MODEL.skillId, fallback.skillId, "disabled Skill 不得被选中")
+        assertEquals(NovelAgentOutcome.FAILED, fallback.outcome)
+        assertNull(fallback.skillId, "disabled / 不可执行 Skill 不得被选中")
         assertEquals(NovelAgentErrorCodes.SKILL_NOT_EXECUTABLE, fallback.failure?.code)
+        assertTrue(
+            fallback.failure?.detail.orEmpty().contains("Knowledge Update"),
+            fallback.failure?.detail.orEmpty(),
+        )
 
         // 无任何匹配 → SKILL_NOT_FOUND
         val noneMatch = novelAgentWithRegistry(

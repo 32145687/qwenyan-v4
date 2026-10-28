@@ -44,7 +44,11 @@ class WriterController(
     private val scope: CoroutineScope,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val variantId: VariantId? = null,
+    /** 正文页开启：编辑停顿后自动保存到现有 Draft（测试默认关闭）。 */
+    private val autoSave: Boolean = false,
 ) {
+
+    private var autoSaveJob: kotlinx.coroutines.Job? = null
 
     private val chapterId: ChapterId get() = chapter.chapterId
 
@@ -65,9 +69,27 @@ class WriterController(
         }
     }
 
-    /** 用户编辑正文（仅本地缓冲，不落库；保存由 [save] 显式触发）。 */
+    /** 用户编辑正文（仅本地缓冲，不落库；保存由 [save] 或自动保存触发）。 */
     fun onContentChange(text: String) {
         _uiState.update { it.copy(draftContent = text, dirty = true, error = null) }
+        if (autoSave) scheduleAutoSave()
+    }
+
+    /**
+     * 自动保存：停止输入 1.2 秒后写入现有 Draft。
+     *
+     * 与手动保存完全同一条 `save()` 路径（受「无草稿 / 待审候选 / busy」限制）；
+     * 只取消重复计时，不改变任何业务状态。
+     */
+    private fun scheduleAutoSave() {
+        autoSaveJob?.cancel()
+        autoSaveJob = scope.launch {
+            kotlinx.coroutines.delay(1200)
+            val state = _uiState.value
+            if (state.dirty && state.draftId != null && !state.waitingForUser && !state.busy) {
+                save()
+            }
+        }
     }
 
     /**
@@ -79,6 +101,11 @@ class WriterController(
         val draftId = state.draftId
         if (draftId == null) {
             _uiState.update { it.copy(error = "尚无草稿：请先使用「继续写作」生成初稿") }
+            return
+        }
+        // 待审候选不得经普通保存进入 Canonical（必须先批准或拒绝 Human Gate）。
+        if (state.waitingForUser) {
+            _uiState.update { it.copy(error = "当前有未批准的 AI 候选：请先「通过确认」或「拒绝」，不能直接保存") }
             return
         }
         if (state.busy) return
@@ -129,6 +156,23 @@ class WriterController(
         }
     }
 
+    /**
+     * 拒绝当前候选（HITL）：调用既有 [ChapterWorkflowGateway.reject]。
+     * 拒绝只结束**当前 Gate**，不改写 Canonical；再次改写会由 Workflow 开启**新** Gate。
+     */
+    fun rejectGate() {
+        if (!_uiState.value.canReject) return
+        _uiState.update { it.copy(isRejecting = true, error = null) }
+        scope.launch {
+            runCatching {
+                withContext(ioDispatcher) { workflow.reject(chapterId) }
+                readContext()
+            }
+                .onSuccess { loaded -> _uiState.update { it.applyContext(loaded).copy(isRejecting = false) } }
+                .onFailure { e -> _uiState.update { it.copy(isRejecting = false, error = messageFor(e)) } }
+        }
+    }
+
     /** 执行一次 AI 操作：先置过程态（UI 本地提示，非业务状态机），完成后以真实投影覆盖。 */
     private fun generate(transient: WriterTaskStatus, block: () -> Unit) {
         if (!_uiState.value.canGenerate) return
@@ -161,7 +205,8 @@ class WriterController(
         draftFormat = loaded.context.draft?.format,
         draftContent = loaded.context.draft?.content ?: "",
         taskStatus = WriterTaskStatus.of(loaded.context.phase),
-        waitingForUser = loaded.waitingForUser,
+        waitingForUser = loaded.context.waitingForUser || loaded.waitingForUser,
+        pendingProposal = loaded.context.pendingProposal,
         revisionCount = loaded.revisionCount,
         error = null,
     )

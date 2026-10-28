@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
  * I7 · Skill Registry 测试（§17 Registry / Matching）。
  *
  * 覆盖：注册成功、duplicate ID、get / list / contains、unknown Skill、确定性顺序、
- * purpose 匹配与多 Skill 稳定排序、无匹配、disabled、默认五项核心 Skill、源码边界守卫。
+ * purpose 匹配与多 Skill 稳定排序、无匹配、disabled、默认六项核心 Skill、源码边界守卫。
  *
  * 全部使用固定定义：不依赖时间 / UUID / 随机（§18）。
  */
@@ -164,13 +164,14 @@ class SkillRegistryTest {
     }
 
     @Test
-    fun `default registry registers the five core skills`() {
+    fun `default registry registers the six core skills`() {
         val registry = SkillRegistry.default()
 
-        assertEquals(5, registry.size(), "I7 五项核心 Skill")
+        assertEquals(6, registry.size(), "I7 六项核心 Skill")
         assertEquals(
             listOf(
                 "skill.analysis-critique",
+                "skill.character-consistency",
                 "skill.knowledge-world-model",
                 "skill.rewrite-revision",
                 "skill.story-planning",
@@ -178,17 +179,18 @@ class SkillRegistryTest {
             ),
             registry.list().map { it.skillId.value },
         )
-        assertEquals(5, CoreSkills.all().map { it.skillId }.toSet().size, "五项 Skill ID 互不重复")
+        assertEquals(6, CoreSkills.all().map { it.skillId }.toSet().size, "六项 Skill ID 互不重复")
         assertEquals(
             setOf(
                 CoreSkills.CAPABILITY_STORY_PLANNING,
                 CoreSkills.CAPABILITY_WRITING,
                 CoreSkills.CAPABILITY_REWRITE_REVISION,
                 CoreSkills.CAPABILITY_ANALYSIS_CRITIQUE,
+                CoreSkills.CAPABILITY_CHARACTER_CONSISTENCY,
                 CoreSkills.CAPABILITY_KNOWLEDGE_WORLD_MODEL,
             ),
             CoreSkills.all().flatMap { skill -> skill.capabilities.map { it.name } }.toSet(),
-            "五类核心能力全部声明",
+            "六类核心能力全部声明",
         )
     }
 

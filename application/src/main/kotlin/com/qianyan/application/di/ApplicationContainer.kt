@@ -14,6 +14,7 @@ import com.qianyan.application.usecase.tool.AgentToolBridge
 import com.qianyan.application.usecase.tool.ProductToolService
 import com.qianyan.application.usecase.tool.readOnlyProductTools
 import com.qianyan.application.usecase.context.ContextEngineUseCases
+import com.qianyan.application.usecase.context.InMemoryContextPackStore
 import com.qianyan.application.usecase.context.defaultContextSources
 import com.qianyan.agent.agents.SkillRegistry
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
@@ -35,7 +36,6 @@ import com.qianyan.application.usecase.workspace.WorkspaceUseCases
 import com.qianyan.model.taskqueue.TaskKind
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
-import com.qianyan.application.usecase.chapter.ChapterWritingUseCases
 import com.qianyan.application.usecase.workflow.ChapterWorkflowFacade
 import com.qianyan.application.usecase.workflow.WorkflowOrchestrator
 import com.qianyan.application.usecase.workflow.WorkflowService
@@ -63,6 +63,9 @@ import com.qianyan.application.usecase.writing.WritingExecutionUseCase
 import com.qianyan.application.usecase.writing.WriterAgent
 import com.qianyan.application.usecase.writing.WriterFacade
 import com.qianyan.application.usecase.writing.WriterUseCases
+import com.qianyan.application.usecase.writing.consistency.CharacterConsistencyAgent
+import com.qianyan.application.usecase.writing.consistency.CharacterConsistencyUseCase
+import com.qianyan.application.usecase.writing.consistency.CharacterConsistencyValidator
 import com.qianyan.application.usecase.writing.critique.CritiqueAgent
 import com.qianyan.application.usecase.writing.critique.CritiqueExecutionUseCase
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAgent
@@ -282,11 +285,19 @@ class ApplicationContainer(
                 novels = novels,
                 chapters = chapters,
                 writer = writerUseCases,
-                vocabularies = vocabularies,
+                vocabularyRepository = vocabularyRepository,
                 foundations = storyFoundationRepository,
             ),
             errorMapper = errorMapper,
         )
+
+    /**
+     * A2 · 任务实际 ContextPack 的进程内快照存储（D-2：不持久化、不新增 Schema/Migration）。
+     *
+     * 必须是**容器级单例**：NovelAgent 发布、Workspace/Inspector 读取同一实例。
+     * 进程重启后自然清空，Inspector 显示 `PACK_UNAVAILABLE`，不得重新构建 Pack 冒充。
+     */
+    val contextPackStore: InMemoryContextPackStore = InMemoryContextPackStore()
 
     /**
      * I7 · Skill Registry（专业创作方法 / 能力的注册与发现；Novel IDE 第 7 阶段）。
@@ -395,6 +406,7 @@ class ApplicationContainer(
         chapters = chapters,
         sessions = agentSessions,
         activities = activities,
+        toolCallLogs = toolCallLogs,
         skillRegistry = skillRegistry,
         contextEngine = contextEngine,
         productTools = productTools,
@@ -406,8 +418,14 @@ class ApplicationContainer(
         writer = writer,
         critic = critic,
         rewriter = rewriter,
+        characterConsistency = characterConsistency,
+        characterConsistencyAgent = characterConsistencyAgent,
         planningContexts = planningContextAssembly,
         reader = writerUseCases,
+        // P0-3B D2 · 正式审批桥接：候选经既有用户层 seam 进入章节 Workflow（批准 / 拒绝 / 提交仍由正式链路负责）
+        workflowGateway = workflowFacade,
+        // A2：任务实际使用的 ContextPack 在同一容器内发布，供 Inspector 读取
+        contextPackStore = contextPackStore,
         errorMapper = errorMapper,
     )
 
@@ -470,7 +488,6 @@ class ApplicationContainer(
             chapters = chapters,
             writer = writerUseCases,
             index = projectIndex,
-            contextEngine = contextEngine,
             activities = activities,
             toolCallLogs = toolCallLogs,
             changes = changes,
@@ -480,6 +497,7 @@ class ApplicationContainer(
             sessions = agentSessions,
             storyState = storyState,
             errorMapper = errorMapper,
+            contextPackStore = contextPackStore,
         )
 
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
@@ -522,20 +540,6 @@ class ApplicationContainer(
     val reading: ReadingUseCases
         get() = ReadingUseCases(chapterRepository, canonicalRead, readingProgressRepository, errorMapper)
 
-    /** P12.1.7 Chapter 写作链编排（Planning→Writing→Critique→Revision→Finalize→Confirm→KnowledgeUpdate），复用既有 UseCases/Task。 */
-    val chapterWriting: ChapterWritingUseCases
-        get() = ChapterWritingUseCases(
-            taskManager = tasks,
-            planning = planning,
-            writing = writingExecution,
-            critique = critique,
-            revision = revision,
-            confirmation = confirmations,
-            knowledgeUpdate = knowledgeUpdate,
-            draftRepository = draftRepository,
-            errorMapper = errorMapper,
-        )
-
     /** P12.2 Durable Workflow 仓储（Workflow/Step/Attempt/Gate/Continuation）——流程持久化基础。 */
     val workflows: WorkflowRepository get() = workflowRepository
 
@@ -557,6 +561,7 @@ class ApplicationContainer(
             workflowRepository = workflowRepository,
             draftRepository = draftRepository,
             orchestrator = workflowOrchestrator,
+            workflowService = workflowService,
             errorMapper = errorMapper,
         )
 
@@ -687,7 +692,7 @@ class ApplicationContainer(
 
     /** P12.1.3 Continuation 来源解析/校验：解析显式 [ContinuationReference] → source Chapter + source Final Draft。 */
     val continuationResolver: ContinuationResolver
-        get() = ContinuationResolver(chapterRepository, draftRepository, errorMapper)
+        get() = ContinuationResolver(chapterRepository, draftRepository, canonicalRead, errorMapper)
 
     /** P11.2 Planner Agent：经 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。
      *  注入 AgentToolBridge：Planner 的只读工具调用（list_chapters / get_chapter / get_latest_draft）
@@ -698,7 +703,17 @@ class ApplicationContainer(
     /** P11.2 Planning 执行 Use Case：Task 生命周期 + Checkpoint 保存 ChapterPlan（P0-4 绑定/创建真实 Chapter）。
      *  P20-P5：经 [decisionModelGateway] 在 Application orchestration 决定 DecisionPolicy（Planner 只消费）。 */
     val planning: PlanningExecutionUseCase
-        get() = PlanningExecutionUseCase(tasks, planningContextAssembly, planner, chapterRepository, continuationResolver, errorMapper, decisionModelGateway)
+        get() = PlanningExecutionUseCase(
+            taskManager = tasks,
+            assembly = planningContextAssembly,
+            planner = planner,
+            chapterRepository = chapterRepository,
+            continuationResolver = continuationResolver,
+            contextEngine = contextEngine,
+            projects = projects,
+            errorMapper = errorMapper,
+            decisionModel = decisionModelGateway,
+        )
 
     /** P11.3 Writer Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
     val writer: WriterAgent
@@ -733,6 +748,27 @@ class ApplicationContainer(
             draftRepository = draftRepository,
             workingDrafts = workingDrafts,
             projects = projects,
+            contextEngine = contextEngine,
+            continuationResolver = continuationResolver,
+            errorMapper = errorMapper,
+        )
+
+    /** T-2B-2 · CharacterConsistency 只读 Agent（LLM → 严格 Parser；未接 NovelAgent/Skill）。 */
+    internal val characterConsistencyAgent: CharacterConsistencyAgent
+        get() = CharacterConsistencyAgent(analysisGateway, errorMapper, analysisModel)
+
+    /** T-2B-2 · CharacterConsistency 运行时 Validator（纯逻辑，不读仓储）。 */
+    internal val characterConsistencyValidator: CharacterConsistencyValidator
+        get() = CharacterConsistencyValidator()
+
+    /** T-2B-2 · CharacterConsistency 只读应用入口（ContextPack + CanonicalRead + WorldContext 快照）。 */
+    internal val characterConsistency: CharacterConsistencyUseCase
+        get() = CharacterConsistencyUseCase(
+            chapters = chapters,
+            canonicalRead = canonicalRead,
+            storyWorldContextResolver = storyWorldContextResolver,
+            agent = characterConsistencyAgent,
+            validator = characterConsistencyValidator,
             errorMapper = errorMapper,
         )
 
@@ -748,9 +784,9 @@ class ApplicationContainer(
     val rewriter: RevisionAgent
         get() = RevisionAgent(analysisGateway, errorMapper, analysisModel)
 
-    /** P11.4 Revision 执行 Use Case：RevisionGate + 修订 Draft 持久化 + REVISION Checkpoint。 */
+    /** P11.4 Revision 执行 Use Case：RevisionGate + 修订正文 + REVISION Checkpoint（不持久化章节 Draft）。 */
     val revision: RevisionExecutionUseCase
-        get() = RevisionExecutionUseCase(tasks, rewriter, draftRepository, errorMapper)
+        get() = RevisionExecutionUseCase(tasks, rewriter, errorMapper)
 
     /** P11.5 Knowledge Update Agent：复用 AgentRuntime → LLMGateway，默认 Mock。 */
     val knowledgeUpdater: KnowledgeUpdateAgent
@@ -765,8 +801,8 @@ class ApplicationContainer(
     val confirmations: ConfirmationExecutionUseCase
         get() = ConfirmationExecutionUseCase(draftRepository, errorMapper)
 
-    val taskRunner: TaskRunner get() =
-        TaskRunner(tasks, txts, planning, writingExecution, critique, revision, knowledgeUpdate, errorMapper)
+    internal val taskRunner: TaskRunner get() =
+        TaskRunner(tasks, txts, planning, critique, knowledgeUpdate, errorMapper)
 
     /** P11.1 写作 Use Case 骨架：真实创作属 P11.2+；postProcessDraft seam 本阶段即生效（默认直通）。 */
     val writing: WritingUseCases get() = WritingUseCases(errorMapper)

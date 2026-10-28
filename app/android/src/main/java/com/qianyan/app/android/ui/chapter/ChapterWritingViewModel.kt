@@ -75,6 +75,9 @@ class ChapterWritingViewModel(
     /** HITL：批准（幂等由 Facade/Workflow 保证，ViewModel 不保存 approved 状态）。 */
     fun approve() = run("Approve") { gateway.approve(chapterId) }
 
+    /** HITL：拒绝（幂等；Canonical 不变；旧 Gate 不复用，再次推进才会开启新轮次）。 */
+    fun reject() = run("Reject") { gateway.reject(chapterId) }
+
     /** 续到下一章：返回下一章进度（Facade 保证只创建一个下一章）。 */
     fun continueToNext() {
         if (_op.value is ChapterWritingOp.Running) return

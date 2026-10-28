@@ -44,6 +44,7 @@ class DesktopGraph private constructor(
     private var currentHandle: QianyanDbHandle? = null
 
     private val selectionFile: Path = appDir.resolve("provider-selection.properties")
+    private val uiPreferences = DesktopUiPreferences(appDir.resolve("ui-preferences.properties"))
 
     private val _provider = MutableStateFlow(readSelection())
     val provider = _provider.asStateFlow()
@@ -54,6 +55,14 @@ class DesktopGraph private constructor(
 
     /** 当前生效的模型 id（用户设置优先，否则该 Provider 的默认模型）。 */
     fun modelId(): String = _modelId.value ?: defaultModelId(_provider.value)
+
+    /** Compose 可观察的当前生效模型 id；Provider / 模型配置变化时更新。 */
+    private val _effectiveModel = MutableStateFlow("")
+    val effectiveModel = _effectiveModel.asStateFlow()
+
+    private fun refreshEffectiveModel() {
+        _effectiveModel.value = modelId()
+    }
 
     /** 当前生效的端点（空 = 用 Provider 官方默认 endpoint）。 */
     fun baseUrl(): String = _baseUrl.value ?: ""
@@ -72,6 +81,7 @@ class DesktopGraph private constructor(
         _baseUrl.value = stored["baseUrl"]?.takeIf { it.isNotBlank() }
         configuration = buildConfiguration(_provider.value)
         container = build(_provider.value)
+        refreshEffectiveModel()
     }
 
     /** 按 Provider + 用户模型/端点设置构造配置（Key 不经此对象）。 */
@@ -141,6 +151,8 @@ class DesktopGraph private constructor(
         modelId: String? = null,
         baseUrl: String? = null,
     ): Boolean {
+        val previousModel = _modelId.value
+        val previousBaseUrl = _baseUrl.value
         if (apiKey.isNotBlank()) credentialStore.setApiKey(type, apiKey.trim())
         if (modelId != null) _modelId.value = modelId.trim().ifBlank { null }
         if (baseUrl != null) _baseUrl.value = baseUrl.trim().ifBlank { null }
@@ -153,10 +165,15 @@ class DesktopGraph private constructor(
                 _provider.value = type
                 configuration = cfg
                 container = build(type)
+                refreshEffectiveModel()
                 providerMessage.value = null
                 true
             },
             onFailure = {
+                // 切换失败不得留下半改的模型/端点，否则 UI 会显示一个并未生效的模型。
+                _modelId.value = previousModel
+                _baseUrl.value = previousBaseUrl
+                refreshEffectiveModel()
                 providerMessage.value = "无法切换到 ${type.name}：${it.message ?: "凭证缺失"}（当前仍使用 ${_provider.value.name}）"
                 false
             },
@@ -168,6 +185,11 @@ class DesktopGraph private constructor(
     }
 
     // ---- Provider 设置（PC 设置页消费；API Key 只经 ProviderCredentialStore，不进领域模型）----
+
+    /** 读取/保存主题偏好（纯显示偏好；文件落在应用数据目录）。 */
+    fun readThemeMode(): String? = uiPreferences.readThemeMode()
+
+    fun saveThemeMode(mode: String): Boolean = uiPreferences.writeThemeMode(mode)
 
     /** 读取已保存的 API Key（用于设置页回显是否已配置；不显示明文）。 */
     fun isConfigured(type: ProviderType): Boolean =

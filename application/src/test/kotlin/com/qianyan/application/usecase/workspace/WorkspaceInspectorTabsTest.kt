@@ -4,10 +4,12 @@ import com.qianyan.model.change.ChangeArtifactStatus
 import com.qianyan.model.change.DiffLineKind
 import com.qianyan.model.log.AgentLogStatus
 import com.qianyan.model.workspace.InspectorTab
+import com.qianyan.model.workspace.InspectorTaskContextState
 import com.qianyan.model.workspace.WorkspaceSelection
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -130,7 +132,6 @@ class WorkspaceInspectorTabsTest {
             WorkspaceSelection.change(w.projectId, w.artifactId),
         ).forEach { selection ->
             f.app.workspace.inspector(w.projectId, selection)
-            f.app.workspace.context(w.projectId, selection)
             f.app.workspace.activities(w.projectId, selection)
             f.app.workspace.changes(w.projectId, selection)
             f.app.workspace.history(w.projectId, selection)
@@ -153,7 +154,9 @@ class WorkspaceInspectorTabsTest {
         assertEquals(1, view.activities.size)
         assertEquals(1, view.changes.size)
         assertTrue(view.history.isEmpty())
-        assertTrue(view.context!!.groups.isNotEmpty())
+        assertEquals(InspectorTaskContextState.NO_TASK, view.taskContext?.state)
+        assertNull(view.context, "4B.1a 不提供重建 Pack")
+        assertTrue(view.currentFacts.isNotEmpty(), "当前事实独立只读展示")
         assertEquals("长夜行舟", view.title)
         f.close()
     }

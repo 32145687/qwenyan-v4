@@ -1,152 +1,132 @@
 package com.qianyan.application.usecase.workspace
 
-import com.qianyan.model.IntentType
-import com.qianyan.model.context.ContextBudget
-import com.qianyan.model.context.ContextSourceKind
-import com.qianyan.model.workspace.WorkspaceObjectKind
+import com.qianyan.model.workspace.InspectorTaskContextState
 import com.qianyan.model.workspace.WorkspaceSelection
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * I14 · Context Tab（§3 / §9 / §10 / §16 / §23）：Inspector 的 Context **必须**来自既有 I6。
+ * Phase 4B.1a · Inspector 任务上下文四状态占位 + 当前事实独立只读。
+ *
+ * 明确边界：
+ *  - 4B.1a 不提供真实 ContextPack；状态 [InspectorTaskContextState.PACK_AVAILABLE] 只能是枚举占位；
+ *  - Inspector 任务上下文路径不得调用 ContextEngineUseCases.build；
+ *  - 当前事实来自既有 read API，必须与任务上下文分开。
  */
 class WorkspaceInspectorContextTest {
 
     @Test
-    fun `project context comes from the existing context engine`() {
+    fun `no task selection shows no task context and keeps current facts separate`() {
         val f = workspaceFixture()
         val w = seedWorkspaceWorld(f)
 
-        val view = f.app.workspace.context(w.projectId, WorkspaceSelection.project(w.projectId))
+        val view = f.app.workspace.inspector(w.projectId, WorkspaceSelection.project(w.projectId))
+        val taskContext = assertNotNull(view.taskContext)
 
-        assertEquals(w.projectId, view.selection.projectId)
-        assertEquals("长夜行舟", view.novelTitle)
-        assertEquals(IntentType.PLAN, view.purpose)
-        // packId 形态来自既有 I6 ContextEngineUseCases（证明没有第二套 Context Builder）
-        assertTrue(view.packId.startsWith("ctx-"), "Context 必须来自 I6 ContextEngine：${view.packId}")
-        assertEquals(ContextBudget.DEFAULT_MAX_TOKENS, view.budget.budgetTokens)
-        assertEquals("approx-chars-per-4", view.budget.estimator)
-        assertTrue(view.budget.usedRatio in 0f..1f)
-        assertTrue(view.groups.isNotEmpty(), "Project Context 应有真实来源条目")
-        assertTrue(view.groups.any { it.source == ContextSourceKind.NOVEL }, "应包含作品来源：${view.groups.map { it.source }}")
-        f.close()
-    }
-
-    @Test
-    fun `chapter context is focused on that chapter and reuses chapter and draft sources`() {
-        val f = workspaceFixture()
-        val w = seedWorkspaceWorld(f)
-
-        val view = f.app.workspace.context(
-            w.projectId,
-            WorkspaceSelection.chapter(w.projectId, w.novelId, w.chapter1),
-        )
-
-        assertEquals(IntentType.REWRITE, view.purpose)
-        assertTrue(view.focusLabel.contains("第 1 章"), view.focusLabel)
-        assertTrue(view.packId.contains(w.chapter1.value), "焦点章节进入 I6 ContextRequest：${view.packId}")
-        assertTrue(view.groups.any { it.source == ContextSourceKind.CHAPTER })
-        assertTrue(view.groups.any { it.source == ContextSourceKind.DRAFT })
-        assertTrue(view.notices.isEmpty(), "章节焦点是 I6 原生能力，不应有额外说明：${view.notices}")
-        f.close()
-    }
-
-    @Test
-    fun `object level context states its boundary instead of fabricating data`() {
-        val f = workspaceFixture()
-        val w = seedWorkspaceWorld(f)
-
-        val character = f.app.workspace.context(
-            w.projectId,
-            WorkspaceSelection.character(w.projectId, w.novelId, w.characterId),
-        )
-        assertEquals(IntentType.ANALYZE, character.purpose)
+        assertEquals(InspectorTaskContextState.NO_TASK, taskContext.state)
+        assertEquals("暂无任务上下文", taskContext.message)
+        assertNull(view.context, "4B.1a 不得提供重建的 ContextPack")
         assertTrue(
-            character.notices.any { it.contains("对象级 Context 尚无专用来源") },
-            "必须如实说明对象级 Context 的边界（不伪造）：${character.notices}",
+            view.currentFacts.any { it.label == "作品" && it.value == "长夜行舟" },
+            "当前事实应来自既有 Novel 读取：${view.currentFacts}",
         )
-
-        val change = f.app.workspace.context(w.projectId, WorkspaceSelection.change(w.projectId, w.artifactId))
-        assertTrue(change.notices.any { it.contains("修改 / 历史不参与 Context 选择") }, change.notices.toString())
         f.close()
     }
 
     @Test
-    fun `task context carries the task reference into the existing context request`() {
+    fun `existing task without a real pack shows unavailable state`() {
         val f = workspaceFixture()
         val w = seedWorkspaceWorld(f)
 
         val view = f.app.workspace.inspector(w.projectId, WorkspaceSelection.task(w.projectId, w.taskId))
+        val taskContext = assertNotNull(view.taskContext)
 
-        val task = view.task
-        assertNotNull(task, "TASK 选择必须给出任务投影")
-        assertEquals(w.taskId, task.taskId)
-        assertEquals("BACKGROUND", task.taskType)
-        assertEquals("PENDING", task.taskStatus, "Task 状态仍以既有 Task 为准")
-        assertEquals("QUEUED", task.queueStatus, "队列状态仍以既有 I13 为准")
-        assertEquals(IntentType.CUSTOM, view.context!!.purpose)
-        assertTrue(view.context!!.notices.any { it.contains("任务级 Context 复用 I6") }, view.context!!.notices.toString())
+        assertEquals(InspectorTaskContextState.PACK_UNAVAILABLE, taskContext.state)
+        assertEquals("上次任务上下文已失效", taskContext.message)
+        assertEquals(w.taskId, taskContext.taskId)
+        assertEquals(w.sessionId, taskContext.sessionId)
+        assertNull(view.context)
         f.close()
     }
 
     @Test
-    fun `context projection is deterministic for the same selection`() {
+    fun `running task without a real pack shows running without pack state`() {
         val f = workspaceFixture()
         val w = seedWorkspaceWorld(f)
-        val selection = WorkspaceSelection.chapter(w.projectId, w.novelId, w.chapter1)
+        f.app.tasks.start(w.taskId)
 
-        val first = f.app.workspace.context(w.projectId, selection)
-        val second = f.app.workspace.context(w.projectId, selection)
+        val view = f.app.workspace.inspector(w.projectId, WorkspaceSelection.task(w.projectId, w.taskId))
+        val taskContext = assertNotNull(view.taskContext)
 
-        assertEquals(first.packId, second.packId)
-        assertEquals(first.packVersion, second.packVersion)
-        assertEquals(first.groups.map { it.source }, second.groups.map { it.source })
-        assertEquals(
-            first.groups.flatMap { g -> g.entries.map { it.itemId } },
-            second.groups.flatMap { g -> g.entries.map { it.itemId } },
-        )
+        assertEquals(InspectorTaskContextState.RUNNING_WITHOUT_PACK, taskContext.state)
+        assertEquals("当前任务尚未生成上下文", taskContext.message)
+        assertEquals(w.taskId, taskContext.taskId)
+        assertNull(view.context)
         f.close()
     }
 
     @Test
-    fun `empty project still yields a valid context view without exception`() {
-        val f = workspaceFixture()
-        val bare = f.app.projects.createProject(title = "空书")
-
-        val view = f.app.workspace.context(bare.projectId, WorkspaceSelection.project(bare.projectId))
-
-        assertEquals(ContextBudget.DEFAULT_MAX_TOKENS, view.budget.budgetTokens)
-        assertTrue(view.groups.all { it.entries.isNotEmpty() }, "分组不得包含空组")
-        assertEquals("空书", view.novelTitle)
-        f.close()
-    }
-
-    @Test
-    fun `preview is truncated for display but never becomes a second context model`() {
+    fun `real pack state is defined but never fabricated by 4B1a`() {
         val f = workspaceFixture()
         val w = seedWorkspaceWorld(f)
 
-        val view = f.app.workspace.context(
+        val states = listOf(
+            WorkspaceSelection.project(w.projectId),
+            WorkspaceSelection.chapter(w.projectId, w.novelId, w.chapter1),
+            WorkspaceSelection.task(w.projectId, w.taskId),
+            WorkspaceSelection.change(w.projectId, w.artifactId),
+        ).map { selection ->
+            assertNotNull(f.app.workspace.inspector(w.projectId, selection).taskContext).state
+        }
+
+        assertTrue(InspectorTaskContextState.PACK_AVAILABLE in InspectorTaskContextState.values())
+        assertFalse(states.contains(InspectorTaskContextState.PACK_AVAILABLE), "4B.1a 不得伪造真实 Pack 状态")
+        f.close()
+    }
+
+    @Test
+    fun `current facts are read only projections and stay separate from task context`() {
+        val f = workspaceFixture()
+        val w = seedWorkspaceWorld(f)
+
+        val chapter = f.app.workspace.inspector(
             w.projectId,
             WorkspaceSelection.chapter(w.projectId, w.novelId, w.chapter1),
         )
-
-        // 条目只做展示截断；pack 内容本身不变（此处断言投影不超出上限，且条目仍带真实来源版本）
-        view.groups.flatMap { it.entries }.forEach { entry ->
-            assertTrue(entry.preview.length <= WorkspaceProjections.PREVIEW_LIMIT + 1, "预览仅展示截断：${entry.preview.length}")
-            assertTrue(entry.sourceVersion.isNotBlank(), "条目必须带来源版本（可追踪）")
-        }
+        val chapterTaskContext = assertNotNull(chapter.taskContext)
+        assertEquals(InspectorTaskContextState.NO_TASK, chapterTaskContext.state)
+        assertNull(chapter.context)
+        assertTrue(chapter.currentFacts.any { it.label == "作品" }, chapter.currentFacts.toString())
         assertTrue(
-            view.groups.flatMap { it.entries }.any { it.source == ContextSourceKind.DRAFT && it.preview.isNotBlank() },
-            "正文条目应带真实预览",
+            chapter.currentFacts.any { it.label == "章节" && it.value.contains("第 1 章") },
+            chapter.currentFacts.toString(),
         )
-        assertEquals(
-            WorkspaceObjectKind.CHAPTER,
-            view.selection.kind,
+
+        val character = f.app.workspace.inspector(
+            w.projectId,
+            WorkspaceSelection.character(w.projectId, w.novelId, w.characterId),
         )
+        assertTrue(
+            character.currentFacts.any { it.label == "人物" && it.value == "沈昭" },
+            character.currentFacts.toString(),
+        )
+        f.close()
+    }
+
+    @Test
+    fun `empty project still yields valid current facts without a pack`() {
+        val f = workspaceFixture()
+        val bare = f.app.projects.createProject(title = "空书")
+
+        val view = f.app.workspace.inspector(bare.projectId, WorkspaceSelection.project(bare.projectId))
+
+        assertEquals(InspectorTaskContextState.NO_TASK, assertNotNull(view.taskContext).state)
+        assertTrue(view.currentFacts.any { it.label == "作品" && it.value == "空书" })
+        assertNull(view.context)
         f.close()
     }
 }

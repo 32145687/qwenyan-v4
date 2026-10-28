@@ -95,20 +95,20 @@ class PlanningChapterOwnershipTest {
 
         // novel 不一致
         val ex1 = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(app.tasks.create(com.qianyan.model.task.TaskType.WRITING), request(n1), planN2)
+            app.writingExecution.executeIntoWorkingDraft(app.tasks.create(com.qianyan.model.task.TaskType.WRITING), request(n1), planN2)
         }
         assertIs<ApplicationError.VariantMismatch>(ex1.error)
 
         // variant 不一致（plan 无 variant vs request 有 variant）
         val planOrig = plan(null, n1, null, VariantScope.ORIGINAL)
         val ex2 = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(app.tasks.create(com.qianyan.model.task.TaskType.WRITING), request(n1, VariantId("va")), planOrig)
+            app.writingExecution.executeIntoWorkingDraft(app.tasks.create(com.qianyan.model.task.TaskType.WRITING), request(n1, VariantId("va")), planOrig)
         }
         assertIs<ApplicationError.VariantMismatch>(ex2.error)
 
         // scope 不一致（plan ORIGINAL vs request scope VARIANT）
         val ex3 = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(
+            app.writingExecution.executeIntoWorkingDraft(
                 app.tasks.create(com.qianyan.model.task.TaskType.WRITING),
                 request(n1).copy(scope = VariantScope.VARIANT),
                 planOrig,

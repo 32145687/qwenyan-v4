@@ -4,9 +4,13 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
+import com.qianyan.application.usecase.context.ContextEngineUseCases
+import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.model.ChapterId
+import com.qianyan.model.NovelId
 import com.qianyan.model.TaskId
+import com.qianyan.model.context.ContextRequest
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.story.ChapterPlan
@@ -41,6 +45,8 @@ class PlanningExecutionUseCase(
     private val planner: PlannerAgent,
     private val chapterRepository: ChapterRepository,
     private val continuationResolver: ContinuationResolver,
+    private val contextEngine: ContextEngineUseCases,
+    private val projects: ProjectUseCases,
     errorMapper: ErrorMapper,
     /** P20-P5：Decision 政策入口（Application orchestration 调用；Planner 只消费，不重算）。 */
     private val decisionModel: com.qianyan.application.usecase.decision.DecisionModelGateway? = null,
@@ -81,7 +87,21 @@ class PlanningExecutionUseCase(
         taskManager.start(taskId)
         try {
             val resolved = continuationReference?.let { continuationResolver.resolve(request, it) }
-            val context = assembly.assemble(request, continuationReference, resolved)
+            val novelId = request.baseNovelId?.let { NovelId(it.value) }
+                ?: throw ApplicationException(
+                    ApplicationError.InvalidOperation("UserWritingRequest 缺少 baseNovelId，无法构建 Context"),
+                )
+            val project = guard { projects.openProject(novelId) }
+            val pack = contextEngine.build(
+                ContextRequest(
+                    projectId = project.projectId,
+                    purpose = request.intentType,
+                    taskId = taskId,
+                    focusChapterId = targetChapterId,
+                ),
+                request.variantId,
+            )
+            val context = assembly.assemble(request, pack, continuationReference, resolved)
             // P20-P5：Resume → 复用传入政策；新 Task → decide 一次（不重复决定）。
             val policies = decisionPolicies ?: decidePolicy(context)
             val plan = planner.plan(context, policies)

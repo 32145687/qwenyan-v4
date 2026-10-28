@@ -17,6 +17,7 @@ import com.qianyan.model.foundation.StoryFoundation
 import com.qianyan.model.foundation.WritingPolicy
 import com.qianyan.model.vocabulary.VocabularyCandidate
 import com.qianyan.model.vocabulary.VocabularyEntry
+import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.model.vocabulary.VocabularyEntryType
 import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftStatus
@@ -49,6 +50,8 @@ internal class SeededProject(
     val chapter2: ChapterId,
     val draftId: DraftId,
     val candidateId: VocabularyCandidateId,
+    /** J-1=A：正式 Context 使用的 approved entry（与 candidate 并存，用于断言 candidate 不混入）。 */
+    val entryId: VocabularyEntryId,
 )
 
 internal fun seedProject(f: ContextFixture, title: String, key: String): SeededProject {
@@ -84,6 +87,18 @@ internal fun seedProject(f: ContextFixture, title: String, key: String): SeededP
     )
 
     val vocabularyId = f.app.vocabularies.getOrCreateNovelVocabulary(novelId)
+    val entryId = VocabularyEntryId("ve-$key")
+    f.app.vocabularyRepository.saveEntry(
+        VocabularyEntry(
+            entryId = entryId,
+            vocabularyId = vocabularyId,
+            novelId = novelId,
+            canonical = "$key 苏清",
+            aliases = listOf("$key 苏青"),
+            type = VocabularyEntryType.CHARACTER_APPELLATION,
+            status = VocabularyEntryStatus.APPROVED,
+        ),
+    )
     val candidateId = VocabularyCandidateId("vc-$key")
     f.app.vocabularyRepository.saveCandidate(
         VocabularyCandidate(
@@ -103,7 +118,7 @@ internal fun seedProject(f: ContextFixture, title: String, key: String): SeededP
     )
 
     f.app.projects.selectChapter(novelId, chapter2)
-    return SeededProject(novelId, f.app.projects.projectOf(novelId).projectId, chapter1, chapter2, draftId, candidateId)
+    return SeededProject(novelId, f.app.projects.projectOf(novelId).projectId, chapter1, chapter2, draftId, candidateId, entryId)
 }
 
 /** 固定时钟的 Context Engine（确定性 / Snapshot 测试用；容器默认时钟不参与选择与版本指纹）。 */
@@ -119,7 +134,7 @@ internal fun fixedClockEngine(
         novels = f.app.novels,
         chapters = f.app.chapters,
         writer = f.app.writerUseCases,
-        vocabularies = f.app.vocabularies,
+        vocabularyRepository = f.app.vocabularyRepository,
         foundations = f.app.storyFoundationRepository,
     ),
     clock = object : Clock {

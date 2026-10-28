@@ -36,7 +36,7 @@ import kotlin.time.Duration.Companion.seconds
  *     并验证 DecisionPolicy 经 P5-fix durable seam（PLANJSON2）持久化（不新建第二套 Decision 路径）；
  *  3. 保存：用户编辑内容经 DraftRepository 落库（Repository 层验证），format 保持不变；
  *  4. 旧 Draft（format=null）保存后仍为 null（legacy 兼容，不静默迁移）；
- *  5. AI 改写：复用既有 Critique → Revision，产出 status=REVISED 的新 Draft，lineage 指向原稿、原稿不被破坏。
+ *  5. AI 改写：复用既有 Critique → Revision，产物进入 WorkingDraft + Human Gate；批准前不写 Draft / Canonical。
  */
 class WriterGatewayIntegrationTest {
 
@@ -158,24 +158,38 @@ class WriterGatewayIntegrationTest {
         assertEquals("旧正文（编辑后）", app.draftRepository.getById(legacy.draftId)?.content)
     }
 
-    /* 5. AI 改写：复用既有 Critique → Revision；新 draftId / REVISED / lineage 指向原稿，原稿不破坏 */
+    /* 5. AI 改写：WorkingDraft + Human Gate；批准后由既有 Commit 产生新 Canonical 载体，lineage 指向原稿 */
     @Test
-    fun `rewrite produces revised draft keeping lineage and original`() {
+    fun `rewrite enters the human gate and approval commits the candidate`() {
         val app = ApplicationContainer.open(analysisGateway = gateway())
         val novelId = app.novels.createOriginal(title = "测试仙侠")
+        app.projects.openProject(novelId)
         val chapter = app.chapters.createNextChapter(title = "第一章", novelId = novelId)
         val original = draft(novelId, chapter.chapterId, "d-orig", "原正文", DraftFormat.CONTROLLED_MARKDOWN)
         app.draftRepository.save(original)
 
-        val revised = app.writerGateway.rewrite(novelId, null, chapter.chapterId)
+        val progress = app.writerGateway.rewrite(novelId, null, chapter.chapterId)
 
-        assertEquals(DraftStatus.REVISED, revised.status)
-        assertEquals(original.draftId, revised.previousDraftId, "修订稿 lineage 指向原稿")
-        assertEquals(DraftFormat.CONTROLLED_MARKDOWN, revised.format, "新产生的修订稿标记为受控 Markdown v1")
-        assertEquals("修订后的正文", revised.content)
-        // 原稿不被破坏，且成为章节最新稿
-        assertEquals("原正文", app.draftRepository.getById(original.draftId)?.content)
-        assertEquals(revised.draftId, app.draftRepository.latestByChapter(chapter.chapterId)?.draftId)
+        assertEquals(ChapterPhase.WAITING_CONFIRMATION, progress.phase, "改写必须停在人工门")
+        assertTrue(progress.waitingForUser)
+        // 批准前：不写 Draft、不改 Canonical；候选在 WorkingDraft 中
+        assertEquals(1, app.draftRepository.listByChapter(chapter.chapterId).size)
+        assertEquals("原正文", app.draftRepository.latestByChapter(chapter.chapterId)?.content)
+        assertNull(app.canonicalRead.committedContent(chapter.chapterId))
+        val pending = assertNotNull(app.writerGateway.loadContext(novelId, null, chapter.chapterId).pendingProposal)
+        assertEquals("原正文", pending.baseContent)
+        assertEquals("修订后的正文", pending.candidateContent)
+        assertTrue(pending.diff.hasChanges)
+
+        app.workflowFacade.approve(chapter.chapterId)
+
+        val committed = assertNotNull(app.draftRepository.latestByChapter(chapter.chapterId))
+        assertEquals("修订后的正文", committed.content)
+        assertEquals(original.draftId, committed.previousDraftId, "新 Canonical 载体 lineage 指向原稿")
+        assertEquals(DraftStatus.CONFIRMED, committed.status)
+        assertEquals(DraftFormat.CONTROLLED_MARKDOWN, committed.format)
+        assertEquals("原正文", app.draftRepository.getById(original.draftId)?.content, "原稿不被破坏")
+        assertEquals("修订后的正文", app.canonicalRead.committedContent(chapter.chapterId))
     }
 
     /* 6. 无 Draft 时改写 → 类型化拒绝（不伪造草稿） */

@@ -6,10 +6,12 @@ import com.qianyan.application.usecase.workflow.ChapterPhase
 import com.qianyan.application.usecase.workflow.ChapterWorkflowProgress
 import com.qianyan.application.usecase.writing.WriterChapterContext
 import com.qianyan.application.usecase.writing.WriterGateway
+import com.qianyan.application.usecase.writing.WriterPendingProposal
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
+import com.qianyan.model.change.TextDiffer
 import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftFormat
 import com.qianyan.model.writing.DraftStatus
@@ -43,7 +45,6 @@ class WriterViewModelTest {
     private class FakeWriterGateway : WriterGateway {
         var context: WriterChapterContext = context(phase = ChapterPhase.NOT_STARTED, draft = null)
         var continuePhase: ChapterPhase = ChapterPhase.WAITING_CONFIRMATION
-        var rewritable: Draft? = null
         var failContinue: Boolean = false
         var failSave: Boolean = false
 
@@ -70,9 +71,15 @@ class WriterViewModelTest {
             return progress(continuePhase)
         }
 
-        override fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): Draft {
+        override fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress {
             calls += "rewrite"
-            return rewritable ?: draft("d2", "修订后的正文")
+            return progress(continuePhase)
+        }
+
+        override fun rejectGate(chapterId: ChapterId): ChapterWorkflowProgress {
+            calls += "reject"
+            context = context.copy(waitingForUser = false, pendingProposal = null)
+            return progress(ChapterPhase.WAITING_CONFIRMATION)
         }
     }
 
@@ -185,20 +192,78 @@ class WriterViewModelTest {
         Dispatchers.resetMain()
     }
 
-    /** VM-4b：AI 改写 → 调用 rewrite 并重新加载（新 Draft 成为当前草稿）。 */
+    /** VM-4b：AI 改写 → 调用 rewrite；候选停在人工门，正文仍是已提交内容。 */
     @Test
-    fun `VM4b rewrite calls gateway and reloads draft`() = runTest {
+    fun `VM4b rewrite calls gateway and reloads pending candidate`() = runTest {
         val gw = FakeWriterGateway().apply { context = context(draft = draft("d1", "原正文")) }
         val vm = viewModel(gw)
         advanceUntilIdle()
 
-        gw.context = context(draft = draft("d2", "修订后的正文"), phase = ChapterPhase.WAITING_CONFIRMATION)
+        val proposal = WriterPendingProposal(
+            baseContent = "原正文",
+            candidateContent = "修订后的正文",
+            diff = TextDiffer.diff("原正文", "修订后的正文"),
+        )
+        gw.context = context(
+            draft = draft("d1", "原正文"),
+            phase = ChapterPhase.WAITING_CONFIRMATION,
+            waitingForUser = true,
+            pendingProposal = proposal,
+        )
         vm.rewrite()
         advanceUntilIdle()
 
         assertTrue(gw.calls.contains("rewrite"))
-        assertEquals("修订后的正文", vm.uiState.value.draftContent)
-        assertEquals("d2", vm.uiState.value.draftId?.value)
+        assertEquals("原正文", vm.uiState.value.draftContent, "批准前正文不得被改写")
+        assertEquals("d1", vm.uiState.value.draftId?.value)
+        assertTrue(vm.uiState.value.waitingForUser)
+        assertEquals("修订后的正文", vm.uiState.value.pendingProposal?.candidateContent)
+        assertFalse(vm.uiState.value.canSave, "待审期间禁止普通保存")
+        Dispatchers.resetMain()
+    }
+
+    /** VM-4c：待审期间保存被拒绝（不得经普通保存绕过 Human Gate）。 */
+    @Test
+    fun `VM4c save is blocked while a gate is pending`() = runTest {
+        val gw = FakeWriterGateway().apply {
+            context = context(
+                draft = draft("d1", "原正文"),
+                phase = ChapterPhase.WAITING_CONFIRMATION,
+                waitingForUser = true,
+                pendingProposal = WriterPendingProposal("原正文", "候选", TextDiffer.diff("原正文", "候选")),
+            )
+        }
+        val vm = viewModel(gw)
+        advanceUntilIdle()
+
+        vm.save()
+        advanceUntilIdle()
+
+        assertFalse(gw.calls.contains("saveContent"))
+        assertNotNull(vm.uiState.value.error)
+        Dispatchers.resetMain()
+    }
+
+    /** VM-4d：拒绝 → 转发既有章节 Workflow 入口，候选清空。 */
+    @Test
+    fun `VM4d reject forwards to the workflow gateway`() = runTest {
+        val gw = FakeWriterGateway().apply {
+            context = context(
+                draft = draft("d1", "原正文"),
+                phase = ChapterPhase.WAITING_CONFIRMATION,
+                waitingForUser = true,
+                pendingProposal = WriterPendingProposal("原正文", "候选", TextDiffer.diff("原正文", "候选")),
+            )
+        }
+        val vm = viewModel(gw)
+        advanceUntilIdle()
+
+        vm.rejectGate()
+        advanceUntilIdle()
+
+        assertTrue(gw.calls.contains("reject"))
+        assertNull(vm.uiState.value.pendingProposal)
+        assertFalse(vm.uiState.value.waitingForUser)
         Dispatchers.resetMain()
     }
 
@@ -296,6 +361,8 @@ private fun context(
     phase: ChapterPhase = ChapterPhase.WRITING,
     draft: Draft?,
     chapterTitle: String = "第一章",
+    waitingForUser: Boolean = false,
+    pendingProposal: WriterPendingProposal? = null,
 ): WriterChapterContext = WriterChapterContext(
     novelId = NovelId("n1"),
     novelTitle = "测试小说",
@@ -303,6 +370,8 @@ private fun context(
     chapterTitle = chapterTitle,
     draft = draft,
     phase = phase,
+    waitingForUser = waitingForUser,
+    pendingProposal = pendingProposal,
 )
 
 private fun progress(phase: ChapterPhase): ChapterWorkflowProgress = ChapterWorkflowProgress(

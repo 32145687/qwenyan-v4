@@ -7,7 +7,8 @@ import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.change.ChangeUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.commit.CommitUseCases
-import com.qianyan.application.usecase.context.ContextEngineUseCases
+import com.qianyan.application.usecase.context.ContextPackStore
+import com.qianyan.application.usecase.context.StoredContextPack
 import com.qianyan.application.usecase.index.ProjectIndexUseCases
 import com.qianyan.application.usecase.log.ActivityUseCases
 import com.qianyan.application.usecase.log.ToolCallLogUseCases
@@ -17,27 +18,27 @@ import com.qianyan.application.usecase.session.AgentSessionUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.taskqueue.TaskQueueUseCases
 import com.qianyan.application.usecase.writing.WriterUseCases
+import com.qianyan.model.AgentSessionId
 import com.qianyan.model.ChapterId
-import com.qianyan.model.IntentType
 import com.qianyan.model.NovelId
 import com.qianyan.model.ProjectId
-import com.qianyan.model.context.ContextBudget
 import com.qianyan.model.context.ContextPack
-import com.qianyan.model.context.ContextRequest
 import com.qianyan.model.project.Project
 import com.qianyan.model.projectindex.ProjectIndexEntryType
-import com.qianyan.model.taskqueue.TaskQueueItem
+import com.qianyan.model.task.Task
+import com.qianyan.model.task.TaskStatus
 import com.qianyan.model.workspace.InspectorActivityView
 import com.qianyan.model.workspace.InspectorChangeView
-import com.qianyan.model.workspace.InspectorContextView
+import com.qianyan.model.workspace.InspectorCurrentFact
 import com.qianyan.model.workspace.InspectorHistoryView
+import com.qianyan.model.workspace.InspectorTaskContextState
+import com.qianyan.model.workspace.InspectorTaskContextView
 import com.qianyan.model.workspace.WorkspaceErrorCodes
 import com.qianyan.model.workspace.WorkspaceInspectorView
 import com.qianyan.model.workspace.WorkspaceObjectCandidate
 import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
 import com.qianyan.storage.repository.StoryStateRepository
-import kotlinx.datetime.Clock
 
 /**
  * I14 · Workspace Use Cases（三栏 Workspace 的 **Application 层薄 Facade**，§20）。
@@ -46,7 +47,7 @@ import kotlinx.datetime.Clock
  * ```
  * WorkspaceSelection（当前对象，UI 会话态）
  *     ↓ select / candidates
- * 既有应用能力：I1 Project · I6 ContextEngine · I12 ProjectIndex · I4 Activity ·
+ * 既有应用能力：I1 Project · I12 ProjectIndex · I4 Activity ·
  *              I9 Change · I10 Commit · I13 TaskQueue · I3 AgentSession · I8 Draft
  *     ↓ WorkspaceProjections（纯映射）
  * WorkspaceInspectorView（只读投影）
@@ -55,8 +56,8 @@ import kotlinx.datetime.Clock
  * 硬边界：
  *  - **只读投影**：不写 Canonical（Chapter / ChapterDraft / StoryFoundation / ProjectState /
  *    CommitHistory），不建 Working Draft / Change / Commit；Inspector 永不写库（§17）；
- *  - **不复用第二套引擎**：Context 一律来自 I6 `ContextEngineUseCases.build`（本类不选择 / 不裁剪 / 不排序条目，§3 / §10）；
- *    Activity 来自 I4，Change / History 来自 I9 / I10，Task 状态来自 I13；
+ *  - **A2：Inspector 任务上下文只读 ContextPackStore**：按 taskId/sessionId 读取任务实际发布的 Pack；
+ *    无记录时显示不可用状态；不调用 Context Engine 的 build，也不伪造任务快照；当前小说事实来自既有 read API；
  *  - **不是第二套状态机**：本类不定义任何新状态机（§21）；`WorkspaceSelection` 是 UI 会话态，
  *    **不落库**，与 I1 `ProjectState` 严格分离（§5）；
  *  - **不伪造**：没有稳定来源的关联（如"某人物出现的章节"）如实写入 notices（§16）；
@@ -68,7 +69,6 @@ class WorkspaceUseCases(
     private val chapters: ChapterUseCases,
     private val writer: WriterUseCases,
     private val index: ProjectIndexUseCases,
-    private val contextEngine: ContextEngineUseCases,
     private val activities: ActivityUseCases,
     private val toolCallLogs: ToolCallLogUseCases,
     private val changes: ChangeUseCases,
@@ -78,6 +78,8 @@ class WorkspaceUseCases(
     private val sessions: AgentSessionUseCases,
     private val storyState: StoryStateRepository,
     errorMapper: ErrorMapper,
+    /** A2：任务实际 Pack 的只读查询入口；null = 未装配（Inspector 只能显示无 Pack 状态）。 */
+    private val contextPackStore: ContextPackStore? = null,
 ) : UseCase(errorMapper) {
 
     /* ---------------- 当前对象：候选 ---------------- */
@@ -310,54 +312,215 @@ class WorkspaceUseCases(
 
     /* ---------------- Inspector：三个 tab（§8 固定结构） ---------------- */
 
-    /** 一次读取 Inspector 的全部投影（三个 tab 的数据；UI 只负责切 tab）。 */
-    fun inspector(projectId: ProjectId, selection: WorkspaceSelection): WorkspaceInspectorView {
+    /**
+     * 一次读取 Inspector 的全部投影（三个 tab 的数据；UI 只负责切 tab）。
+     *
+     * @param agentSessionId A2：最近一次 Agent 任务的实际 session；仅用于读取已发布的 Pack，
+     *   **不会**触发 Context Build。为 null 时只显示无 Pack 状态。
+     */
+    fun inspector(
+        projectId: ProjectId,
+        selection: WorkspaceSelection,
+        agentSessionId: AgentSessionId? = null,
+    ): WorkspaceInspectorView {
         val normalized = select(projectId, selection)
         val (title, detail) = describe(projectId, normalized)
-        val contextView = context(projectId, normalized)
-        val taskView = normalized.taskId?.let { taskId ->
-            val task = runCatching { tasks.findById(taskId) }.getOrNull()
-            task?.let { WorkspaceProjections.taskView(it, guard { taskQueue.findByTask(taskId) }) }
+        val task = normalized.taskId?.let { taskId ->
+            runCatching { tasks.findById(taskId) }.getOrNull()
         }
+        val taskView = task?.let { WorkspaceProjections.taskView(it, guard { taskQueue.findByTask(it.taskId) }) }
+        val resolution = taskContext(projectId, normalized, task, agentSessionId)
+        val project = readProject(projectId)
+        val novelTitle = readNovel(project.novelId, projectId).title
         return WorkspaceInspectorView(
             selection = normalized,
             title = title,
             detail = detail,
-            context = contextView,
+            // A2：只投影任务实际发布的 Pack；没有真实 Pack 时保持 null，绝不重新构建。
+            context = resolution.pack?.let { pack ->
+                WorkspaceProjections.contextView(
+                    pack = pack,
+                    selection = normalized,
+                    focusLabel = title,
+                    novelTitle = novelTitle,
+                )
+            },
+            taskContext = resolution.view,
+            currentFacts = currentFacts(projectId, normalized),
             task = taskView,
             activities = activities(projectId, normalized),
             changes = changes(projectId, normalized),
             history = history(projectId, normalized),
-            notices = contextView.notices,
+            notices = emptyList(),
         )
     }
 
+    private data class TaskContextResolution(
+        val view: InspectorTaskContextView,
+        val pack: ContextPack?,
+    )
+
     /**
-     * Context Tab：**调用既有 I6 `ContextEngineUseCases.build`**，把 `ContextPack` 投影为 Inspector 视图。
+     * A2 任务上下文四状态（读取真实 Store，不构建 Pack）。
      *
-     * 本类不选择 / 不排序 / 不裁剪 Context 条目（复用 I6 `ContextSelector` + `ContextBudget`，§10）。
+     * - TASK 选择：按 taskId → AgentSession 查询；
+     * - 其他对象：使用显式 `agentSessionId`（UI 传入最近 Agent 任务）；章节/正文只在 Pack 的
+     *   focusChapterId 与当前选择一致时展示，避免把无关任务的 Pack 当成当前对象上下文；
+     * - 无 Store / 无记录：`PACK_UNAVAILABLE`，不得回退重建。
      */
-    fun context(projectId: ProjectId, selection: WorkspaceSelection): InspectorContextView {
-        val normalized = select(projectId, selection)
+    private fun taskContext(
+        projectId: ProjectId,
+        selection: WorkspaceSelection,
+        task: Task?,
+        agentSessionId: AgentSessionId?,
+    ): TaskContextResolution {
+        if (selection.kind == WorkspaceObjectKind.TASK) {
+            if (task == null) return TaskContextResolution(noTaskContext(), null)
+            val sessionId = sessionIdOf(projectId, selection)
+            val stored = sessionId?.let { contextPackStore?.find(it, projectId) }
+            return when {
+                stored != null -> TaskContextResolution(availableTaskContext(stored, task.taskId), stored.pack)
+                task.status == TaskStatus.RUNNING -> TaskContextResolution(
+                    InspectorTaskContextView(
+                        state = InspectorTaskContextState.RUNNING_WITHOUT_PACK,
+                        message = "当前任务尚未生成上下文",
+                        taskId = task.taskId,
+                        sessionId = sessionId,
+                    ),
+                    null,
+                )
+
+                else -> TaskContextResolution(
+                    InspectorTaskContextView(
+                        state = InspectorTaskContextState.PACK_UNAVAILABLE,
+                        message = "上次任务上下文已失效",
+                        taskId = task.taskId,
+                        sessionId = sessionId,
+                    ),
+                    null,
+                )
+            }
+        }
+
+        val session = agentSessionId
+            ?.let { runCatching { sessions.sessionOf(it) }.getOrNull() }
+            ?.takeIf { it.projectId == projectId }
+            ?: return TaskContextResolution(noTaskContext(), null)
+
+        val stored = contextPackStore?.find(session.sessionId, projectId)
+            ?: return TaskContextResolution(
+                InspectorTaskContextView(
+                    state = InspectorTaskContextState.PACK_UNAVAILABLE,
+                    message = "上次任务上下文已失效",
+                    taskId = session.taskId,
+                    sessionId = session.sessionId,
+                ),
+                null,
+            )
+
+        // 对象级选择：只展示与该对象焦点章节一致的任务 Pack，避免张冠李戴。
+        val selectedChapterId = selection.chapterId
+        if (selectedChapterId != null && stored.pack.request.focusChapterId != selectedChapterId) {
+            return TaskContextResolution(noTaskContext(), null)
+        }
+        return TaskContextResolution(availableTaskContext(stored, session.taskId), stored.pack)
+    }
+
+    private fun noTaskContext(): InspectorTaskContextView = InspectorTaskContextView(
+        state = InspectorTaskContextState.NO_TASK,
+        message = "暂无任务上下文",
+    )
+
+    private fun availableTaskContext(
+        stored: StoredContextPack,
+        taskId: com.qianyan.model.TaskId?,
+    ): InspectorTaskContextView = InspectorTaskContextView(
+        state = InspectorTaskContextState.PACK_AVAILABLE,
+        message = "任务上下文（实际快照）",
+        taskId = taskId ?: stored.taskId,
+        sessionId = stored.sessionId,
+    )
+
+    /**
+     * 当前小说事实（独立只读）。
+     *
+     * 只读取既有 Repository / read API，不构建 ContextPack，不代表 Agent 任务快照。
+     * 最小展示：作品 + 当前选择对象可读到的真实字段；无稳定读取接口时不伪造。
+     */
+    private fun currentFacts(projectId: ProjectId, selection: WorkspaceSelection): List<InspectorCurrentFact> {
         val project = readProject(projectId)
         val novel = readNovel(project.novelId, projectId)
+        val facts = mutableListOf<InspectorCurrentFact>()
+        facts += InspectorCurrentFact("作品", novel.title)
+        if (novel.genre.isNotEmpty()) {
+            facts += InspectorCurrentFact("题材", novel.genre.joinToString("、"))
+        }
+        facts += InspectorCurrentFact("状态", novel.status.name)
 
-        val request = ContextRequest(
-            projectId = projectId,
-            purpose = purposeOf(normalized.kind),
-            sessionId = sessionIdOf(projectId, normalized),
-            taskId = normalized.taskId,
-            focusChapterId = normalized.chapterId,
-            budget = ContextBudget(),
-        )
-        val pack: ContextPack = guard { contextEngine.build(request) }
-        return WorkspaceProjections.contextView(
-            pack = pack,
-            selection = normalized,
-            focusLabel = focusLabel(projectId, normalized) ?: novel.title,
-            novelTitle = novel.title,
-            notices = noticesFor(normalized, pack),
-        )
+        when (selection.kind) {
+            WorkspaceObjectKind.CHAPTER, WorkspaceObjectKind.DRAFT -> {
+                selection.chapterId?.let { id -> guard { chapters.findById(id) } }?.let { chapter ->
+                    facts += InspectorCurrentFact("章节", "第 ${chapter.order} 章 · ${chapter.title}")
+                    facts += InspectorCurrentFact("章节状态", chapter.status.name)
+                }
+                if (selection.kind == WorkspaceObjectKind.DRAFT) {
+                    selection.draftId?.let { id -> guard { writer.draft(id) } }?.let { draft ->
+                        facts += InspectorCurrentFact("正文状态", draft.status.name)
+                        draft.format?.let { facts += InspectorCurrentFact("正文格式", it) }
+                    }
+                }
+            }
+
+            WorkspaceObjectKind.CHARACTER -> {
+                selection.characterId?.let { id -> guard { storyState.getCharacterById(id) } }?.let { character ->
+                    facts += InspectorCurrentFact("人物", character.name)
+                    if (character.description.isNotBlank()) {
+                        facts += InspectorCurrentFact("人物描述", factValue(character.description))
+                    }
+                }
+            }
+
+            WorkspaceObjectKind.WORLD_RULE -> {
+                selection.worldRuleId?.let { id -> guard { storyState.getWorldRuleById(id) } }?.let { rule ->
+                    facts += InspectorCurrentFact("世界规则", factValue(rule.content))
+                }
+            }
+
+            WorkspaceObjectKind.FORESHADOW -> {
+                selection.foreshadowId?.let { id -> guard { storyState.getForeshadowById(id) } }?.let { foreshadow ->
+                    facts += InspectorCurrentFact("伏笔", factValue(foreshadow.content))
+                }
+            }
+
+            WorkspaceObjectKind.TIMELINE_ENTRY -> {
+                selection.timelineEntryId?.let { id -> guard { storyState.getTimelineEntryById(id) } }?.let { entry ->
+                    facts += InspectorCurrentFact("时间线", factValue(entry.description))
+                }
+            }
+
+            WorkspaceObjectKind.STORY_FOUNDATION -> {
+                guard { index.rebuild(projectId) }.entries
+                    .firstOrNull { it.entryType == ProjectIndexEntryType.STORY_FOUNDATION }
+                    ?.let { facts += InspectorCurrentFact("故事基础", it.label) }
+            }
+
+            WorkspaceObjectKind.VOCABULARY -> {
+                selection.vocabularyCandidateId?.let { id ->
+                    guard { index.rebuild(projectId) }.entries
+                        .firstOrNull { it.reference.vocabularyCandidateId == id }
+                        ?.let { facts += InspectorCurrentFact("词汇", it.label) }
+                }
+            }
+
+            else -> Unit
+        }
+        return facts
+    }
+
+    private fun factValue(value: String): String {
+        val text = value.replace(Regex("\\s+"), " ").trim()
+        return if (text.length <= WorkspaceProjections.PREVIEW_LIMIT) text
+        else text.take(WorkspaceProjections.PREVIEW_LIMIT) + "…"
     }
 
     /** Activity Tab：复用 I4 `ActivityUseCases` / `ToolCallLogUseCases`（不重建 Activity 模型，§11）。 */
@@ -467,17 +630,6 @@ class WorkspaceUseCases(
 
     /* ---------------- internals：投影辅助 ---------------- */
 
-    /** 任务目的：**复用既有** `IntentType`，不新造平行词汇（I6 §7）。 */
-    private fun purposeOf(kind: WorkspaceObjectKind): IntentType = when (kind) {
-        WorkspaceObjectKind.CHAPTER, WorkspaceObjectKind.DRAFT -> IntentType.REWRITE
-        WorkspaceObjectKind.CHARACTER, WorkspaceObjectKind.WORLD_RULE,
-        WorkspaceObjectKind.FORESHADOW, WorkspaceObjectKind.TIMELINE_ENTRY,
-        -> IntentType.ANALYZE
-
-        WorkspaceObjectKind.TASK -> IntentType.CUSTOM
-        else -> IntentType.PLAN
-    }
-
     /** 只有 TASK 选择有真实会话链路（`AgentSession.taskId`）时携带 sessionId；其余为 null（不猜测）。 */
     private fun sessionIdOf(projectId: ProjectId, selection: WorkspaceSelection): com.qianyan.model.AgentSessionId? {
         val taskId = selection.taskId ?: return null
@@ -485,15 +637,6 @@ class WorkspaceUseCases(
             .firstOrNull { it.taskId == taskId }
             ?.sessionId
     }
-
-    private fun focusLabel(projectId: ProjectId, selection: WorkspaceSelection): String? =
-        when (selection.kind) {
-            WorkspaceObjectKind.CHAPTER, WorkspaceObjectKind.DRAFT -> selection.chapterId?.let { id ->
-                guard { chapters.findById(id) }?.let { "第 ${it.order} 章 · ${it.title}" }
-            }
-
-            else -> null
-        }
 
     /** 对象标题 / 种类说明（来自既有来源；取不到就如实回落到 id）。 */
     private fun describe(projectId: ProjectId, selection: WorkspaceSelection): Pair<String, String> = when (selection.kind) {
@@ -566,32 +709,6 @@ class WorkspaceUseCases(
             val id = selection.historyId
             val entry = id?.let { key -> guard { commits.history(projectId) }.firstOrNull { it.historyId == key } }
             ((entry?.summary) ?: id?.value ?: "历史") to "历史"
-        }
-    }
-
-    /**
-     * 如实说明本次 Context 的边界（§16：**没有稳定来源就不伪造**）。
-     */
-    private fun noticesFor(selection: WorkspaceSelection, pack: ContextPack): List<String> = buildList {
-        when (selection.kind) {
-            WorkspaceObjectKind.CHAPTER, WorkspaceObjectKind.DRAFT -> Unit // 章节焦点是 I6 原生能力
-            WorkspaceObjectKind.PROJECT, WorkspaceObjectKind.NOVEL,
-            WorkspaceObjectKind.STORY_FOUNDATION, WorkspaceObjectKind.VOCABULARY,
-            -> Unit
-
-            WorkspaceObjectKind.CHARACTER, WorkspaceObjectKind.WORLD_RULE,
-            WorkspaceObjectKind.FORESHADOW, WorkspaceObjectKind.TIMELINE_ENTRY,
-            -> add("该对象级 Context 尚无专用来源：以下为所属作品的 Context（I6 目前支持 Project / 章节焦点）。")
-
-            WorkspaceObjectKind.TASK ->
-                add("任务级 Context 复用 I6（不新建任务级来源）；任务状态见上方任务投影。")
-
-            WorkspaceObjectKind.CHANGE, WorkspaceObjectKind.HISTORY ->
-                add("修改 / 历史不参与 Context 选择；以下为所属作品的 Context。")
-        }
-        if (pack.items.isEmpty()) add("本次 Context 为空：该项目当前没有可进入 Context 的来源。")
-        if (pack.budgetGuard.isTruncated) {
-            add("预算裁剪：已淘汰 ${pack.budgetGuard.omittedCount} 条（Budget ${pack.budgetGuard.budgetTokens}）。")
         }
     }
 }

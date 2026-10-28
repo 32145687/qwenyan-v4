@@ -10,6 +10,7 @@ import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.writing.WriterUseCases
+import com.qianyan.application.usecase.writing.WritingSnapshot
 import com.qianyan.model.DraftId
 import com.qianyan.model.ProjectId
 import com.qianyan.model.VariantScope
@@ -42,6 +43,7 @@ import com.qianyan.model.writing.DraftStatus
 import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.HumanGateStatus
 import com.qianyan.model.workflow.WorkflowHumanGateId
+import com.qianyan.model.workflow.WorkflowStepPhase
 import com.qianyan.storage.repository.CommitHistoryRepository
 import com.qianyan.storage.repository.WorkflowRepository
 import kotlinx.datetime.Clock
@@ -88,6 +90,13 @@ class CommitUseCases(
     private val clock: Clock = Clock.System,
     /** Phase 3 · World Model Update Pipeline（v3.1 §12）：仅在成功提交后触发；null = 未装配（既有测试路径）。 */
     private val worldModelUpdate: WorldModelUpdateUseCases? = null,
+    /**
+     * P0-3B D9 · 测试/诊断用后处理 seam：Commit 事务成功后的 WorkingDraft 收尾。
+     * 生产默认 = I8 `discard`；注入点仅用于验证“提交已成功、收尾失败”的非致命语义，不参与事务。
+     */
+    private val discardWorkingDraft: (com.qianyan.model.workingdraft.WorkingDraftId) -> Unit = {
+        workingDrafts.discard(it)
+    },
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -154,6 +163,7 @@ class CommitUseCases(
         val artifact = changes.get(artifactId)
         val draft = validateForCommit(projectId, artifact)
         requireApproval(evaluateCommit(artifact), approval, "Commit Artifact ${artifactId.value}")
+        if (approval != null) requireApprovalBinding(approval, artifact)
 
         var committed: CommitResult? = null
         workflows.inTransaction {
@@ -209,11 +219,15 @@ class CommitUseCases(
         }
         // 事务成功即已赋值（失败则事务已回滚并抛出），故此处必然非空
         val result = committed!!
-        // 提交成功后经 I8 既有能力收尾 Working Draft（终态 DISCARDED；不改 AgentSession / Workflow / Task）
-        workingDrafts.discard(draft.workingDraftId)
+        // P0-3B D9：提交事实已确立（CommitHistory 持久）；事务外收尾失败不得把成功提交误报为失败。
+        // Working Draft 收尾（终态 DISCARDED）与 World Model 更新均为事务外动作，失败仅记入 postCommitWarning。
+        val warnings = mutableListOf<String>()
+        runCatching { discardWorkingDraft(draft.workingDraftId) }
+            .onFailure { warnings.add("WorkingDraft 收尾失败: ${it.message ?: it::class.simpleName}") }
         // Phase 3：Commit 已持久化 → World Model Update Pipeline（唯一合法触发点在事务成功之后）
-        runWorldModelUpdate(result.historyEntry)
-        return result
+        runCatching { runWorldModelUpdate(result.historyEntry) }
+            .onFailure { warnings.add("World Model 更新失败: ${it.message ?: it::class.simpleName}") }
+        return if (warnings.isEmpty()) result else result.copy(postCommitWarning = warnings.joinToString("; "))
     }
 
     /* ---------------- 作者手改保存（P1-01f：保存即批准） ---------------- */
@@ -313,92 +327,6 @@ class CommitUseCases(
         return entry
     }
 
-    /* ---------------- AI 主写作链提交（P1-02：人工门批准后的 Final Draft） ---------------- */
-
-    /**
-     * **AI 主写作链的正式提交**（P1-02）：经既有 Human Gate 批准的 Final Draft → Canonical。
-     *
-     * 与 [commit] 的区别：输入是**章节最新的 Final Draft**（AI 写作链的产物，经 CONFIRMATION 人工门批准后
-     * 已 `CONFIRMED`），而不是 Change Artifact。生产调用者只有 [com.qianyan.application.usecase.workflow.WorkflowOrchestrator]
-     * 的人工门批准路径；Canonical 的写入仍**只经本类**（`CommitHistory.append` 的唯一入口）。
-     *
-     * 语义要点：
-     *  - **人工确认不可省**：`COMMIT_CANONICAL` 在 I2 恒为 `NeedsHuman` ⇒ 必须提供**既有** Workflow Human Gate
-     *    的 `RESOLVED + APPROVED` 凭据（[CommitApproval]）；本类不新建 Gate、不弱化策略；
-     *  - **只有经确认的结果可提交**：Draft 必须已 `CONFIRMED`（由既有 [com.qianyan.application.usecase.writing.confirmation.ConfirmationExecutionUseCase]
-     *    在门批准时置位），未确认的中间产出（WRITTEN / FINAL / REVISED…）一律拒绝；
-     *  - **身份不变**：被批准的 Draft 自身即 Canonical 正文载体（不另建 Draft 行、不改 `status` / `format`
-     *    —— legacy `format = null` 不被静默迁移）；基线取该章节**已提交的 Canonical 事实**（`CommitHistory`）；
-     *  - **幂等**：同一 Draft 内容已提交过 → 复用既有历史，不追加第二条（重试 / 重复批准不产生重复 Commit）；
-     *  - **原子性**：History 追加在既有 [WorkflowRepository.inTransaction] 内；失败即回滚，不产生半成品 Canonical。
-     *
-     * @throws ApplicationError.EntityNotFound Draft / Project 不存在或越界。
-     * @throws ApplicationError.InvalidOperation 见 [CommitErrorCodes]（INVALID_TARGET / HUMAN_APPROVAL_REQUIRED）。
-     */
-    fun commitApprovedDraft(draftId: DraftId, approval: CommitApproval): CommitHistoryEntry {
-        val draft = guard { drafts.draft(draftId) }
-            ?: throw ApplicationException(ApplicationError.EntityNotFound("Draft 不存在: ${draftId.value}"))
-        val chapterId = draft.chapterId
-            ?: throw invalid(CommitErrorCodes.INVALID_TARGET, "Draft 未落到 Chapter，不能成为 Canonical: ${draftId.value}")
-        val projectId = guard { projects.projectOf(draft.novelId) }.projectId
-
-        // I2：恒 NeedsHuman ⇒ 必须有既有 Workflow Human Gate 的 RESOLVED + APPROVED 凭据
-        requireApproval(
-            actionPolicy.evaluate(
-                AgentAction(
-                    kind = AgentActionKind.COMMIT_CANONICAL,
-                    target = "${draft.novelId.value}/${chapterId.value}",
-                    note = "AI 写作 Draft ${draftId.value}",
-                ),
-            ),
-            approval,
-            "Commit AI Draft ${draftId.value}",
-        )
-        // 只有经人工门确认的结果才能进入正式 Canonical（中间产出 WRITTEN / FINAL / REVISED 一律拒绝）
-        if (draft.status != DraftStatus.CONFIRMED) {
-            throw invalid(
-                CommitErrorCodes.HUMAN_APPROVAL_REQUIRED,
-                "Draft ${draftId.value} 状态 ${draft.status.name} 未经人工确认（需 CONFIRMED），不可进入 Canonical",
-            )
-        }
-
-        var committed: CommitHistoryEntry? = null
-        workflows.inTransaction {
-            val baseEntry = history.listByProject(projectId).lastOrNull { it.target.chapterId == chapterId }
-            // 幂等：同一 Draft 的**同一内容**已提交 → 复用既有历史，不重复 append
-            if (baseEntry != null && baseEntry.resultingDraftId == draftId && baseEntry.resultingContent == draft.content) {
-                committed = baseEntry
-                return@inTransaction
-            }
-            val now = Instant.fromEpochMilliseconds(clock.now().toEpochMilliseconds())
-            val entry = CommitHistoryEntry(
-                historyId = CommitHistoryId(nextId()),
-                commitId = CommitId(nextId()),
-                projectId = projectId,
-                operation = CommitOperation.COMMIT,
-                artifactId = null, // AI 主链：人工门批准（非 Change Artifact 路径）
-                gateId = approval.gateId,
-                target = WorkingDraftTarget(draft.novelId, chapterId, draft.variantId),
-                previousDraftId = baseEntry?.resultingDraftId?.takeUnless { it == draftId },
-                resultingDraftId = draftId,
-                previousContent = baseEntry?.resultingContent.orEmpty(),
-                resultingContent = draft.content,
-                summary = "AI 写作（人工门批准后正式提交）",
-                revertedHistoryId = null,
-                previousFormat = carrierFormat(baseEntry),
-                resultingFormat = CommitFormatHistory.ofDraftFormat(draft.format),
-                createdAt = now,
-            )
-            history.append(entry)
-            committed = entry
-        }
-        // 事务成功即已赋值（失败则事务已回滚并抛出）
-        val committedEntry = committed!!
-        // Phase 3：成功 Commit → World Model Update（本路径当前无生产调用方，挂载保持契约一致）
-        runWorldModelUpdate(committedEntry)
-        return committedEntry
-    }
-
     /* ---------------- History ---------------- */
 
     /** Project 内的 Commit History（时序 = 插入序，确定性；越界 Project 返回空，不泄漏其他 Project）。 */
@@ -427,6 +355,13 @@ class CommitUseCases(
      */
     @Synchronized
     fun committedByGate(gateId: WorkflowHumanGateId): CommitHistoryEntry? = guard { history.getByGate(gateId) }
+
+    /**
+     * 某 Change Artifact 是否已产生**正式提交**（P0-3B D9：重复 resume / 重复批准据此收敛到既有事实）。
+     * 无关联 → null。
+     */
+    @Synchronized
+    fun committedByArtifact(artifactId: ChangeArtifactId): CommitHistoryEntry? = guard { history.getByArtifact(artifactId) }
 
     /**
      * 预备回退：确认当前 Canonical 仍与该历史记录的"修改后"状态一致（**只读**，不改动任何数据）。
@@ -693,6 +628,91 @@ class CommitUseCases(
         }
     }
 
+    /**
+     * P0-3B D8 · 批准 Gate 的**最小绑定校验**。
+     *
+     * 防止：某个已批准 Gate 被用来提交另一个 Artifact / 另一个章节 / 另一个 Workflow 的候选；
+     * 或同一 Gate 被复用于第二次提交。
+     *
+     * D8 冻结语义：
+     *  - **Gate 复用检查（getByGate）对一切 Gate 生效**，绝不因缺 `stepId` 被跳过；
+     *  - **缺少 WorkflowStep 绑定的 Gate 不得用于正式 Commit**：默认 `GATE_TARGET_MISMATCH` 拒绝；
+     *    仅当调用方经 [CommitApproval.allowUnboundGate] **显式**声明兼容（仅限测试 / 历史兼容场景）时放行，
+     *    且放行前仍须通过复用检查——生产校验要求不降低。
+     */
+    private fun requireApprovalBinding(approval: CommitApproval, artifact: ChangeArtifact) {
+        val gate = guard { workflows.getGate(approval.gateId) }
+            ?: throw invalid(
+                CommitErrorCodes.HUMAN_APPROVAL_REQUIRED,
+                "批准 Gate 不存在: ${approval.gateId.value}",
+            )
+        // Gate 复用检查：**先于**任何兼容分支（D8：不因缺 stepId 被跳过）。
+        val alreadyCommitted = guard { history.getByGate(approval.gateId) }
+        if (alreadyCommitted != null && alreadyCommitted.artifactId != artifact.artifactId) {
+            throw gateMismatch(
+                approval,
+                artifact,
+                "该 Gate 已用于提交另一个 Artifact（${alreadyCommitted.artifactId?.value}）",
+            )
+        }
+        // D8：无 Step 绑定 ⇒ 不得用于正式 Commit（生产默认拒绝；显式兼容豁免仅限非生产场景）。
+        val step = gate.stepId?.let { guard { workflows.getStep(it) } }
+        if (step == null) {
+            if (!approval.allowUnboundGate) {
+                throw gateMismatch(
+                    approval,
+                    artifact,
+                    "Gate 缺少 WorkflowStep 绑定，不得用于正式 Commit（P0-3B D8）",
+                )
+            }
+            return
+        }
+        val target = artifact.change.target
+        if (gate.workflowId == null || step.workflowId != gate.workflowId) {
+            throw gateMismatch(approval, artifact, "Gate 与 Step 的 Workflow 绑定不一致")
+        }
+        val wf = guard { workflows.getWorkflow(step.workflowId) }
+            ?: throw invalid(
+                CommitErrorCodes.HUMAN_APPROVAL_REQUIRED,
+                "批准 Gate 所属 Workflow 不存在: ${step.workflowId.value}",
+            )
+        if (
+            step.phase != WorkflowStepPhase.CONFIRMATION ||
+            step.chapterId != target.chapterId ||
+            (wf.activeChapterId != null && wf.activeChapterId != target.chapterId) ||
+            wf.novelId != target.novelId ||
+            wf.variantId != target.variantId
+        ) {
+            throw gateMismatch(
+                approval,
+                artifact,
+                "Gate/Workflow（novel=${wf.novelId.value}, variant=${wf.variantId?.value}, chapter=${wf.activeChapterId?.value}）" +
+                    " 与 Artifact target（novel=${target.novelId.value}, variant=${target.variantId?.value}, chapter=${target.chapterId.value}）不一致",
+            )
+        }
+        val expectedWorkingRef = WritingSnapshot.WORKING_REF_PREFIX + artifact.workingDraftId.value
+        val activeWorkingRef = guard { workflows.listSteps(wf.workflowId) }
+            .lastOrNull {
+                it.chapterId == target.chapterId &&
+                    it.phase in WORKING_PHASES &&
+                    it.resultReference?.startsWith(WritingSnapshot.WORKING_REF_PREFIX) == true
+            }
+            ?.resultReference
+        if (activeWorkingRef != expectedWorkingRef) {
+            throw gateMismatch(
+                approval,
+                artifact,
+                "该 Gate 绑定的是工作产物 $activeWorkingRef，不是 Artifact 的 ${artifact.workingDraftId.value}",
+            )
+        }
+    }
+
+    private fun gateMismatch(approval: CommitApproval, artifact: ChangeArtifact, detail: String): ApplicationException =
+        invalid(
+            CommitErrorCodes.GATE_TARGET_MISMATCH,
+            "Gate ${approval.gateId.value} 与 Artifact ${artifact.artifactId.value} 绑定不一致：$detail",
+        )
+
     /** 新建 Canonical 正文载体（版本链 head：`previousDraftId` = 基线；不修改 / 不删除既有 Draft）。 */
     private fun newCanonicalDraft(
         artifact: ChangeArtifact,
@@ -770,4 +790,9 @@ class CommitUseCases(
 
     private fun conflict(historyId: CommitHistoryId, detail: String): ApplicationException =
         invalid(CommitErrorCodes.REVERT_CONFLICT, "无法回退 ${historyId.value}：$detail")
+
+    private companion object {
+        /** 产生 / 更新 AI 工作产物的 Step phase（与 WorkflowOrchestrator 的取值一致）。 */
+        val WORKING_PHASES = setOf(WorkflowStepPhase.WRITING, WorkflowStepPhase.REVISION)
+    }
 }

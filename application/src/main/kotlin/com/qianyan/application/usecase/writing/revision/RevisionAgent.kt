@@ -41,6 +41,9 @@ class RevisionAgent(
     private val model: ModelProfile = ModelProfile.MOCK,
 ) {
 
+    /** 实际执行 Agent 身份（供 Skill.bindings 的生产一致性校验）。 */
+    val agentId: AgentId get() = REVISION_AGENT.agentId
+
     /**
      * 依据 [currentDraft] + [critique] 执行一次 Revision（同步，无网络除非装配方注入真实 Provider）。
      * 返回新 draftId、status=REVISED 的 [Draft]；失败抛类型化 [ApplicationException]。

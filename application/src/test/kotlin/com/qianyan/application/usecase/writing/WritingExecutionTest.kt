@@ -20,8 +20,7 @@ import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.story.ChapterPlan
 import com.qianyan.model.task.TaskStatus
 import com.qianyan.model.task.TaskType
-import com.qianyan.model.writing.Draft
-import com.qianyan.model.writing.DraftStatus
+import com.qianyan.model.workingdraft.WorkingDraftStatus
 import com.qianyan.provider.ChatMessage
 import com.qianyan.provider.ChatRole
 import com.qianyan.provider.FinishReason
@@ -38,13 +37,14 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * P11.3 Writing Task 生命周期测试（经 TaskRunner.executeWriting）。
+ * P11.3 Writing Task 生命周期测试（经写作生产入口 `executeIntoWorkingDraft`）。
  *
  * 验证：
- *  - PENDING → RUNNING → Writer(AgentRuntime → Mock LLM) → Draft
- *      → Draft 持久化 → Checkpoint(stage=WRITING) → COMPLETED；
+ *  - PENDING → RUNNING → Writer(AgentRuntime → Mock LLM) → WorkingDraft
+ *      → WRITING Checkpoint（工作引用，非 draftId）→ COMPLETED；
  *  - 写作失败（非法输出）→ FAILED，类型化 [ApplicationError.InvalidWritingOutput]；
- *  - 非 WRITING Task → InvalidOperation；Task 不存在 → TaskNotFound。
+ *  - 非 WRITING Task → InvalidOperation；Task 不存在 → TaskNotFound；
+ *  - AI 写作**不写** ChapterDraft（Phase 1 直写边界）。
  * 全程 Mock LLM，无网络。
  */
 class WritingExecutionTest {
@@ -73,50 +73,49 @@ class WritingExecutionTest {
         baseNovelId = BaseNovelId(novelId.value),
     )
 
-    private fun plan(novelId: NovelId) = ChapterPlan(
-        chapterPlanId = ChapterPlanId("plan-1"),
-        chapterId = ChapterId("ch-1"),
-        arcId = ArcId("arc-1"),
-        actId = ActId("act-1"),
-        novelId = novelId,
-        scope = VariantScope.ORIGINAL,
-        chapterGoal = "救下女主并揭开秘辛",
-        expectedEvents = listOf("发现古碑"),
-        endingHook = "门被敲响",
-    )
+    private fun plan(app: ApplicationContainer, novelId: NovelId): ChapterPlan {
+        val chapterId = app.chapters.createNextChapter("第一章", novelId).chapterId
+        return ChapterPlan(
+            chapterPlanId = ChapterPlanId("plan-1"),
+            chapterId = chapterId,
+            arcId = ArcId("arc-1"),
+            actId = ActId("act-1"),
+            novelId = novelId,
+            scope = VariantScope.ORIGINAL,
+            chapterGoal = "救下女主并揭开秘辛",
+            expectedEvents = listOf("发现古碑"),
+            endingHook = "门被敲响",
+        )
+    }
 
-    /* 成功：PENDING → RUNNING → Draft 持久化 → WRITING Checkpoint → COMPLETED，Draft 可恢复 */
+    /* 成功：PENDING → RUNNING → WorkingDraft → WRITING Checkpoint → COMPLETED，工作引用可恢复 */
     @Test
-    fun `writing task completes and persists draft with checkpoint`() {
+    fun `writing task completes and persists working draft with checkpoint`() {
         val app = container()
         val novelId = app.novels.createOriginal(title = "测试仙侠")
         val id = app.tasks.create(TaskType.WRITING)
 
-        val draft = app.taskRunner.executeWriting(id, request(novelId), plan(novelId))
+        val working = app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(app, novelId))
 
         assertEquals(TaskStatus.COMPLETED, app.tasks.findById(id).status)
         assertEquals(1f, app.tasks.findById(id).progress)
         assertEquals(1, app.tasks.findById(id).revisionCount)
-        assertEquals(DraftStatus.WRITTEN, draft.status)
-        assertEquals("女主推开古碑，雷劫降临。", draft.content)
+        assertEquals(WorkingDraftStatus.WORKING, working.status)
+        assertEquals("女主推开古碑，雷劫降临。", working.content)
 
-        // Draft 已持久化（经 DraftRepository 读回）
-        val persisted = app.draftRepository.getById(draft.draftId)
-        assertNotNull(persisted, "Draft 应已持久化")
-        assertEquals(draft.content, persisted.content)
-        assertEquals(draft.novelId, persisted.novelId)
-        assertEquals(draft.planId, persisted.planId)
+        // AI 写作不落 ChapterDraft（Phase 1：AI 产物只进 WorkingDraft）
+        assertEquals(0, app.draftRepository.listByNovel(novelId).size)
 
-        // Checkpoint(WRITING) 可 restore，且可解码回 Draft
+        // Checkpoint(WRITING) 保存类型化工作引用，可经 WorkingDraft 恢复
         val cp = app.tasks.restoreCheckpoint(id)
         assertEquals("WRITING", cp.stage)
-        val restored = app.writingExecution.draftFrom(cp)
+        val restored = app.writingExecution.workingDraftFrom(cp)
         assertNotNull(restored)
-        assertEquals(draft.content, restored.content)
-        assertEquals(draft.draftId, restored.draftId)
+        assertEquals(working.workingDraftId, restored.workingDraftId)
+        assertEquals(working.content, restored.content)
     }
 
-    /* 失败：非法输出 → InvalidWritingOutput → FAILED，失败原因记录、无可用 Draft */
+    /* 失败：非法输出 → InvalidWritingOutput → FAILED，失败原因记录、无可用工作产物 */
     @Test
     fun `writing failure moves task to failed with typed error`() {
         val app = container(draftJson = "{\"content\":123}")
@@ -124,7 +123,7 @@ class WritingExecutionTest {
         val id = app.tasks.create(TaskType.WRITING)
 
         val ex = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(id, request(novelId), plan(novelId))
+            app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(app, novelId))
         }
         assertIs<ApplicationError.InvalidWritingOutput>(ex.error)
 
@@ -134,7 +133,7 @@ class WritingExecutionTest {
         assertTrue(failed.error!!.isNotBlank())
     }
 
-    /* LLM/Provider 故障：超时 → ProviderUnavailable → FAILED（类型化，不伪装 Draft） */
+    /* LLM/Provider 故障：超时 → ProviderUnavailable → FAILED（类型化，不伪装工作产物） */
     @Test
     fun `llm failure moves task to failed with typed error`() {
         val app = container(throwing = true)
@@ -142,7 +141,7 @@ class WritingExecutionTest {
         val id = app.tasks.create(TaskType.WRITING)
 
         val ex = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(id, request(novelId), plan(novelId))
+            app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(app, novelId))
         }
         assertIs<ApplicationError.ProviderUnavailable>(ex.error)
 
@@ -151,13 +150,14 @@ class WritingExecutionTest {
         assertNotNull(failed.error)
     }
 
-    /* 非 WRITING Task 经 executeWriting → InvalidOperation（类型化拒绝，不误执行） */
+    /* 非 WRITING Task → InvalidOperation（类型化拒绝，不误执行） */
     @Test
-    fun `non writing task rejected by executeWriting`() {
+    fun `non writing task rejected by writing entry`() {
         val app = container()
+        val novelId = app.novels.createOriginal(title = "测试")
         val id = app.tasks.create(TaskType.PLANNING)
         val ex = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(id, request(NovelId("x")), plan(NovelId("x")))
+            app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(app, novelId))
         }
         assertIs<ApplicationError.InvalidOperation>(ex.error)
         assertEquals(TaskStatus.PENDING, app.tasks.findById(id).status)
@@ -168,25 +168,35 @@ class WritingExecutionTest {
     fun `missing task throws TaskNotFound`() {
         val app = container()
         val ex = assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(TaskId("ghost"), request(NovelId("x")), plan(NovelId("x")))
+            app.writingExecution.executeIntoWorkingDraft(TaskId("ghost"), request(NovelId("x")), unboundPlan(NovelId("x")))
         }
         assertIs<ApplicationError.TaskNotFound>(ex.error)
     }
 
-    /* 失败路径不产生可用 Draft 快照（绝不伪造草稿） */
+    /* 失败路径不产生可解码工作产物（绝不伪造草稿） */
     @Test
-    fun `failed writing leaves no decodable draft snapshot`() {
+    fun `failed writing leaves no decodable working snapshot`() {
         val app = container(draftJson = "不是 JSON")
         val novelId = app.novels.createOriginal(title = "测试")
         val id = app.tasks.create(TaskType.WRITING)
 
         assertFailsWith<ApplicationException> {
-            app.taskRunner.executeWriting(id, request(novelId), plan(novelId))
+            app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(app, novelId))
         }
         val cp = app.tasks.findCheckpoints(id).lastOrNull()
         if (cp != null) {
-            assertEquals(null, app.writingExecution.draftFrom(cp))
+            assertEquals(null, app.writingExecution.workingDraftFrom(cp))
             assertEquals(0, app.draftRepository.listByNovel(novelId).size)
         }
     }
+
+    private fun unboundPlan(novelId: NovelId) = ChapterPlan(
+        chapterPlanId = ChapterPlanId("plan-ghost"),
+        chapterId = ChapterId("ch-ghost"),
+        arcId = ArcId("arc-1"),
+        actId = ActId("act-1"),
+        novelId = novelId,
+        scope = VariantScope.ORIGINAL,
+        chapterGoal = "目标",
+    )
 }

@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 
 /**
  * 新执行链路 · 桌面 NL 任务结果 → 用户可见文案（internal [agentTaskToast]，Common.kt）。
- * 四种结局必须可区分：完成摘要透出；等待人工明说；失败带类型化 detail；取消明说。
+ * 五种结局必须可区分：完成摘要透出；已进入正式审批；候选未桥接；失败带类型化 detail；取消明说。
  */
 class AgentTaskToastTest {
 
@@ -38,10 +38,25 @@ class AgentTaskToastTest {
     }
 
     @Test
-    fun `waiting human outcome says so instead of claiming success`() {
+    fun `waiting human outcome points to the formal chapter approval`() {
         val msg = agentTaskToast(result(NovelAgentOutcome.WAITING_HUMAN, "变更已就绪，等待人工确认"))
-        assertTrue(msg.contains("等待"), msg)
-        assertTrue(msg.contains("确认写入"), msg)
+        assertTrue(msg.contains("正式审批"), msg)
+        assertTrue(msg.contains("待确认"), msg)
+        assertTrue(msg.contains("正文"), msg)
+    }
+
+    @Test
+    fun `unbridged candidate is not presented as pending approval`() {
+        val msg = agentTaskToast(
+            result(
+                NovelAgentOutcome.CANDIDATE_UNBRIDGED,
+                "候选未进入正式审批",
+                NovelAgentFailure("BRIDGE_FAILED", "章节已存在待确认的正式审批"),
+            ),
+        )
+        assertTrue(msg.contains("未进入正式审批"), msg)
+        assertTrue(msg.contains("章节已存在待确认的正式审批"), msg)
+        assertTrue(!msg.contains("已进入正式审批——"), "未桥接不得伪装成待审批：$msg")
     }
 
     @Test

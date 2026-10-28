@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
  * I7 · Skill 绑定复用验证（§17 Existing capability reuse / §21 D）。
  *
  * 目标：证明 Skill 的 metadata / binding 指向**真实存在的既有能力**，而不是空壳：
- *  - 每项核心 Skill 绑定到既有五 Agent 之一（并与真实源码中的 `agentId` 逐字一致）；
+ *  - 每项核心 Skill 绑定到真实存在的 Agent（并与真实源码中的 `agentId` 逐字一致）；
  *  - 声明的 `allowedTools` 必须是真实已注册的 I5 Product Tool；
  *  - `requiredContext` / `expectedActions` 必须使用既有 I6 / I2 类型；
  *  - 访问 Registry 不写任何数据（§15：不需要数据库）。
@@ -33,6 +33,7 @@ class SkillRegistryBindingTest {
         "story-writer" to "WriterAgent.kt",
         "story-writer-revision" to "revision/RevisionAgent.kt",
         "story-critic" to "critique/CritiqueAgent.kt",
+        "story-character-consistency" to "consistency/CharacterConsistencyAgent.kt",
         "knowledge-update" to "knowledgeupdate/KnowledgeUpdateAgent.kt",
     )
 
@@ -41,14 +42,15 @@ class SkillRegistryBindingTest {
     private fun coreSkill(id: String): Skill = CoreSkills.all().single { it.skillId.value == id }
 
     @Test
-    fun `container seam exposes the five core skills`() {
+    fun `container seam exposes the six core skills`() {
         val handle = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY)
         val app = ApplicationContainer.fromDriver(handle.driver, MockLLMGateway())
 
-        assertEquals(5, app.skillRegistry.size(), "容器 seam 暴露五项核心 Skill")
+        assertEquals(6, app.skillRegistry.size(), "容器 seam 暴露六项核心 Skill")
         assertEquals(
             listOf(
                 "skill.analysis-critique",
+                "skill.character-consistency",
                 "skill.knowledge-world-model",
                 "skill.rewrite-revision",
                 "skill.story-planning",
@@ -66,6 +68,7 @@ class SkillRegistryBindingTest {
             "skill.writing" to ("story-writer" to "WriterAgent"),
             "skill.rewrite-revision" to ("story-writer-revision" to "RevisionAgent"),
             "skill.analysis-critique" to ("story-critic" to "CritiqueAgent"),
+            "skill.character-consistency" to ("story-character-consistency" to "CharacterConsistencyAgent"),
             "skill.knowledge-world-model" to ("knowledge-update" to "KnowledgeUpdateAgent"),
         )
 
@@ -97,7 +100,11 @@ class SkillRegistryBindingTest {
         CoreSkills.all().forEach { skill ->
             val id = skill.skillId.value
             assertTrue(skill.capabilities.isNotEmpty(), "$id 必须声明能力类别（复用既有 Capability）")
-            assertTrue(skill.allowedTools.isNotEmpty(), "$id 应声明预期使用的既有 Tool")
+            if (skill.skillId == CoreSkills.CHARACTER_CONSISTENCY.skillId) {
+                assertEquals(emptyList(), skill.allowedTools, "$id 为无工具 Agent")
+            } else {
+                assertTrue(skill.allowedTools.isNotEmpty(), "$id 应声明预期使用的既有 Tool")
+            }
             skill.allowedTools.forEach { tool ->
                 assertTrue(tool.value in registeredTools, "$id 声明的 ${tool.value} 必须是真实已注册的 Product Tool")
             }
@@ -134,7 +141,7 @@ class SkillRegistryBindingTest {
             app.skillRegistry.match(IntentType.CONTINUE).map { it.skillId.value },
             "多 Skill 稳定排序（skillId 升序）",
         )
-        assertEquals(5, app.skillRegistry.match(IntentType.CUSTOM).size, "CUSTOM 为兜底目的：五项全部可处理")
+        assertEquals(6, app.skillRegistry.match(IntentType.CUSTOM).size, "CUSTOM 为兜底目的：六项全部可处理")
         assertEquals(
             app.skillRegistry.match(IntentType.CUSTOM).map { it.skillId.value }.sorted(),
             app.skillRegistry.match(IntentType.CUSTOM).map { it.skillId.value },

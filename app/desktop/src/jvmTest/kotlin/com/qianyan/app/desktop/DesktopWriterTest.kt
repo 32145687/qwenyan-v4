@@ -296,6 +296,18 @@ class DesktopWriterTest {
             "ActionButton(\"继续写\", ActionLevel.PRIMARY, ui.canGenerate, onContinue)" in code,
             "「继续写」仍应绑定 onContinue（两个动作不得合并成同一个回调）",
         )
+        // P0-2.1：拒绝必须走既有 Workflow reject，且与批准是两个独立回调。
+        assertTrue(
+            "onReject = { controller?.rejectGate() }" in code,
+            "onReject 必须接到 WriterController.rejectGate()",
+        )
+        assertTrue(
+            "ActionButton(\"拒绝\", ActionLevel.TEXT, ui.canReject, onReject)" in code,
+            "「拒绝」必须绑定 onReject，且待审态可用性由 canReject 决定",
+        )
+        // 待审态不得提供普通保存入口（未批准候选不能经保存绕过 Gate）。
+        val waitingBranch = code.substringAfter("if (ui.waitingForUser) {").substringBefore("} else {")
+        assertFalse("onSave" in waitingBranch, "待审分支不得包含普通保存入口")
     }
 
     @Test
@@ -310,11 +322,31 @@ class DesktopWriterTest {
 
     // ---------- 5. Rewrite ----------
 
+    /**
+     * P0-2.1：改写必须先进入 WorkingDraft + Human Gate；批准前**不写 Draft / 不改 Canonical**。
+     * 批准后由既有 Change/Commit 链产生新的 Canonical 载体，版本链指向被改写的上一版。
+     */
     @Test
-    fun `rewrite reuses critique and revision and keeps the previous draft in lineage`() {
+    fun `rewrite enters the human gate first and approval commits the candidate`() {
         val (c, _) = openContainer()
         val (novelId, chapterId) = seedChapter(c)
-        val original = assertNotNull(driveUntilDraft(c, novelId, chapterId))
+        c.projects.openProject(novelId)
+        // fixture：已有正文（与离线 Revision 输出不同，保证候选确有变化）
+        val now = Clock.System.now()
+        val original = Draft(
+            draftId = DraftId("rewrite-base-p021"),
+            novelId = novelId,
+            variantId = null,
+            scope = VariantScope.ORIGINAL,
+            chapterId = chapterId,
+            content = "改写前的旧正文",
+            format = null,
+            status = DraftStatus.DRAFTING,
+            createdAt = now,
+            updatedAt = now,
+        )
+        c.draftRepository.save(original)
+        val projectId = c.projects.projectOf(novelId).projectId
 
         val controller = controllerFor(c, novelId, chapterId)
         controller.load()
@@ -322,17 +354,97 @@ class DesktopWriterTest {
 
         controller.rewrite()
 
-        val state = controller.uiState.value
-        assertNull(state.error, "rewrite 不应失败")
-        assertNotNull(state.draftId)
-        assertNotEquals(original.draftId, state.draftId, "改写必须产生新 Draft")
-        assertEquals(DraftStatus.REVISED.name, state.draftStatus, "改写产物 status=REVISED")
-        assertEquals(DraftFormat.CONTROLLED_MARKDOWN, state.draftFormat)
-        assertTrue(state.draftContent.isNotBlank())
+        val pending = controller.uiState.value
+        assertNull(pending.error, "rewrite 不应失败")
+        assertEquals(original.draftId, pending.draftId, "批准前编辑区仍是已提交正文")
+        assertEquals("改写前的旧正文", pending.draftContent)
+        assertTrue(pending.waitingForUser, "改写必须停在人工门")
+        assertNotNull(pending.pendingProposal, "必须提供原文 / 候选 / Diff")
+        assertEquals("改写前的旧正文", pending.pendingProposal!!.baseContent)
+        assertTrue(pending.pendingProposal!!.diff.hasChanges, "候选必须与原文有差异")
+        assertFalse(pending.canSave, "待审期间不得普通保存")
+        assertEquals(1, c.draftRepository.listByChapter(chapterId).size, "批准前不得新增 Draft")
+        assertNull(c.canonicalRead.committedContent(chapterId), "批准前 Canonical 不变")
 
-        val lineage = assertNotNull(c.writerGateway.loadContext(novelId, null, chapterId).draft)
+        val candidate = pending.pendingProposal!!.candidateContent
+        controller.approveGate()
+
+        val after = controller.uiState.value
+        assertNull(after.error, "批准候选不应失败")
+        assertFalse(after.waitingForUser)
+        assertNotEquals(original.draftId, after.draftId, "批准后产生新的 Canonical 载体")
+        assertEquals(candidate, c.canonicalRead.committedContent(chapterId), "批准后 Canonical = 候选正文")
+        val lineage = assertNotNull(c.draftRepository.latestByChapter(chapterId))
         assertEquals(original.draftId, lineage.previousDraftId, "版本链必须指向被改写的上一版")
-        assertEquals(state.draftId, lineage.draftId)
+        assertEquals(1, c.commits.history(projectId).size, "批准只产生一条 CommitHistory")
+    }
+
+    /** 改写未产生实际变化 ⇒ 明确失败，不建立无法提交的 Gate。 */
+    @Test
+    fun `rewrite without an actual change does not open a human gate`() {
+        val (c, _) = openContainer()
+        val (novelId, chapterId) = seedChapter(c)
+        val original = assertNotNull(driveUntilDraft(c, novelId, chapterId))
+        val projectId = c.projects.projectOf(novelId).projectId
+        val historyBefore = c.commits.history(projectId).size
+
+        val controller = controllerFor(c, novelId, chapterId)
+        controller.load()
+        controller.rewrite()
+
+        val state = controller.uiState.value
+        assertNotNull(state.error, "无实际变化必须明确失败")
+        assertFalse(state.waitingForUser, "不得建立无法提交的人工门")
+        assertEquals(original.draftId, state.draftId)
+        assertEquals(1, c.draftRepository.listByChapter(chapterId).size, "不得新增 Draft")
+        assertEquals(historyBefore, c.commits.history(projectId).size, "不得新增提交")
+    }
+
+    /** P0-2.1：拒绝只结束当前 Gate；Canonical / Draft 不变。 */
+    @Test
+    fun `rejecting a rewrite candidate leaves canonical unchanged`() {
+        val (c, _) = openContainer()
+        val (novelId, chapterId) = seedChapter(c)
+        c.projects.openProject(novelId)
+        val now = Clock.System.now()
+        val original = Draft(
+            draftId = DraftId("rewrite-reject-base"),
+            novelId = novelId,
+            variantId = null,
+            scope = VariantScope.ORIGINAL,
+            chapterId = chapterId,
+            content = "拒绝前的正文",
+            format = null,
+            status = DraftStatus.DRAFTING,
+            createdAt = now,
+            updatedAt = now,
+        )
+        c.draftRepository.save(original)
+        val projectId = c.projects.projectOf(novelId).projectId
+
+        val controller = controllerFor(c, novelId, chapterId)
+        controller.load()
+        controller.rewrite()
+        assertTrue(controller.uiState.value.waitingForUser)
+        val candidateWorking = c.workingDrafts.list(projectId)
+            .single { it.target.chapterId == chapterId && !it.status.isTerminal }
+
+        controller.rejectGate()
+
+        val after = controller.uiState.value
+        assertNull(after.error, "拒绝不应失败")
+        assertFalse(after.waitingForUser, "拒绝后不再等待人工")
+        assertNull(after.pendingProposal, "被拒候选不再作为待审内容展示")
+        assertEquals(original.draftId, after.draftId)
+        assertEquals("拒绝前的正文", after.draftContent)
+        assertNull(c.canonicalRead.committedContent(chapterId), "拒绝后 Canonical 不变")
+        assertTrue(c.commits.history(projectId).isEmpty(), "拒绝不产生 CommitHistory")
+        assertEquals(1, c.draftRepository.listByChapter(chapterId).size, "拒绝不得写 Draft")
+        assertEquals(
+            WorkingDraftStatus.VALIDATED,
+            c.workingDrafts.get(candidateWorking.workingDraftId).status,
+            "拒绝不丢弃工作产物（保留可审计候选）",
+        )
     }
 
     // ---------- 6. Legacy Draft ----------

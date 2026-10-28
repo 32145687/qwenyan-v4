@@ -155,4 +155,6 @@ internal fun novelImportErrorMessage(error: ApplicationError): String = when (er
     is ApplicationError.InvalidContinuationSource -> "续篇来源无效：${error.detail}"
     is ApplicationError.DraftConfirmationRequired -> "知识更新需先确认最终稿：${error.detail}"
     is ApplicationError.ProviderCredentialMissing -> "AI 服务未配置密钥：${error.detail}"
+    is ApplicationError.InvalidCharacterConsistencyOutput -> "人物一致性结果无效，请重试"
+    is ApplicationError.InvalidCharacterConsistencyResult -> "人物一致性校验未通过，请重试"
 }

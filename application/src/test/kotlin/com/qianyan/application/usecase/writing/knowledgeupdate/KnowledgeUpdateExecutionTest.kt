@@ -86,9 +86,9 @@ class KnowledgeUpdateExecutionTest {
         baseNovelId = BaseNovelId(novelId.value),
     )
 
-    private fun plan(novelId: NovelId) = ChapterPlan(
+    private fun plan(novelId: NovelId, chapterId: ChapterId) = ChapterPlan(
         chapterPlanId = ChapterPlanId("plan-ku"),
-        chapterId = ChapterId("ch-ku"),
+        chapterId = chapterId,
         arcId = ArcId("arc-ku"),
         actId = ActId("act-ku"),
         novelId = novelId,
@@ -222,17 +222,29 @@ class KnowledgeUpdateExecutionTest {
             val novelId = app.novels.createOriginal(title = "测试")
             val id = app.tasks.create(TaskType.WRITING)
 
-            // Writing: Draft v1
-            val v1 = app.taskRunner.executeWriting(id, request(novelId), plan(novelId))
-            assertEquals(DraftStatus.WRITTEN, v1.status)
+            // Writing: WorkingDraft v1（AI 不落 ChapterDraft）
+            val chapterId = app.chapters.createNextChapter("第一章", novelId).chapterId
+            val working = app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(novelId, chapterId))
+            assertEquals("女主推开古碑。", working.content)
 
-            // Critique: ValidationResult + CRITIQUE checkpoint
-            val critique = app.taskRunner.executeCritique(id, v1)
+            // Critique: ValidationResult + CRITIQUE checkpoint（直接评审工作正文，不伪造 DraftId）
+            val critique = app.critique.execute(id, working.content, plan(novelId, chapterId).chapterPlanId)
             assertNotNull(critique)
 
             // P12.1.4：KU 前需最终稿 + 确认（confirm 不调用 LLM，llmCalls 保持 3）。
-            app.draftRepository.save(v1.copy(status = DraftStatus.FINAL))
-            val confirmed = app.confirmations.confirmFinalDraft(v1.draftId, v1.novelId, v1.variantId)
+            // 测试夹具构造已提交的章节载体（模拟 Commit 后正文），不参与 AI 直写链。
+            val now = Instant.parse("2026-01-01T00:00:00Z")
+            val carrier = Draft(
+                draftId = DraftId("d-ku-pipeline"),
+                novelId = novelId,
+                chapterId = chapterId,
+                content = working.content,
+                status = DraftStatus.FINAL,
+                createdAt = now,
+                updatedAt = now,
+            )
+            app.draftRepository.save(carrier)
+            val confirmed = app.confirmations.confirmFinalDraft(carrier.draftId, novelId, null)
             assertEquals(DraftStatus.CONFIRMED, confirmed.status)
 
             // Knowledge Update: 候选落地 + KNOWN_UPDATE checkpoint
@@ -248,7 +260,7 @@ class KnowledgeUpdateExecutionTest {
             // reopen：Memory 沉淀与 checkpoint 一致
             app = open()
             val memories = app.memories.query(com.qianyan.model.core.VariantContext(
-                baseNovelId = BaseNovelId(novelId.value), variantId = v1.variantId, scope = v1.scope))
+                baseNovelId = BaseNovelId(novelId.value), variantId = carrier.variantId, scope = carrier.scope))
             assertTrue(memories.any { it.content.contains("【知识更新·ADD】") })
             assertEquals("KNOWLEDGE_UPDATE", app.tasks.restoreCheckpoint(id).stage)
             val restored = app.knowledgeUpdate.validatedFrom(app.tasks.restoreCheckpoint(id))

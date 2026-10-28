@@ -72,6 +72,7 @@ fun ChapterWritingScreen(
                 ActionButton("推进写作", enabled = !running, loading = running, onClick = viewModel::advance)
                 if (phase == ChapterPhase.WAITING_CONFIRMATION && progress?.waitingForUser == true) {
                     ActionButton("确认内容", enabled = !running, onClick = viewModel::approve)
+                    ActionButton("拒绝", enabled = !running, onClick = viewModel::reject)
                 }
             }
         }

@@ -282,14 +282,16 @@ class CommitUseCasesTest {
     fun `history is scoped to project and order is deterministic`() {
         val f = commitFixture()
         val w = commitWorld(f)
-        val approval = approvedGate(f, w)
+        // P0-3B D8：每次正式提交使用独立的批准 Gate（同一 Gate 不得提交两个 Artifact）
+        val firstApproval = approvedGate(f, w, gateId = "gate-i10-history-1")
+        val secondApproval = approvedGate(f, w, gateId = "gate-i10-history-2")
 
-        val first = f.app.commits.commit(w.projectId, artifactFor(f, w, "第一次提交正文").artifactId, approval)
+        val first = f.app.commits.commit(w.projectId, artifactFor(f, w, "第一次提交正文").artifactId, firstApproval)
         // 第二次提交必须基于**第一次提交后的** Canonical 正文载体
         val second = f.app.commits.commit(
             w.projectId,
             artifactFor(f, w, "第二次提交正文", baseDraftId = first.resultingDraftId).artifactId,
-            approval,
+            secondApproval,
         )
 
         val entries = f.app.commits.history(w.projectId)

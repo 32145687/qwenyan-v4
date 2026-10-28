@@ -144,9 +144,9 @@ class ConfirmationGateTest {
         assertTrue(llmCalls >= 1) // KU 确实调用了 Agent
     }
 
-    /* T6 — Draft A 已确认，Revision 生成 Draft B，B ≠ CONFIRMED；T7 — lineage 正确 */
+    /* T6 — 已确认 Draft 经 WorkingDraft 修订：安全链不产生新 Draft，A 仍 CONFIRMED */
     @Test
-    fun `t6 t7 revision new draft does not inherit confirmation and keeps lineage`() {
+    fun `t6 working revision does not inherit confirmation and writes no draft`() {
         val app = ApplicationContainer.open(analysisGateway = gateway())
         val novelId = app.novels.createOriginal(title = "仙侠")
         val ch = chapter(app, novelId, null, VariantScope.ORIGINAL, "t6-ch")
@@ -154,12 +154,17 @@ class ConfirmationGateTest {
         app.draftRepository.save(a)
         app.confirmations.confirmFinalDraft(a.draftId, novelId, null)
 
-        val b = app.taskRunner.executeRevision(app.tasks.create(TaskType.WRITING), a, ValidationResult(passed = true))
+        val revised = app.revision.reviseWorking(
+            app.tasks.create(TaskType.WRITING),
+            "wd-t6",
+            a.content,
+            ValidationResult(passed = true),
+            novelId,
+        )
 
-        assertEquals(DraftStatus.REVISED, b.status)
-        assertNotEquals(DraftStatus.CONFIRMED, b.status)
-        assertEquals(a.draftId, b.previousDraftId)
+        assertEquals("修订稿。", revised)
         assertEquals(DraftStatus.CONFIRMED, app.draftRepository.getById(a.draftId)!!.status) // A 仍 CONFIRMED
+        assertEquals(1, app.draftRepository.listByNovel(novelId).size) // 安全链不落新 Draft
     }
 
     /* T8 — Variant A 的 Draft 不能被 Variant B 确认 */

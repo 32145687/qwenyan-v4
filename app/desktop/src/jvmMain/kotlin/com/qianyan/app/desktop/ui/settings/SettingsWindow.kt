@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,14 +33,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.qianyan.app.desktop.adapter.DesktopFilePicker
 import com.qianyan.app.desktop.ui.ActionButton
 import com.qianyan.app.desktop.ui.ActionLevel
 import com.qianyan.app.desktop.ui.DesktopAppState
 import com.qianyan.app.desktop.ui.HLine
+import com.qianyan.app.desktop.ui.hoverBackground
 import com.qianyan.app.desktop.ui.ProseSize
 import com.qianyan.app.desktop.ui.SectionLabel
 import com.qianyan.app.desktop.ui.consumeClicks
+import com.qianyan.app.desktop.ui.importTxtFromPicker
 import com.qianyan.app.desktop.ui.shortcutLabel
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanDarkPalette
@@ -98,24 +100,22 @@ fun SettingsPanel(state: DesktopAppState, onClose: () -> Unit) {
 
     Column(
         Modifier
-            .fillMaxWidth(0.94f)
-            .fillMaxHeight(0.92f)
-            .widthIn(max = 1180.dp)
-            .heightIn(max = 820.dp)
+            .fillMaxWidth(0.92f)
+            .fillMaxHeight(0.9f)
+            .widthIn(max = 1000.dp)
+            .heightIn(max = 720.dp)
             .clip(RoundedCornerShape(QianyanShapes.window))
-            .background(palette.raised)
-            .border(1.dp, palette.lineStrong, RoundedCornerShape(QianyanShapes.window))
+            .background(palette.bg)
+            .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.window))
             .consumeClicks(),
     ) {
         // 标题行
         Row(
-            Modifier.fillMaxWidth().height(QianyanDimens.TopBar).background(palette.surface)
+            Modifier.fillMaxWidth().height(QianyanDimens.TopBar).background(palette.bg)
                 .padding(start = 16.dp, end = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("设置", style = MaterialTheme.typography.titleMedium, color = palette.text, fontWeight = FontWeight.SemiBold)
-            Spacer(Modifier.width(10.dp))
-            Text("千言 Qianyan", style = QianyanCodeStyle, color = palette.text3)
+            Text("设置", style = MaterialTheme.typography.titleSmall, color = palette.text, fontWeight = FontWeight.SemiBold)
             Spacer(Modifier.weight(1f))
             Text("${group.title} / ${item.title}", style = QianyanCodeStyle, color = palette.text3)
             Spacer(Modifier.width(12.dp))
@@ -126,9 +126,9 @@ fun SettingsPanel(state: DesktopAppState, onClose: () -> Unit) {
         Row(Modifier.fillMaxHeight()) {
             // 左：分组导航
             Column(
-                Modifier.width(196.dp).fillMaxHeight().background(palette.surface)
+                Modifier.width(220.dp).fillMaxHeight().background(palette.soft)
                     .verticalScroll(rememberScrollState())
-                    .padding(vertical = 12.dp),
+                    .padding(vertical = 16.dp),
             ) {
                 SETTINGS_NAV.forEach { g ->
                     SectionLabel(g.title, Modifier.padding(start = 16.dp, end = 16.dp, top = 10.dp, bottom = 2.dp))
@@ -138,6 +138,7 @@ fun SettingsPanel(state: DesktopAppState, onClose: () -> Unit) {
                             Modifier.fillMaxWidth().padding(horizontal = 8.dp)
                                 .clip(RoundedCornerShape(QianyanShapes.r))
                                 .background(if (on) palette.selection else Color.Transparent)
+                                .hoverBackground(RoundedCornerShape(QianyanShapes.r), enabled = !on)
                                 .clickable { groupKey = g.title; itemKey = i.key }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                         ) {
@@ -155,7 +156,7 @@ fun SettingsPanel(state: DesktopAppState, onClose: () -> Unit) {
             Box(Modifier.width(1.dp).fillMaxHeight().background(palette.line))
 
             // 右：设置内容
-            Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = 34.dp, end = 34.dp, top = 26.dp)) {
+            Column(Modifier.fillMaxHeight().verticalScroll(rememberScrollState()).padding(start = 48.dp, end = 48.dp, top = 32.dp)) {
                 Text(item.title, style = MaterialTheme.typography.displaySmall, color = palette.text)
                 Spacer(Modifier.height(18.dp))
 
@@ -307,7 +308,8 @@ private fun UnavailableRow(name: String) {
 
 @Composable
 private fun ThemeSettings(state: DesktopAppState) {
-    SetBlock("主题", "选择深色或浅色主题。点击卡片即可切换（当前会话内生效）。") {
+    val dark = QianyanTheme.isDark
+    SetBlock("主题", "选择深色或浅色主题。点击卡片即可切换（保存在本机，重启后仍生效）。") {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             ThemeCard(
                 label = "深色",
@@ -315,22 +317,30 @@ private fun ThemeSettings(state: DesktopAppState) {
                 palette = QianyanDarkPalette,
                 active = state.themeMode == QianyanThemeMode.DARK,
                 modifier = Modifier.weight(1f),
-            ) { state.themeMode = QianyanThemeMode.DARK }
+            ) { state.updateThemeMode(QianyanThemeMode.DARK) }
             ThemeCard(
                 label = "浅色",
                 desc = "明亮 · 适合白天使用",
                 palette = QianyanLightPalette,
                 active = state.themeMode == QianyanThemeMode.LIGHT,
                 modifier = Modifier.weight(1f),
-            ) { state.themeMode = QianyanThemeMode.LIGHT }
+            ) { state.updateThemeMode(QianyanThemeMode.LIGHT) }
         }
         Spacer(Modifier.height(10.dp))
         SwitchRow(
             title = "跟随系统",
-            desc = "由操作系统外观决定深色 / 浅色（打开上面的卡片会取消跟随）",
+            desc = "由操作系统外观决定深色 / 浅色（关闭时保留当前外观）",
             checked = state.themeMode == QianyanThemeMode.SYSTEM,
         ) { on ->
-            state.themeMode = if (on) QianyanThemeMode.SYSTEM else QianyanThemeMode.LIGHT
+            state.updateThemeMode(
+                if (on) {
+                    QianyanThemeMode.SYSTEM
+                } else if (dark) {
+                    QianyanThemeMode.DARK
+                } else {
+                    QianyanThemeMode.LIGHT
+                },
+            )
         }
     }
 }
@@ -401,12 +411,18 @@ private fun LayoutSettings(state: DesktopAppState) {
 @Composable
 private fun ProviderSection(state: DesktopAppState) {
     val palette = QianyanTheme.palette
+    val provider by state.graph.provider.collectAsState()
+    val model by state.graph.effectiveModel.collectAsState()
     SetBlock("AI Provider", "当前生效的 Provider 与模型。切换 Provider 只重建容器，数据仍在同一个本地库。") {
-        InfoRow("Provider", state.graph.provider.value.name)
-        InfoRow("模型", state.graph.modelId())
+        InfoRow("Provider", provider.name)
+        InfoRow("模型", model)
         InfoRow("端点", state.graph.baseUrl().ifBlank { "官方默认" })
         Spacer(Modifier.height(8.dp))
-        ActionButton("打开 Provider 设置", ActionLevel.PRIMARY, true) { state.providerSettingsOpen = true }
+        ActionButton("打开 Provider 设置", ActionLevel.PRIMARY, !state.busy) { state.providerSettingsOpen = true }
+        if (state.busy) {
+            Spacer(Modifier.height(4.dp))
+            Note("任务进行中，Provider 设置已锁定（请等待任务结束）")
+        }
         Spacer(Modifier.height(6.dp))
         Note("MOCK 为离线示意稿：结构与持久化全部真实，AI 生成内容为确定性占位。")
         Spacer(Modifier.height(2.dp))
@@ -425,7 +441,11 @@ private fun ApiSection(state: DesktopAppState) {
         InfoRow("密钥状态", if (state.graph.isConfigured(state.graph.provider.value)) "已配置" else "未配置")
         InfoRow("存储位置", "%APPDATA%\\Qianyan\\credentials.properties")
         Spacer(Modifier.height(8.dp))
-        ActionButton("管理密钥 / 模型 / 端点", ActionLevel.SECONDARY, true) { state.providerSettingsOpen = true }
+        ActionButton("管理密钥 / 模型 / 端点", ActionLevel.SECONDARY, !state.busy) { state.providerSettingsOpen = true }
+        if (state.busy) {
+            Spacer(Modifier.height(4.dp))
+            Note("任务进行中，模型配置已锁定（请等待任务结束）")
+        }
     }
 }
 
@@ -510,12 +530,7 @@ private fun ProjectInfoSection(state: DesktopAppState) {
 private fun TxtSection(state: DesktopAppState) {
     SetBlock("TXT 导入", "导入 TXT 初稿并建立初始章节结构（确定性引擎，不调用 AI）。") {
         ActionButton("选择 TXT 文件…", ActionLevel.PRIMARY, true) {
-            val file = DesktopFilePicker.chooseTxt()
-            if (file == null) {
-                state.toast("已取消导入")
-            } else {
-                state.launchTxtImport(file.name, file.readBytes())
-            }
+            state.importTxtFromPicker()
         }
         Spacer(Modifier.height(8.dp))
         Note("导入在后台执行，完成后状态栏与章节页会更新。")

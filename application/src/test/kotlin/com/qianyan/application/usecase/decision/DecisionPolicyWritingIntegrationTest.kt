@@ -164,6 +164,8 @@ class DecisionPolicyWritingIntegrationTest {
             planner = app.planner,
             chapterRepository = app.chapterRepository,
             continuationResolver = app.continuationResolver,
+            contextEngine = app.contextEngine,
+            projects = app.projects,
             errorMapper = app.errorMapper,
             decisionModel = decisions,
         )
@@ -239,7 +241,7 @@ class DecisionPolicyWritingIntegrationTest {
         assertNotNull(policies)
 
         val writeTask = h.app.tasks.create(TaskType.WRITING)
-        h.app.writingExecution.execute(writeTask, request(novelId), plan, policies)
+        h.app.writingExecution.executeIntoWorkingDraft(writeTask, request(novelId), plan, policies)
 
         assertEquals(1, h.decisions.calls, "Writing 不得重新 Decision（仍为 Planning 的一次）")
         val writerInput = h.gateway.agentInputs.first { "【本章规划】" in it }

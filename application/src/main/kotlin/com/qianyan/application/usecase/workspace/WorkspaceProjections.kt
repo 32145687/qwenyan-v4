@@ -35,6 +35,10 @@ object WorkspaceProjections {
 
     /* ---------------- I6 ContextPack → Context Tab ---------------- */
 
+    /**
+     * A2：把任务实际发布到 ContextPackStore 的 Pack 投影为 Inspector 视图。
+     * 只做纯映射，不重新选择 Context、不调用 ContextEngine.build、不修改 Pack。
+     */
     fun contextView(
         pack: ContextPack,
         selection: WorkspaceSelection,

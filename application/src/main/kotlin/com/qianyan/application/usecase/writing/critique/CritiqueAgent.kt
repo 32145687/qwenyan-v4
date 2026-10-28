@@ -35,6 +35,9 @@ class CritiqueAgent(
     private val model: ModelProfile = ModelProfile.MOCK,
 ) {
 
+    /** 实际执行 Agent 身份（供 Skill.bindings 的生产一致性校验）。 */
+    val agentId: AgentId get() = CRITIC_AGENT.agentId
+
     /**
      * 对 [Draft] 执行一次 Critique（同步，无网络除非装配方注入真实 Provider）。
      * 返回 [ValidationResult]；失败抛类型化 [ApplicationException]。

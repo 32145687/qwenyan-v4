@@ -9,6 +9,8 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.writing.planning.PlanningContext
+import com.qianyan.application.usecase.writing.planning.WRITER_CONTINUATION_MAX_CODE_POINTS
+import com.qianyan.application.usecase.writing.planning.continuationExcerpt
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
 import com.qianyan.model.decision.DecisionPolicy
@@ -39,6 +41,9 @@ class WriterAgent(
     private val errorMapper: ErrorMapper,
     private val model: ModelProfile = ModelProfile.MOCK,
 ) {
+
+    /** 实际执行 Agent 身份（供 Skill.bindings 的生产一致性校验）。 */
+    val agentId: AgentId get() = WRITER_AGENT.agentId
 
     /**
      * 执行一次 Writer 运行（同步，无网络除非装配方注入真实 Provider）。
@@ -131,6 +136,18 @@ class WriterAgent(
         if (plan.endingHook.isNotBlank()) appendLine("endingHook: ${plan.endingHook}")
         if (plan.constraints.isNotEmpty()) appendLine("constraints: ${plan.constraints}")
         if (plan.forbiddenEvents.isNotEmpty()) appendLine("forbiddenEvents: ${plan.forbiddenEvents}")
+
+        // Phase 6：前章 Canonical 正文摘录（Writer 上限 4000 code point，按 code point 截尾）。
+        val sourceDraft = context.sourceFinalDraft
+        val sourceContent = sourceDraft?.content
+        if (context.continuationReference != null && sourceDraft != null && !sourceContent.isNullOrBlank()) {
+            val excerpt = continuationExcerpt(sourceContent, WRITER_CONTINUATION_MAX_CODE_POINTS)
+            appendLine("【前章 Canonical 摘录】")
+            context.sourceChapter?.let { appendLine("sourceChapterId: ${it.chapterId.value}") }
+            appendLine("sourceDraftId: ${sourceDraft.draftId.value}")
+            appendLine(excerpt.annotation())
+            appendLine(excerpt.text)
+        }
 
         if (context.memories.isNotEmpty()) {
             appendLine("【相关记忆】")

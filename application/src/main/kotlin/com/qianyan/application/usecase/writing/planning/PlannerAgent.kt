@@ -43,6 +43,9 @@ class PlannerAgent(
     private val toolBridge: AgentToolBridge? = null,
 ) {
 
+    /** 实际执行 Agent 身份（供 Skill.bindings 的生产一致性校验）。 */
+    val agentId: AgentId get() = PLANNER_AGENT.agentId
+
     /** 执行了一次 Planner 运行（同步，无网络除非装配方注入真实 Provider）。 */
     fun plan(context: PlanningContext): ChapterPlan = plan(context, emptyList())
 
@@ -51,8 +54,15 @@ class PlannerAgent(
      *
      * @param activityId 本次运行的编排 Activity 锚（NovelAgent EXECUTE 相位）：有桥时据此把工具调用
      * 记入既有 ToolCallLog 并取得 Project 作用域；null = 无工具运行（行为与既有完全一致）。
+     * @param allowedTools 本次运行的**唯一**工具集（Skill 驱动路径传 `Skill.allowedTools`）；
+     * 默认 [PLANNER_TOOLS] 仅服务非 Skill 调用方。无桥 / 无 Activity 锚时空注册 + 空 allowedTools。
      */
-    fun plan(context: PlanningContext, policies: List<DecisionPolicy>, activityId: ActivityId? = null): ChapterPlan {
+    fun plan(
+        context: PlanningContext,
+        policies: List<DecisionPolicy>,
+        activityId: ActivityId? = null,
+        allowedTools: List<ToolName> = PLANNER_TOOLS,
+    ): ChapterPlan {
         val structure = ChapterPlanStructure(
             novelId = context.novelId,
             arcId = DEFAULT_ARC,
@@ -62,7 +72,10 @@ class PlannerAgent(
             chapterPlanId = java.util.UUID.randomUUID().toString(),
         )
         return try {
-            val result = toolRuntime(activityId).run(contract(activityId), renderInput(context, policies))
+            val result = toolRuntime(activityId, allowedTools).run(
+                contract(activityId, allowedTools),
+                renderInput(context, policies),
+            )
             val raw = result.answer
                 ?: throw PlanningException.InvalidOutput("planner returned no answer")
             ChapterPlanParser.parse(raw, structure)
@@ -147,7 +160,7 @@ class PlannerAgent(
             }
         }
 
-        // P12.1.3：显式续篇来源（reference-only，只渲染来源标识，不复制正文）
+        // P12.1.3 / Phase 6：续篇来源标识 + 前章 Canonical 正文摘录（仅摘录，不复制整章）
         val src = context.sourceChapter
         if (context.continuationReference != null && src != null) {
             appendLine("【续篇来源】")
@@ -155,6 +168,15 @@ class PlannerAgent(
             appendLine("sourceChapterTitle: ${src.title}")
             appendLine("sourceDraftId: ${context.sourceFinalDraft?.draftId?.value ?: "?"}")
             appendLine("sourceDraftStatus: ${context.sourceFinalDraft?.status ?: "?"}")
+
+            // Phase 6：前章 Canonical 正文摘录（Planner 上限 1200 code point，按 code point 截尾）。
+            val sourceContent = context.sourceFinalDraft?.content
+            if (!sourceContent.isNullOrBlank()) {
+                val excerpt = continuationExcerpt(sourceContent, PLANNER_CONTINUATION_MAX_CODE_POINTS)
+                appendLine("【前章 Canonical 摘录】")
+                appendLine(excerpt.annotation())
+                appendLine(excerpt.text)
+            }
         }
 
         // P20-P5（FD-4）：本任务已决定的创作决策政策（只读消费；Planner 不重算 Decision）
@@ -173,38 +195,40 @@ class PlannerAgent(
         model = model,
     )
 
-    /** 有桥 + 有 Activity 锚 ⇒ 本次运行重建注册表（桥接工具捕获本次 activityId，经调度层执行）。 */
-    private fun toolRuntime(activityId: ActivityId?): AgentRuntime {
+    /** 有桥 + 有 Activity 锚 + 非空工具集 ⇒ 本次运行重建注册表（桥接工具捕获本次 activityId，经调度层执行）。 */
+    private fun toolRuntime(activityId: ActivityId?, allowedTools: List<ToolName>): AgentRuntime {
         val bridge = toolBridge ?: return bareRuntime
         activityId ?: return bareRuntime
+        if (allowedTools.isEmpty()) return bareRuntime
         return AgentRuntime(
             gateway = gateway,
-            toolExecutor = ToolExecutor(bridge.runtimeRegistry(activityId, PLANNER_TOOLS)),
+            toolExecutor = ToolExecutor(bridge.runtimeRegistry(activityId, allowedTools)),
             model = model,
         )
     }
 
-    private fun contract(activityId: ActivityId?): AgentContract =
-        if (toolBridge != null && activityId != null) PLANNER_AGENT_WITH_TOOLS else PLANNER_AGENT
+    private fun contract(activityId: ActivityId?, allowedTools: List<ToolName>): AgentContract =
+        if (toolBridge != null && activityId != null && allowedTools.isNotEmpty()) {
+            AgentContract(
+                agentId = PLANNER_AGENT.agentId,
+                name = PLANNER_AGENT.name,
+                capabilities = listOf(),
+                allowedTools = allowedTools,
+            )
+        } else {
+            PLANNER_AGENT
+        }
 
     private companion object {
         /**
-         * Planner 的最小工具集合（按职责分配）：
+         * 非 Skill 调用方的默认工具集（Skill 驱动路径由调用方显式传入 `Skill.allowedTools`）：
          *  - `list_chapters`：规划下一章前了解既有章节与全书进度；
          *  - `get_chapter` / `get_latest_draft`：读取既有章节信息与最新正文载体（连贯性依据）。
-         * 不授予 get_project_state（模型无 projectId 输入）、search_vocabulary（词库已全量注入 PlanningContext）。
          */
         val PLANNER_TOOLS: List<ToolName> = listOf(
             ToolName(ProductToolNames.LIST_CHAPTERS),
             ToolName(ProductToolNames.GET_CHAPTER),
             ToolName(ProductToolNames.GET_LATEST_DRAFT),
-        )
-
-        val PLANNER_AGENT_WITH_TOOLS: AgentContract = AgentContract(
-            agentId = AgentId("story-planner"),
-            name = "StoryPlannerAgent",
-            capabilities = listOf(),
-            allowedTools = PLANNER_TOOLS,
         )
 
         val PLANNER_AGENT: AgentContract = AgentContract(

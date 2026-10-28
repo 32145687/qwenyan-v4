@@ -49,8 +49,6 @@ class WorkspaceBoundaryTest {
     fun `workspace reuses existing engines instead of redefining them`() {
         val code = sourceOf(appDir)
         listOf(
-            // §3 / §10：Context 一律来自既有 I6（本类只投影）
-            "ContextEngineUseCases", "contextEngine.build", "ContextPack", "ContextRequest",
             // §11：Activity 来自既有 I4
             "ActivityUseCases", "ToolCallLogUseCases", "listByActivity", "listByProject",
             // §12：Change / History 来自既有 I9 / I10
@@ -62,6 +60,28 @@ class WorkspaceBoundaryTest {
             // §16：会话链路复用既有 I3
             "AgentSessionUseCases",
         ).forEach { token -> assertTrue(token in code, "Workspace 必须复用既有能力：'$token'") }
+
+        // 4B.1a：Inspector 任务上下文不再自动构建 ContextPack
+        assertTrue("contextEngine.build" !in code, "Workspace 不得调用 contextEngine.build")
+        assertTrue("ContextEngineUseCases" !in code, "Workspace 不得依赖 ContextEngineUseCases")
+    }
+
+    @Test
+    fun `inspector task context never builds or fabricates a context pack`() {
+        val useCases = File("$appDir/WorkspaceUseCases.kt").readText()
+        listOf(
+            "contextEngine.build",
+            "ContextEngineUseCases",
+            "ContextRequest",
+        ).forEach { token ->
+            assertTrue(token !in useCases, "Inspector 任务上下文不得出现 '$token'（不得重新构建 Pack）")
+        }
+        // A2：PACK_AVAILABLE 只能来自 ContextPackStore 的只读查询，不得由重新构建产生。
+        assertTrue("PACK_AVAILABLE" in useCases, "A2 必须能返回真实任务 Pack 状态")
+        assertTrue("contextPackStore" in useCases, "A2 必须经 ContextPackStore 读取")
+        assertTrue("ContextPackStore" in useCases, "A2 必须依赖只读 Store 接口")
+        val models = sourceOf(modelDir)
+        assertTrue("PACK_AVAILABLE" in models, "领域枚举必须保留 PACK_AVAILABLE")
     }
 
     @Test
@@ -77,6 +97,7 @@ class WorkspaceBoundaryTest {
             "WorkspaceSelection", "WorkspaceObjectKind", "InspectorTab",
             "WorkspaceInspectorView", "InspectorContextView", "InspectorActivityView",
             "InspectorChangeView", "InspectorHistoryView", "WorkspaceErrorCodes",
+            "InspectorTaskContextState", "InspectorTaskContextView", "InspectorCurrentFact",
         ).forEach { token -> assertTrue(token in code, "缺少 I14 契约：'$token'") }
 
         // 选择只保存引用（不复制业务字段）

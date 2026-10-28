@@ -7,6 +7,7 @@ import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.usecase.workflow.ChapterPhase
 import com.qianyan.application.usecase.writing.WriterGateway
+import com.qianyan.application.usecase.writing.WriterPendingProposal
 import com.qianyan.model.ChapterId
 import com.qianyan.model.DraftId
 import com.qianyan.model.NovelId
@@ -35,14 +36,21 @@ data class WriterUiState(
     val draftContent: String = "",
     val draftFormat: String? = null,
     val taskStatus: WriterTaskStatus = WriterTaskStatus.IDLE,
+    /** 当前是否停在未决 Human Gate。 */
+    val waitingForUser: Boolean = false,
+    /** AI 候选审查投影（仅 Gate PENDING 时非空）。 */
+    val pendingProposal: WriterPendingProposal? = null,
     val error: String? = null,
     val isSaving: Boolean = false,
     val isGenerating: Boolean = false,
+    val isRejecting: Boolean = false,
 ) {
-    /** 尚无 Draft 不可保存（不伪造草稿；需先经 AI 生成初稿）。 */
-    val canSave: Boolean get() = draftId != null && !isSaving && !isGenerating
+    /** 尚无 Draft 不可保存（不伪造草稿；需先经 AI 生成初稿）。待审期间禁止普通保存。 */
+    val canSave: Boolean get() = draftId != null && !isSaving && !isGenerating && !isRejecting && !waitingForUser
 
-    val canGenerate: Boolean get() = !isGenerating && !isSaving
+    val canGenerate: Boolean get() = !isGenerating && !isSaving && !isRejecting && !waitingForUser
+
+    val canReject: Boolean get() = waitingForUser && !isGenerating && !isSaving && !isRejecting
 }
 
 /**
@@ -98,7 +106,11 @@ class WriterViewModel(
             _uiState.update { it.copy(error = "尚无草稿：请先使用「AI 继续写」生成初稿") }
             return
         }
-        if (state.isSaving || state.isGenerating) return
+        if (state.waitingForUser) {
+            _uiState.update { it.copy(error = "当前有未批准的 AI 候选：请先处理人工确认，不能直接保存") }
+            return
+        }
+        if (state.isSaving || state.isGenerating || state.isRejecting) return
         _uiState.update { it.copy(isSaving = true, error = null) }
         viewModelScope.launch {
             try {
@@ -117,8 +129,27 @@ class WriterViewModel(
     /** AI 继续写：驱动既有章节 Workflow（PLANNING → WRITING → …），完成后重新加载 Draft。 */
     fun continueWriting() = generate(WriterTaskStatus.PLANNING) { gateway.continueWriting(novelId, variantId, chapterId) }
 
-    /** AI 改写：复用既有 Critique → Revision（新 draftId），完成后重新加载 Draft。 */
+    /** AI 改写：复用既有 Critique → Revision，候选进入 WorkingDraft + 人工门（批准前不改正文）。 */
     fun rewrite() = generate(WriterTaskStatus.REVISION) { gateway.rewrite(novelId, variantId, chapterId) }
+
+    /** 拒绝当前待决候选（幂等；Canonical 不变；旧 Gate 不复用）。 */
+    fun rejectGate() {
+        if (!_uiState.value.canReject) return
+        _uiState.update { it.copy(isRejecting = true, error = null) }
+        viewModelScope.launch {
+            try {
+                val context = withContext(ioDispatcher) {
+                    gateway.rejectGate(chapterId)
+                    gateway.loadContext(novelId, variantId, chapterId)
+                }
+                _uiState.update { it.copy(isRejecting = false).applyContext(context) }
+            } catch (e: ApplicationException) {
+                _uiState.update { it.copy(isRejecting = false, error = messageFor(e.error)) }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(isRejecting = false, error = "操作失败，请重试") }
+            }
+        }
+    }
 
     /**
      * 执行一次 AI 操作：先置 [transient] 状态（UI 本地过程态，非业务状态机），完成后以
@@ -151,6 +182,8 @@ class WriterViewModel(
             draftContent = context.draft?.content ?: "",
             draftFormat = context.draft?.format,
             taskStatus = context.phase.toWriterTaskStatus(),
+            waitingForUser = context.waitingForUser,
+            pendingProposal = context.pendingProposal,
             error = null,
         )
 

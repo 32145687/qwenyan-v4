@@ -1,5 +1,6 @@
 package com.qianyan.application.usecase.agent
 
+import com.qianyan.agent.agents.CoreSkills
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.usecase.tool.AgentToolBridge
 import com.qianyan.model.ActivityId
@@ -99,14 +100,15 @@ class AgentToolChainTest {
         assertEquals(NovelAgentOutcome.COMPLETED, result.outcome)
         assertNotNull(result.planChapterId, "规划产物应就绪")
 
-        // 声明 == 注册：系统提示只声明 Planner 的 3 个桥接工具，不声明未授权的其余 Product Tool
+        // 声明 == 注册：系统提示只声明被选中 STORY_PLANNING Skill 的 allowedTools
         val system = plannerMessages(recorded).first().messages.first().content
         assertTrue(system.contains("可用工具"), "桥接后系统提示应声明工具：$system")
-        listOf("list_chapters", "get_chapter", "get_latest_draft").forEach {
-            assertTrue(system.contains(it), "应声明 $it：$system")
+        CoreSkills.STORY_PLANNING.allowedTools.map { it.value }.forEach {
+            assertTrue(system.contains(it), "应声明 Skill.allowedTools 中的 $it：$system")
         }
-        listOf("get_project", "get_novel", "search_vocabulary").forEach {
-            assertTrue(!system.contains(it), "不得声明未授权工具 $it：$system")
+        listOf("get_latest_draft", "search_vocabulary").forEach {
+            val declared = system.lineSequence().any { line -> line.trimStart().startsWith("- $it:") }
+            assertTrue(!declared, "不得声明该 Skill 未授权的工具 $it：$system")
         }
 
         // 工具结果作为观察回传模型（第二轮请求可见 ToolResult）
@@ -134,7 +136,7 @@ class AgentToolChainTest {
         val f = novelAgentFixture(scriptedGateway(plannerScripts, recorded = recorded))
         val w = seedNovelWorld(f)
 
-        plannerScripts += toolCall("get_novel", "novelId" to w.novelId.value) // 不在 Planner allowedTools 内
+        plannerScripts += toolCall("get_latest_draft", "chapterId" to w.chapterId.value) // 不在 STORY_PLANNING allowedTools 内
         plannerScripts += final(planJson)
         val result = f.app.novelAgent.run(request(w, "规划下一章"))
 
@@ -144,7 +146,7 @@ class AgentToolChainTest {
         assertTrue(observation.contains("ToolNotFound"), "未授权/未注册工具必须显式失败观察：$observation")
         assertTrue(
             f.app.toolCallLogs.listBySession(assertNotNull(result.sessionId))
-                .none { it.toolName == ToolName("get_novel") },
+                .none { it.toolName == ToolName("get_latest_draft") },
             "未授权工具不得产生任何执行留痕（调度层根本没被触达）",
         )
         f.close()

@@ -1,9 +1,14 @@
 package com.qianyan.app.desktop.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -59,33 +66,27 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 一级导航。
+ * 一级工作区（已确认：创作 / 正文 / 故事 / 资料 / 历史）。
  *
- * 前 9 项（AGENT … SETTINGS）是已实现并锁定的 IA，**顺序 / 编号 / 文案不变**；
- * 其后为本轮按规划文档补出的能力版面（阅读 / 词库 / 记忆 / 作者智能 / 备份），
- * 不给数字键，仅作为从属分组出现。`Ctrl/⌘+1…8` 的映射只认 [shortcut]，与顺序无关。
- *
- * [group] 仅用于侧栏分组小标题，不参与任何业务判断。
+ * 章节、人物、世界、词库、记忆、任务、备份、Provider 等能力
+ * 一律放在所属工作区的内部导航、检查器或设置中，不新增一级导航。
  */
-enum class NavItem(val no: String?, val title: String, val group: String?) {
-    AGENT("1", "Qianyan Agent", "创作"),
-    WRITE("2", "正文", "创作"),
-    READ(null, "阅读", "创作"),
-    STORY("3", "故事", "结构"),
-    CHAPTERS("4", "章节", "结构"),
-    CHARACTERS("5", "人物", "结构"),
-    WORLD("6", "世界", "结构"),
-    VOCABULARY(null, "词库", "素材"),
-    MEMORY(null, "记忆", "素材"),
-    AUTHOR(null, "作者智能", "智能"),
-    TASKS("7", "任务", "运行"),
-    HISTORY("8", "历史", "运行"),
-    BACKUP(null, "备份", "运行"),
-    SETTINGS(null, "设置", null),
-    ;
-
-    val shortcut: Int? get() = no?.toIntOrNull()
+enum class Workspace(val no: Int, val title: String, val shortcut: Int, val hint: String) {
+    CREATE(1, "创作", 1, "自然语言任务"),
+    WRITE(2, "正文", 2, "写作与阅读"),
+    STORY(3, "故事", 3, "结构与剧情"),
+    MATERIALS(4, "资料", 4, "人物 · 世界 · 素材"),
+    HISTORY(5, "历史", 5, "变更 · 任务 · 备份"),
 }
+
+/** 创作工作区里的一条对话消息（纯 UI 会话态，不落库）。 */
+enum class CreationMessageRole { USER, ASSISTANT, ERROR }
+
+data class CreationMessage(
+    val role: CreationMessageRole,
+    val text: String,
+    val detail: String? = null,
+)
 
 /** 面板折叠（⌘B / ⌘\ / ⌘⇧E）。 */
 enum class PanelToggle { SIDEBAR, INSPECTOR, FOCUS }
@@ -128,12 +129,24 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     /** Workspace（当前对象 + Inspector 三 Tab 的 UI 会话态）。 */
     val workspace = WorkspaceController(this)
 
-    var nav by mutableStateOf(NavItem.AGENT)
+    var nav by mutableStateOf(Workspace.CREATE)
     var novel by mutableStateOf<Novel?>(null)
     var toast by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
     var refreshKey by mutableStateOf(0)
     var providerSettingsOpen by mutableStateOf(false)
+
+    /** 各工作区的内部标签（只记 UI 选择，不参与业务判断）。 */
+    var writeTab by mutableStateOf(0)
+    var storyTab by mutableStateOf(0)
+    var materialsTab by mutableStateOf(0)
+    var historyTab by mutableStateOf(0)
+
+    /** 创作工作区的连续会话（纯 UI；同一作品内保留，切换作品时清空）。 */
+    var creationMessages by mutableStateOf<List<CreationMessage>>(emptyList())
+
+    /** 创作输入草稿（纯 UI；提升到 App 级，切换工作区不丢失，切换作品时清空）。 */
+    var creationDraft by mutableStateOf("")
 
     /** 面板折叠：左侧导航 / Inspector / 专注模式。 */
     var sidebarOpen by mutableStateOf(true)
@@ -147,14 +160,41 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     /** 状态栏（由当前页面写入展示值；见 [StatusInfo]）。 */
     var status by mutableStateOf(StatusInfo())
 
+    /**
+     * P0-3B · 最近一次 Agent 任务结果（候选标识 + 审批接入状态）。
+     *
+     * UI 契约（§17.2）：候选 / 会话身份必须保留；"是否可批准"以**正式 Workflow 投影**为准，
+     * 本状态只用于展示任务结局与候选摘要，不作为批准按钮的依据。
+     */
+    var lastAgentResult by mutableStateOf<com.qianyan.model.novelagent.NovelAgentResult?>(null)
+
+    /**
+     * P0-3B · 最近一次 Agent 任务的原始请求（保留 project / chapter / session 身份，供显式重试与收敛）。
+     * 只作为 UI 协调上下文；正式审批事实仍以 ChapterWorkflow 投影为准。
+     */
+    var lastAgentRequest by mutableStateOf<com.qianyan.model.novelagent.NovelAgentRequest?>(null)
+
     /** 设置（**弹窗**：模态浮层，不替换主工作区页面，关闭后页面与 Selection 不变）。 */
     var settingsOpen by mutableStateOf(false)
 
-    /** 新建作品弹窗（Qianyan Agent 与命令面板共用同一入口）。 */
+    /** 新建作品弹窗（顶部项目切换与命令面板共用同一入口）。 */
     var createNovelOpen by mutableStateOf(false)
 
-    /** 主题模式（纯 UI 显示偏好；用户在「设置 · 外观 · 主题」中切换）。 */
-    var themeMode by mutableStateOf(QianyanThemeMode.SYSTEM)
+    /** 主题模式（纯 UI 显示偏好；持久化到本机，重启后恢复）。 */
+    var themeMode by mutableStateOf(
+        graph.readThemeMode()
+            ?.let { name -> runCatching { QianyanThemeMode.valueOf(name) }.getOrNull() }
+            ?: QianyanThemeMode.SYSTEM,
+    )
+        private set
+
+    /** 主题切换的唯一写入口：先更新即时外观，再尝试落盘。 */
+    fun updateThemeMode(mode: QianyanThemeMode) {
+        themeMode = mode
+        if (!graph.saveThemeMode(mode.name)) {
+            toast("主题设置未能保存到本机")
+        }
+    }
 
     /** 正文字号档位（纯显示偏好；用户在「设置 · 写作 · 排版」或正文 ··· 菜单中切换）。 */
     var proseSize by mutableStateOf(ProseSize.Default)
@@ -185,6 +225,20 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
                     sidebarOpen = true
                     inspectorOpen = true
                 }
+            }
+        }
+    }
+
+    /** 切换一级工作区；可选同时落到该工作区的内部标签。 */
+    fun openWorkspace(workspace: Workspace, subTab: Int? = null) {
+        nav = workspace
+        if (subTab != null) {
+            when (workspace) {
+                Workspace.CREATE -> Unit
+                Workspace.WRITE -> writeTab = subTab
+                Workspace.STORY -> storyTab = subTab
+                Workspace.MATERIALS -> materialsTab = subTab
+                Workspace.HISTORY -> historyTab = subTab
             }
         }
     }
@@ -255,34 +309,113 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     /**
      * 新执行链路（任务 A）：自然语言任务入口 —— AgentPage 输入 → **既有** NovelAgent 七相位编排
      * （INTENT 确定性解析 → SKILL → CONTEXT → EXECUTE → REVIEW → GATE → COMMIT；不新建第二套 Agent Loop）。
-     * 结果（COMPLETED / WAITING_HUMAN / FAILED / CANCELLED）映射为用户可见状态，不吞、不伪装成功。
+     * 结果（COMPLETED / WAITING_HUMAN / CANDIDATE_UNBRIDGED / FAILED / CANCELLED）映射为用户可见状态，不吞、不伪装成功。
      * 未打开作品时明确拒绝（不猜项目）；同一时刻只允许一个后台任务（与导入共用 busy 闸）。
+     *
+     * P0-3B（§17.2 UI 契约 1/2）：
+     *  - 必须携带当前有效的 Chapter 上下文（写作 / 改写 / 分析类任务都需要焦点章节）；
+     *  - 保留候选标识与会话身份（`sessionId / workingDraftId / artifactId / approvalState`），
+     *    供 AgentPage 与写作页基于**正式 Workflow 投影**展示状态。
      */
-    fun launchAgentTask(userIntent: String) {
+    fun launchAgentTask(userIntent: String): Boolean {
         val intent = userIntent.trim()
-        if (intent.isEmpty()) return
+        if (intent.isEmpty()) return false
         val projectId = projectId
         if (projectId == null) {
             toast("请先新建或打开一部作品，再下达任务")
-            return
+            return false
         }
-        if (busy) return
+        if (busy) return false
+        // P0-3B：写作类任务需要焦点章节——从 Workspace 当前 Selection 取（必须属于当前 Project）。
+        val chapterId = workspace.selection
+            ?.takeIf { it.projectId == projectId }
+            ?.chapterId
+        if (chapterId == null) {
+            toast("请先在左侧章节目录中选择要操作的章节，再下达任务")
+            return false
+        }
+        val request = com.qianyan.model.novelagent.NovelAgentRequest(
+            projectId = projectId,
+            userIntent = intent,
+            activeChapterId = chapterId,
+        )
+        creationMessages = creationMessages + CreationMessage(CreationMessageRole.USER, intent)
         busy = true
         scope.launch {
             try {
-                val result = withContext(Dispatchers.IO) {
-                    container.novelAgent.run(
-                        com.qianyan.model.novelagent.NovelAgentRequest(projectId = projectId, userIntent = intent),
-                    )
-                }
+                val result = withContext(Dispatchers.IO) { container.novelAgent.run(request) }
+                lastAgentRequest = result.sessionId?.let { request.copy(sessionId = it) } ?: request
+                lastAgentResult = result
+                appendAssistantMessage(result)
                 toast(agentTaskToast(result))
             } catch (e: Exception) {
-                toast("出错了：${e.message ?: e.javaClass.simpleName}")
+                val message = "出错了：${e.message ?: e.javaClass.simpleName}"
+                creationMessages = creationMessages + CreationMessage(CreationMessageRole.ERROR, message)
+                toast(message)
             } finally {
                 busy = false
                 refreshKey++
             }
         }
+        return true
+    }
+
+    /** P0-3B D4/D5：显式重试把**已有**候选接入正式章节 Workflow（不重新生成候选）。 */
+    fun retryAgentBridge() {
+        val request = lastAgentRequest ?: return
+        val artifactId = lastAgentResult?.artifactId ?: return
+        runAgentFollowUp { container.novelAgent.bridgeCandidate(request, artifactId) }
+    }
+
+    /**
+     * P0-3B D6/D9：正式决议后同步任务状态（只读观察 + Session/候选收敛）。
+     * 不创建 Gate、不批准、不拒绝、不 Commit；正式操作仍在「正文」页完成。
+     */
+    fun refreshAgentCandidate() {
+        val request = lastAgentRequest ?: return
+        val artifactId = lastAgentResult?.artifactId ?: return
+        runAgentFollowUp { container.novelAgent.refreshCandidate(request, artifactId) }
+    }
+
+    /** P0-3B D6：丢弃**未进入正式审批**或**已被正式拒绝**的候选；待决/已批准时服务端会拒绝。 */
+    fun discardAgentCandidate() {
+        val request = lastAgentRequest ?: return
+        val artifactId = lastAgentResult?.artifactId ?: return
+        runAgentFollowUp {
+            container.novelAgent.reject(request, artifactId, reason = "用户丢弃候选（非正式拒绝）")
+        }
+    }
+
+    /** Agent 任务后续动作：统一 busy 闸、结果保留与 toast。 */
+    private fun runAgentFollowUp(block: suspend () -> com.qianyan.model.novelagent.NovelAgentResult) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) { block() }
+                lastAgentResult = result
+                appendAssistantMessage(result)
+                toast(agentTaskToast(result))
+            } catch (e: Exception) {
+                val message = "出错了：${e.message ?: e.javaClass.simpleName}"
+                creationMessages = creationMessages + CreationMessage(CreationMessageRole.ERROR, message)
+                toast(message)
+            } finally {
+                busy = false
+                refreshKey++
+            }
+        }
+    }
+
+    /** 把 Agent 结果追加到创作会话：摘要作为正文，状态说明作为次级行（不显示内部 ID）。 */
+    private fun appendAssistantMessage(result: com.qianyan.model.novelagent.NovelAgentResult) {
+        val statusText = agentTaskToast(result)
+        val text = result.summary.ifBlank { statusText }
+        creationMessages = creationMessages + CreationMessage(
+            role = CreationMessageRole.ASSISTANT,
+            text = text,
+            detail = statusText.takeIf { it != text },
+        )
     }
 
     /**
@@ -345,7 +478,11 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
      *
      * 与 [launchWork] 的区别：`then` 收到的结果可用于赋值 `DesktopAppState` 的 state 字段。
      */
-    fun <T> io(then: (T) -> Unit, block: suspend () -> T) {
+    fun <T> io(
+        then: (T) -> Unit,
+        onFailure: ((Exception) -> Unit)? = null,
+        block: suspend () -> T,
+    ) {
         if (busy) return
         busy = true
         scope.launch {
@@ -353,6 +490,7 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
                 val result = withContext(Dispatchers.IO) { block() }
                 then(result)
             } catch (e: Exception) {
+                onFailure?.invoke(e)
                 toast("出错了：${e.message ?: e.javaClass.simpleName}")
             } finally {
                 busy = false
@@ -366,15 +504,54 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
         withContext(Dispatchers.IO) { block(container) }
 
     val container get() = graph.container
+
+    /**
+     * 作品切换的**唯一状态重置入口**（打开 / 新建 / 重新打开必须复用）。
+     *
+     * 在同一转换中清除所有与旧作品绑定的**临时 UI 状态**：
+     * 创作会话消息、最近任务结果与请求、Workspace Selection / 检查器投影 / 候选、状态栏。
+     * **不触碰**任何持久化数据（正文 / 资料 / 历史 / 任务）。
+     */
+    fun applyNovelSwitch(novel: com.qianyan.model.core.Novel?) {
+        this.novel = novel
+        workspace.resetForNovelSwitch()
+        creationMessages = emptyList()
+        creationDraft = ""
+        lastAgentResult = null
+        lastAgentRequest = null
+        status = StatusInfo()
+    }
+}
+
+/** 打开作品：建立 Project 作用域后读取 Novel；切换作品时清空上一部作品的创作会话。 */
+fun openNovel(state: DesktopAppState, novelId: NovelId) {
+    if (state.busy) {
+        state.toast("任务进行中，暂时不能切换作品")
+        return
+    }
+    state.io(
+        then = { novel ->
+            state.applyNovelSwitch(novel)
+            novel?.let { state.toast("已打开《${it.title}》") }
+        },
+    ) {
+        state.container.projects.openProject(novelId)
+        state.container.novels.getNovel(novelId)
+    }
 }
 
 /**
  * [com.qianyan.model.novelagent.NovelAgentResult] → 用户可见文案（internal 供桌面单测断言）。
- * 四种结局必须可区分：完成摘要原样透出；等待人工必须明说"等待确认写入"；失败带类型化 detail。
+ * 五种结局必须可区分（P0-3B §17.2：未桥接候选不得显示成待审批）：
+ * 完成摘要原样透出；WAITING_HUMAN = 已进入**正式审批**（以写作页 / 章节进度为准）；
+ * CANDIDATE_UNBRIDGED = 候选保留但**未进入**正式审批（显式原因）；失败带类型化 detail；取消如实呈现。
  */
 internal fun agentTaskToast(result: com.qianyan.model.novelagent.NovelAgentResult): String = when (result.outcome) {
     com.qianyan.model.novelagent.NovelAgentOutcome.COMPLETED -> result.summary
-    com.qianyan.model.novelagent.NovelAgentOutcome.WAITING_HUMAN -> "任务已就绪，等待你确认写入正文（在写作页批准或拒绝）"
+    com.qianyan.model.novelagent.NovelAgentOutcome.WAITING_HUMAN ->
+        "变更已就绪，已进入正式审批——请在「正文」页查看该章节的待确认提案（批准或拒绝）"
+    com.qianyan.model.novelagent.NovelAgentOutcome.CANDIDATE_UNBRIDGED ->
+        "候选未进入正式审批：${result.failure?.detail ?: "未知原因"}（候选已保留，可稍后重试）"
     com.qianyan.model.novelagent.NovelAgentOutcome.FAILED ->
         "任务失败：${result.failure?.detail ?: result.summary}"
     com.qianyan.model.novelagent.NovelAgentOutcome.CANCELLED -> "任务已取消"
@@ -395,18 +572,18 @@ fun VLine(color: Color = QianyanTheme.palette.line) {
 }
 
 /**
- * 分组小标题（字距放开的细体；IDE 的 section label）。
+ * 分组小标题（Apple 式 eyebrow：小字、字距放开、中性灰）。
  *
- * 不用彩色、不用大写转换以外的一切装饰。
+ * 只用留白与字重建立层级，不加横线、不用彩色。
  */
 @Composable
 fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: (@Composable RowScope.() -> Unit)? = null) {
-    Row(modifier.fillMaxWidth().padding(bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth().padding(bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(
             text,
             style = MaterialTheme.typography.labelSmall,
             color = QianyanTheme.palette.text3,
-            letterSpacing = 0.14.sp,
+            letterSpacing = 0.6.sp,
             maxLines = 1,
         )
         if (trailing != null) {
@@ -416,7 +593,7 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: (@Compos
     }
 }
 
-/** 页面标题行（标题 + 可选说明 + 右侧动作），下方一条分隔线。 */
+/** 页面标题行（标题 + 可选说明 + 右侧动作）。用留白分组，不再画整宽横线。 */
 @Composable
 fun PageHeader(
     title: String,
@@ -424,21 +601,25 @@ fun PageHeader(
     actions: @Composable RowScope.() -> Unit = {},
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = QianyanDimens.PageX, end = QianyanDimens.PageX, top = 16.dp, bottom = 12.dp),
+        Modifier.fillMaxWidth().padding(start = QianyanDimens.PageX, end = QianyanDimens.PageX, top = 24.dp, bottom = 18.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(title, style = MaterialTheme.typography.displaySmall, color = QianyanTheme.palette.text, maxLines = 1)
+        Text(
+            title,
+            style = MaterialTheme.typography.displaySmall,
+            color = QianyanTheme.palette.text,
+            maxLines = 1,
+        )
         if (meta != null) {
-            Spacer(Modifier.width(10.dp))
+            Spacer(Modifier.width(12.dp))
             Text(meta, style = QianyanCodeStyle, color = QianyanTheme.palette.text3, maxLines = 1)
         }
         Spacer(Modifier.weight(1f))
         actions()
     }
-    HLine()
 }
 
-/** 安静的状态标记（等宽小字 + 极轻底色）。 */
+/** 安静的状态标记（胶囊 + 极轻底色）。 */
 @Composable
 fun Tag(text: String, color: Color = QianyanTheme.palette.text3) {
     Text(
@@ -447,10 +628,84 @@ fun Tag(text: String, color: Color = QianyanTheme.palette.text3) {
         color = color,
         maxLines = 1,
         modifier = Modifier
-            .clip(RoundedCornerShape(QianyanShapes.r))
-            .background(color.copy(alpha = 0.10f))
-            .padding(horizontal = 5.dp, vertical = 1.dp),
+            .clip(RoundedCornerShape(QianyanShapes.pill))
+            .background(color.copy(alpha = 0.12f))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
     )
+}
+
+/**
+ * 暖白卡片：白底 + 1px 暖灰边 + 极轻投影（0.5 层），用于故事 / 资料总览。
+ *
+ * 只是展示容器：不引入任何业务语义；[onClick] 为空时是纯静态卡片。
+ */
+@Composable
+fun UiCard(
+    modifier: Modifier = Modifier,
+    title: String? = null,
+    meta: String? = null,
+    tags: List<String> = emptyList(),
+    onClick: (() -> Unit)? = null,
+    content: @Composable ColumnScope.() -> Unit = {},
+) {
+    val palette = QianyanTheme.palette
+    val shape = RoundedCornerShape(QianyanShapes.r3)
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val interactive = onClick != null
+    // Apple Copy：卡片 hover 轻微抬升 + 阴影加深，不改变布局位置
+    val lift by animateDpAsState(
+        targetValue = if (interactive && hovered) (-1).dp else 0.dp,
+        animationSpec = tween(160),
+        label = "card-lift",
+    )
+    val elevation by animateDpAsState(
+        targetValue = if (interactive && hovered) 4.dp else 1.dp,
+        animationSpec = tween(160),
+        label = "card-elevation",
+    )
+    val borderColor by animateColorAsState(
+        targetValue = if (interactive && hovered) palette.lineStrong else palette.line,
+        animationSpec = tween(140),
+        label = "card-border",
+    )
+    Column(
+        modifier
+            .offset(y = lift)
+            .shadow(elevation, shape, clip = false)
+            .clip(shape)
+            .background(palette.raised)
+            .border(1.dp, borderColor, shape)
+            .then(
+                if (interactive) {
+                    Modifier.clickable(interactionSource = source, indication = null) { onClick?.invoke() }
+                } else {
+                    Modifier.hoverable(source)
+                },
+            )
+            .padding(horizontal = 16.dp, vertical = 15.dp),
+    ) {
+        if (title != null) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.text,
+                maxLines = 2,
+            )
+        }
+        if (meta != null) {
+            if (title != null) Spacer(Modifier.height(5.dp))
+            Text(meta, style = MaterialTheme.typography.labelSmall, color = palette.text3, maxLines = 1)
+        }
+        content()
+        if (tags.isNotEmpty()) {
+            Spacer(Modifier.height(11.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                tags.take(3).forEach { Tag(it, palette.text2) }
+            }
+        }
+    }
 }
 
 /** 键值行（Inspector / 设置；左标签右值，等宽可选）。 */
@@ -485,23 +740,25 @@ fun QianyanTabs(
 ) {
     val palette = QianyanTheme.palette
     Row(
-        modifier.fillMaxWidth().background(palette.surface)
-            .padding(start = QianyanDimens.PageX, end = QianyanDimens.PageX, top = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        modifier.fillMaxWidth().background(palette.bg)
+            .padding(start = QianyanDimens.PageX, end = QianyanDimens.PageX, top = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(22.dp),
     ) {
         tabs.forEachIndexed { index, label ->
             val on = index == selected
+            val source = remember { MutableInteractionSource() }
+            val hovered by source.collectIsHoveredAsState()
             // 下划线宽度 = 标签自身宽度（IntrinsicSize.Max），否则 fillMaxWidth 会吞掉整行
             Column(
-                Modifier.clickable { onSelect(index) }.width(IntrinsicSize.Max),
+                Modifier.clickable(interactionSource = source, indication = null) { onSelect(index) }.width(IntrinsicSize.Max),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     label,
-                    style = MaterialTheme.typography.bodyLarge,
+                    style = MaterialTheme.typography.bodyMedium,
                     fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                    color = if (on) palette.text else palette.text3,
-                    modifier = Modifier.padding(vertical = 8.dp),
+                    color = if (on || hovered) palette.text else palette.text3,
+                    modifier = Modifier.padding(vertical = 9.dp),
                 )
                 Box(
                     Modifier.fillMaxWidth().height(2.dp)
@@ -574,23 +831,41 @@ fun ListRow(
     selected: Boolean = false,
     horizontalPadding: Dp = QianyanDimens.PageX,
     onClick: (() -> Unit)? = null,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
 ) {
     val palette = QianyanTheme.palette
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
+    val rowBackground by animateColorAsState(
+        targetValue = when {
+            selected -> palette.selection
+            hovered -> palette.hover
+            else -> Color.Transparent
+        },
+        animationSpec = tween(140),
+        label = "list-row-hover",
+    )
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = horizontalPadding, vertical = 1.dp)
-            .clip(RoundedCornerShape(QianyanShapes.r))
-            .background(if (selected) palette.selection else Color.Transparent)
-            .then(if (onClick != null) Modifier.clickable { onClick() } else Modifier)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .clip(RoundedCornerShape(QianyanShapes.r2))
+            .background(rowBackground)
+            .then(
+                if (onClick != null) {
+                    Modifier.clickable(interactionSource = source, indication = null) { onClick() }
+                } else {
+                    Modifier.hoverable(source)
+                },
+            )
+            .padding(horizontal = 9.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (index != null) {
             Text(
                 index,
                 style = QianyanCodeStyle,
-                color = if (selected) palette.text2 else palette.text3,
+                color = if (selected) palette.accent else palette.text3,
                 modifier = Modifier.width(30.dp),
                 maxLines = 1,
             )
@@ -598,7 +873,7 @@ fun ListRow(
         Text(
             title.ifBlank { "未命名" },
             style = MaterialTheme.typography.bodyLarge,
-            color = palette.text,
+            color = if (selected) palette.accent else palette.text,
             fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
             maxLines = 1,
             modifier = Modifier.weight(1f),
@@ -611,6 +886,10 @@ fun ListRow(
             Spacer(Modifier.width(10.dp))
             Tag(tag, tagColor)
         }
+        if (trailing != null) {
+            Spacer(Modifier.width(8.dp))
+            trailing()
+        }
     }
 }
 
@@ -618,10 +897,11 @@ fun ListRow(
 
 /**
  * 按钮层级：[ActionLevel.PRIMARY]（真正的主要动作，如 保存 / 继续写 / 生成修改）、
- * [ActionLevel.SECONDARY]（普通操作，1px 细边）、[ActionLevel.GHOST]（低频，无边框）、
+ * [ActionLevel.SECONDARY]（普通操作，静默浅灰填充）、[ActionLevel.GHOST]（低频，无底色）、
  * [ActionLevel.TEXT]（菜单 / 辅助）。
  *
- * 一屏内 PRIMARY 至多一个；不使用发光 / 渐变 / 高饱和填充。
+ * P0-UI：按钮统一为**胶囊形**（Apple 式胶囊动作），一屏内 PRIMARY 至多一个；
+ * 不使用发光 / 渐变 / 高饱和填充；次级操作改用浅灰填充而非再加一道边框。
  */
 enum class ActionLevel { PRIMARY, SECONDARY, GHOST, TEXT }
 
@@ -633,28 +913,59 @@ fun ActionButton(
     onClick: () -> Unit,
 ) {
     val palette = QianyanTheme.palette
+    val source = remember { MutableInteractionSource() }
+    val hovered by source.collectIsHoveredAsState()
     val textColor = when {
         !enabled -> palette.text3.copy(alpha = 0.55f)
         level == ActionLevel.PRIMARY -> palette.onAccent
-        level == ActionLevel.SECONDARY -> palette.text2
+        level == ActionLevel.SECONDARY -> palette.text
+        level == ActionLevel.GHOST -> palette.text2
         else -> palette.text3
     }
-    val shape = RoundedCornerShape(QianyanShapes.r2)
-    var base = Modifier.clip(shape)
-    base = when {
-        level == ActionLevel.PRIMARY && enabled -> base.background(palette.accent)
-        level == ActionLevel.SECONDARY && enabled -> base.border(1.dp, palette.lineStrong, shape)
-        else -> base
+    val shape = RoundedCornerShape(QianyanShapes.pill)
+    val baseColor = when {
+        !enabled -> Color.Transparent
+        level == ActionLevel.PRIMARY -> palette.accent
+        level == ActionLevel.SECONDARY -> palette.soft
+        else -> Color.Transparent
     }
+    val hoverColor = when {
+        !enabled -> Color.Transparent
+        level == ActionLevel.PRIMARY -> androidx.compose.ui.graphics.lerp(palette.accent, Color.Black, 0.08f)
+        else -> palette.hover
+    }
+    val background by androidx.compose.animation.animateColorAsState(
+        targetValue = if (hovered) hoverColor else baseColor,
+        animationSpec = androidx.compose.animation.core.tween(140),
+        label = "action-hover",
+    )
     Text(
         label,
         style = MaterialTheme.typography.labelMedium,
         fontWeight = if (level == ActionLevel.PRIMARY) FontWeight.Medium else FontWeight.Normal,
         color = textColor,
         maxLines = 1,
-        modifier = base
-            .then(if (enabled) Modifier.clickable { onClick() } else Modifier)
-            .padding(horizontal = if (level == ActionLevel.TEXT) 4.dp else 10.dp, vertical = 4.dp),
+        modifier = Modifier.clip(shape)
+            .background(background)
+            .then(
+                if (enabled) {
+                    Modifier.clickable(interactionSource = source, indication = null) { onClick() }
+                } else {
+                    Modifier
+                },
+            )
+            .padding(
+                horizontal = when (level) {
+                    ActionLevel.PRIMARY -> 16.dp
+                    ActionLevel.SECONDARY -> 13.dp
+                    else -> 6.dp
+                },
+                vertical = when (level) {
+                    ActionLevel.PRIMARY -> 7.dp
+                    ActionLevel.SECONDARY -> 6.dp
+                    else -> 4.dp
+                },
+            ),
     )
 }
 
@@ -685,9 +996,9 @@ fun QuietField(
     Box(
         modifier
             .clip(shape)
-            .background(palette.bg)
-            .border(1.dp, if (focused) palette.accent else palette.lineStrong, shape)
-            .padding(horizontal = 9.dp, vertical = 7.dp),
+            .background(palette.soft)
+            .border(1.dp, if (focused) palette.accent else Color.Transparent, shape)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
         if (value.isEmpty() && placeholder.isNotEmpty()) {
             Text(placeholder, style = textStyle, color = palette.text3, maxLines = 1)
@@ -701,7 +1012,7 @@ fun QuietField(
             visualTransformation = visualTransformation,
             modifier = Modifier
                 .fillMaxWidth()
-                .then(if (singleLine) Modifier.height(minHeight - 14.dp) else Modifier)
+                .then(if (singleLine) Modifier.height(minHeight - 18.dp) else Modifier)
                 .onFocusChanged { focused = it.isFocused }
                 .onPreviewKeyEvent { event ->
                     if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false

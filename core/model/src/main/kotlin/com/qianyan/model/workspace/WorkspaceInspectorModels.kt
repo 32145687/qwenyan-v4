@@ -94,6 +94,43 @@ data class InspectorContextView(
     val notices: List<String> = emptyList(),
 )
 
+/**
+ * Phase 4B.1a：Inspector 任务上下文的可用状态。
+ *
+ * - [NO_TASK]：当前选择没有可展示的 Agent 任务；
+ * - [PACK_UNAVAILABLE]：任务存在，但实际任务 Pack 不可获取；
+ * - [RUNNING_WITHOUT_PACK]：任务仍在执行，但尚未产生可展示的 Pack；
+ * - [PACK_AVAILABLE]：真实任务 Pack 可获取（A2：从 ContextPackStore 读取；无记录时不可达）。
+ *
+ * 该枚举只为状态表达而存在，不承载 Pack 本体，也不改变 Agent/ContextPack 契约。
+ */
+@Serializable
+enum class InspectorTaskContextState {
+    NO_TASK,
+    PACK_UNAVAILABLE,
+    RUNNING_WITHOUT_PACK,
+    PACK_AVAILABLE,
+}
+
+/** Inspector 任务上下文状态投影（不包含 Pack 内容；不伪造版本号 / 条目）。 */
+@Serializable
+data class InspectorTaskContextView(
+    val state: InspectorTaskContextState,
+    /** 面向作者的占位说明；不得包含伪造的 Pack 信息。 */
+    val message: String,
+    /** 关联的既有 Task / AgentSession 引用；仅供追溯，不展示内部 ID。 */
+    val taskId: TaskId? = null,
+    val sessionId: AgentSessionId? = null,
+)
+
+/** 当前小说事实的只读展示项（与 Agent 任务快照严格分开）。 */
+@Serializable
+data class InspectorCurrentFact(
+    val label: String,
+    val value: String,
+)
+
+
 /* ---------------- Activity Tab（I4 投影） ---------------- */
 
 /** Tool 调用投影（来自既有 `ToolCallLog`）。 */
@@ -174,7 +211,12 @@ data class WorkspaceInspectorView(
     val selection: WorkspaceSelection,
     val title: String,
     val detail: String = "",
+    /** A2：真实任务 Pack 投影；无 Store 记录时为 null（不得用重建 Pack 填充）。 */
     val context: InspectorContextView? = null,
+    /** A2：任务上下文四状态；不包含 Pack 本体。 */
+    val taskContext: InspectorTaskContextView? = null,
+    /** 当前小说事实（独立只读，不是 Agent 任务快照）。 */
+    val currentFacts: List<InspectorCurrentFact> = emptyList(),
     /** TASK 选择时的任务投影（状态仍以既有 Task / TaskQueueItem 为准，§19）。 */
     val task: InspectorTaskView? = null,
     val activities: List<InspectorActivityView> = emptyList(),

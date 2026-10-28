@@ -1,6 +1,7 @@
 package com.qianyan.app.desktop.ui.pages
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
@@ -24,10 +26,11 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -39,20 +42,25 @@ import com.qianyan.app.desktop.ui.DesktopAppState
 import com.qianyan.app.desktop.ui.EmptyState
 import com.qianyan.app.desktop.ui.HLine
 import com.qianyan.app.desktop.ui.LoadingState
-import com.qianyan.app.desktop.ui.NavItem
+import com.qianyan.app.desktop.ui.Workspace
 import com.qianyan.app.desktop.ui.ProseSize
+import com.qianyan.app.desktop.ui.chapterTitleOnly
+import com.qianyan.app.desktop.ui.exportChapterToTxt
 import com.qianyan.app.desktop.ui.formatCount
 import com.qianyan.app.desktop.ui.statusLabel
 import com.qianyan.app.desktop.ui.theme.QianyanChapterStyle
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanDimens
 import com.qianyan.app.desktop.ui.theme.QianyanFonts
+import com.qianyan.app.desktop.ui.theme.QianyanShapes
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.app.desktop.ui.theme.qianyanProseStyle
 import com.qianyan.app.desktop.ui.wordCount
 import com.qianyan.app.desktop.ui.write.RewriteDialog
 import com.qianyan.app.desktop.ui.write.WriterController
 import com.qianyan.app.desktop.ui.write.WriterUiState
+import com.qianyan.application.usecase.writing.WriterPendingProposal
+import com.qianyan.model.change.DiffLineKind
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
@@ -69,7 +77,6 @@ import com.qianyan.model.workspace.WorkspaceSelection
 @Composable
 fun WritePage(state: DesktopAppState) {
     val palette = QianyanTheme.palette
-    val scope = rememberCoroutineScope()
     val workspace = state.workspace
     val chapterId = workspace.selection?.takeIf { it.kind == WorkspaceObjectKind.CHAPTER }?.chapterId
     var chapter by remember { mutableStateOf<Chapter?>(null) }
@@ -99,7 +106,8 @@ fun WritePage(state: DesktopAppState) {
             chapter = loaded,
             gateway = state.container.writerGateway,
             workflow = state.container.workflowFacade,
-            scope = scope,
+            scope = state.scope,
+            autoSave = true,
         )
         controller = c
         c.load()
@@ -131,6 +139,7 @@ fun WritePage(state: DesktopAppState) {
             onRewrite = { if (ui.canRewrite) rewriting = true },
             onContinue = { controller?.continueWriting() },
             onApprove = { controller?.approveGate() },
+            onReject = { controller?.rejectGate() },
             onPrev = {
                 val list = allChapters.sortedBy { it.order }
                 val idx = list.indexOfFirst { it.chapterId == chapterId }
@@ -143,12 +152,30 @@ fun WritePage(state: DesktopAppState) {
                 val target = list.getOrNull(idx + 1)
                 if (idx in 0 until list.size - 1 && target != null) workspace.select(selectionFor(state, target))
             },
+            onExport = {
+                val loaded = chapter
+                if (loaded == null) state.toast("尚未加载章节") else state.exportChapterToTxt(loaded, ui.draftContent)
+            },
+            onConfirmFinal = {
+                val draftId = ui.draftId
+                when {
+                    draftId == null -> state.toast("尚无草稿：请先生成或保存正文")
+                    ui.waitingForUser -> state.toast("当前有待决人工门：请在正文审批区「通过确认」或「拒绝」")
+                    ui.draftStatus == "CONFIRMED" -> state.toast("该草稿已确认")
+                    ui.draftStatus != "PENDING_CONFIRMATION" -> state.toast(
+                        "当前草稿状态为 ${statusLabel(ui.draftStatus)}，需先经人工门「通过确认」进入定稿",
+                    )
+                    else -> state.io(then = { controller?.load(); state.toast("已定稿确认") }) {
+                        state.container.confirmations.confirmFinalDraft(draftId, state.novel!!.novelId, null)
+                    }
+                }
+            },
         )
         HLine()
 
         when {
             chapterId == null -> Box(Modifier.fillMaxSize().padding(QianyanDimens.PageX)) {
-                EmptyState("未选择章节", "在「章节」里选择一章，或用 Ctrl/⌘+4 打开章节列表")
+                EmptyState("未选择章节", "在左侧章节目录中选择一章，或打开「故事 · 章节」")
             }
 
             chapter == null -> Box(Modifier.fillMaxSize().padding(QianyanDimens.PageX)) { LoadingState() }
@@ -158,46 +185,71 @@ fun WritePage(state: DesktopAppState) {
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Spacer(Modifier.height(34.dp))
+                    Spacer(Modifier.height(28.dp))
 
-                    Column(Modifier.width(QianyanDimens.EditorWidth).padding(horizontal = 8.dp)) {
-                        // 稿纸标题（展示层：章节序号 + 标题；不是正文内容）
+                    // 稿纸：白色纸面 + 极轻投影，放在暖白工作台上（视觉焦点是正文本身）
+                    Column(
+                        Modifier.width(QianyanDimens.EditorWidth)
+                            .shadow(2.dp, RoundedCornerShape(QianyanShapes.r3), clip = false)
+                            .clip(RoundedCornerShape(QianyanShapes.r3))
+                            .background(palette.raised)
+                            .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.r3))
+                            .padding(start = 62.dp, end = 62.dp, top = 52.dp, bottom = 56.dp),
+                    ) {
                         Text(
-                            "第 ${chapter?.order ?: 0} 章",
+                            "Chapter ${chapter?.order ?: 0}",
                             style = MaterialTheme.typography.labelSmall,
                             color = palette.text3,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
+                            letterSpacing = 1.1.sp,
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(13.dp))
                         Text(
-                            chapter?.title?.ifBlank { "未命名" } ?: "",
+                            chapter?.title?.let { chapterTitleOnly(it) }?.ifBlank { "未命名" } ?: "",
                             style = QianyanChapterStyle,
                             color = palette.text,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
                         )
                         Spacer(Modifier.height(26.dp))
 
-                        BasicTextField(
-                            value = ui.draftContent,
-                            onValueChange = { controller?.onContentChange(it) },
-                            textStyle = prose,
-                            cursorBrush = SolidColor(palette.accent),
-                            modifier = Modifier.fillMaxWidth(),
-                            decorationBox = { inner ->
-                                if (ui.draftContent.isEmpty()) {
-                                    Text(
-                                        "本章还没有正文。点「继续写」让 Qianyan 起草，或直接在这里开始写。",
-                                        style = prose.copy(color = palette.text3),
-                                    )
-                                }
-                                inner()
-                            },
-                        )
+                        val proposal = ui.pendingProposal
+                        if (ui.waitingForUser && proposal != null) {
+                            PendingProposalReview(proposal)
+                        } else {
+                            BasicTextField(
+                                value = ui.draftContent,
+                                onValueChange = { controller?.onContentChange(it) },
+                                textStyle = prose,
+                                cursorBrush = SolidColor(palette.accent),
+                                modifier = Modifier.fillMaxWidth(),
+                                decorationBox = { inner ->
+                                    if (ui.draftContent.isEmpty()) {
+                                        Text(
+                                            "本章还没有正文。点「继续写」让 Qianyan 起草，或直接在这里开始写。",
+                                            style = prose.copy(color = palette.text3),
+                                        )
+                                    }
+                                    inner()
+                                },
+                            )
+                        }
+
+                        Spacer(Modifier.height(32.dp))
+                        HLine()
+                        Spacer(Modifier.height(14.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                            Text(
+                                "本章 ${formatCount(wordCount(ui.draftContent))} 字",
+                                style = QianyanCodeStyle,
+                                color = palette.text3,
+                            )
+                            Text(
+                                if (ui.dirty) "未保存" else if (ui.hasDraft) "已保存" else "无草稿",
+                                style = QianyanCodeStyle,
+                                color = palette.text3,
+                            )
+                        }
                     }
 
-                    Spacer(Modifier.height(48.dp))
+                    Spacer(Modifier.height(56.dp))
                 }
             }
         }
@@ -213,6 +265,81 @@ fun WritePage(state: DesktopAppState) {
             },
         )
     }
+}
+
+/**
+ * 审批前的只读审查区：原文 / 候选稿 / 行级 Diff。
+ *
+ * 不提供编辑与保存入口 —— 未批准的 AI 候选只能经「通过确认」进入现有 Commit，或经「拒绝」结束当前 Gate。
+ */
+@Composable
+private fun PendingProposalReview(proposal: WriterPendingProposal) {
+    val palette = QianyanTheme.palette
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            "AI 候选稿 · 尚未批准",
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.accent,
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "批准前不会写入正典。下面是原文、AI 候选稿与行级变更；编辑器在决议前不可用。",
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.text3,
+        )
+        Spacer(Modifier.height(20.dp))
+
+        ReviewSection("原文（已提交）") {
+            Text(
+                proposal.baseContent.ifBlank { "（本章尚无已提交正文）" },
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.text2,
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+
+        ReviewSection("候选稿（AI 提议，不是已保存正文）") {
+            Text(
+                proposal.candidateContent,
+                style = MaterialTheme.typography.bodyMedium,
+                color = palette.text,
+            )
+        }
+        Spacer(Modifier.height(18.dp))
+
+        ReviewSection("变更（TextDiffer）") {
+            if (!proposal.diff.hasChanges) {
+                Text("（与原文没有差异）", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+            } else {
+                proposal.diff.hunks.forEach { hunk ->
+                    val prefix = when (hunk.kind) {
+                        DiffLineKind.ADDED -> "+ "
+                        DiffLineKind.REMOVED -> "- "
+                        DiffLineKind.UNCHANGED -> "  "
+                    }
+                    val color = when (hunk.kind) {
+                        DiffLineKind.ADDED -> palette.accent
+                        DiffLineKind.REMOVED -> palette.del
+                        DiffLineKind.UNCHANGED -> palette.text3
+                    }
+                    Text(
+                        hunk.lines.joinToString("\n") { prefix + it },
+                        style = QianyanCodeStyle,
+                        color = color,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ReviewSection(title: String, content: @Composable () -> Unit) {
+    val palette = QianyanTheme.palette
+    Text(title, style = MaterialTheme.typography.labelSmall, color = palette.text3)
+    Spacer(Modifier.height(6.dp))
+    content()
 }
 
 private fun selectionFor(state: DesktopAppState, chapter: Chapter): WorkspaceSelection {
@@ -242,8 +369,11 @@ private fun ChapterBar(
     onRewrite: () -> Unit,
     onContinue: () -> Unit,
     onApprove: () -> Unit,
+    onReject: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onExport: () -> Unit,
+    onConfirmFinal: () -> Unit,
 ) {
     val palette = QianyanTheme.palette
     Column(Modifier.fillMaxWidth()) {
@@ -253,23 +383,22 @@ private fun ChapterBar(
         ) {
             Text(
                 chapter?.let { "第 ${it.order} 章 · ${it.title.ifBlank { "未命名" }}" } ?: "正文",
-                style = TextStyle(fontFamily = QianyanFonts.serif, fontSize = 15.sp, color = palette.text),
+                style = TextStyle(fontFamily = QianyanFonts.serif, fontSize = 16.sp, color = palette.text),
                 maxLines = 1,
                 modifier = Modifier.weight(1f),
             )
 
             if (ui.waitingForUser) {
                 ActionButton("通过确认", ActionLevel.PRIMARY, ui.canApprove, onApprove)
+                Spacer(Modifier.width(8.dp))
+                // 拒绝只结束当前 Gate；Canonical 不变，旧 Gate 不复用。
+                ActionButton("拒绝", ActionLevel.TEXT, ui.canReject, onReject)
             } else {
                 ActionButton("保存", ActionLevel.SECONDARY, ui.canSave, onSave)
                 Spacer(Modifier.width(8.dp))
                 ActionButton("让 Qianyan 修改", ActionLevel.SECONDARY, ui.canRewrite, onRewrite)
                 Spacer(Modifier.width(8.dp))
                 ActionButton("继续写", ActionLevel.PRIMARY, ui.canGenerate, onContinue)
-            }
-            if (ui.waitingForUser) {
-                Spacer(Modifier.width(8.dp))
-                ActionButton("保存", ActionLevel.TEXT, ui.canSave, onSave)
             }
             Box {
                 ActionButton("···", ActionLevel.TEXT, true) { setMenuOpen(true) }
@@ -285,14 +414,12 @@ private fun ChapterBar(
                     }
                     MenuSeparator()
                     MenuEntry("专注模式") { setMenuOpen(false); state.toggle(com.qianyan.app.desktop.ui.PanelToggle.FOCUS) }
-                    MenuEntry("历史") { setMenuOpen(false); state.nav = NavItem.HISTORY }
-                    MenuEntry("导出") {
-                        setMenuOpen(false)
-                        state.toast("导出能力将在后续阶段接入（当前不伪造导出结果）")
-                    }
+                    MenuEntry("历史") { setMenuOpen(false); state.nav = Workspace.HISTORY }
+                    MenuEntry("导出当前章节为 TXT…") { setMenuOpen(false); onExport() }
+                    MenuEntry("定稿确认") { setMenuOpen(false); onConfirmFinal() }
+                    MenuPending("自动保存 · 已开启", "停止输入 1.2 秒后写入当前 Draft（待审候选不会自动保存）")
                     MenuSeparator()
                     // 未接入的收尾动作：写明接入点，不放假按钮
-                    MenuPending("定稿确认 · 未接入", "confirmations.confirmFinalDraft(draftId, novelId, variantId)")
                     MenuPending("知识更新 · 未接入", "knowledgeUpdate.execute(taskId, draft)")
                 }
             }
@@ -309,7 +436,7 @@ private fun ChapterBar(
         } else if (ui.waitingForUser) {
             Row(Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp)) {
                 Text(
-                    "已停在人工确认：请阅读上方正文后决定是否通过（不会自动批准）。",
+                    "已停在人工确认：请阅读原文与 AI 候选稿后决定「通过确认」或「拒绝」（不会自动批准）。",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.text3,
                 )

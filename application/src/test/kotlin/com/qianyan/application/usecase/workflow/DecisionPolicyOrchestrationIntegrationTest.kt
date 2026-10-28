@@ -2,7 +2,6 @@ package com.qianyan.application.usecase.workflow
 
 import com.qianyan.application.di.ApplicationContainer
 import com.qianyan.application.error.ErrorMapper
-import com.qianyan.application.usecase.chapter.ChapterWritingUseCases
 import com.qianyan.application.usecase.decision.DecisionModelGateway
 import com.qianyan.application.usecase.writing.planning.PlanningExecutionUseCase
 import com.qianyan.application.usecase.writing.planning.PlanningSnapshot
@@ -52,9 +51,9 @@ import kotlin.test.assertTrue
  *  1. WorkflowOrchestrator：Planning → Writing 透传同一份 DecisionPolicy；
  *  2. WorkflowOrchestrator：新 durable plan seam（`PLANJSON2:<PlanningSnapshot>`）plan + policies round-trip；
  *  3. WorkflowOrchestrator：Resume（PLANNING 已持久化）不重新 Decision（invocation count）；
- *  4. WorkflowOrchestrator：legacy `PLANJSON:<ChapterPlan json>` 继续可读且不偷偷重新 Decision；
- *  5. ChapterWritingUseCases：plan() → write() 透传同一份 Policy；
- *  6. ChapterWritingUseCases：链内幂等重入不重新 Decision。
+ *  4. WorkflowOrchestrator：legacy `PLANJSON:<ChapterPlan json>` 继续可读且不偷偷重新 Decision。
+ *
+ * 旧 ChapterWritingUseCases 链已按 v3.1 Phase 1 删除；其 policy 透传语义由 Workflow 路径覆盖。
  *
  * 全程 Mock LLM / 内存库，无网络；不修改 P19 Domain Contract。
  */
@@ -124,6 +123,8 @@ class DecisionPolicyOrchestrationIntegrationTest {
             planner = app.planner,
             chapterRepository = app.chapterRepository,
             continuationResolver = app.continuationResolver,
+            contextEngine = app.contextEngine,
+            projects = app.projects,
             errorMapper = app.errorMapper,
             decisionModel = decisions,
         )
@@ -142,18 +143,6 @@ class DecisionPolicyOrchestrationIntegrationTest {
             workingDrafts = app.workingDrafts,
             changes = app.changes,
             canonicalRead = app.canonicalRead,
-            errorMapper = app.errorMapper,
-        )
-
-        val chapterWriting = ChapterWritingUseCases(
-            taskManager = app.tasks,
-            planning = planning,
-            writing = app.writingExecution,
-            critique = app.critique,
-            revision = app.revision,
-            confirmation = app.confirmations,
-            knowledgeUpdate = app.knowledgeUpdate,
-            draftRepository = app.draftRepository,
             errorMapper = app.errorMapper,
         )
 
@@ -312,43 +301,4 @@ class DecisionPolicyOrchestrationIntegrationTest {
         assertNotNull(h.app.workingDrafts.list(h.app.projects.projectOf(novelId).projectId).firstOrNull { it.target.chapterId == ch && !it.status.isTerminal })
     }
 
-    // ---------------- 5. ChapterWriting：plan → write 透传 ----------------
-
-    @Test
-    fun `chapter writing passes the same policy from plan to write`() {
-        val h = Harness()
-        h.seedAuthorPreferences()
-        val novelId = h.app.novels.createOriginal(title = "T")
-        val ch = h.newChapter(novelId)
-        val session = h.chapterWriting.open(ch, novelId, null)
-
-        session.plan()
-        assertEquals(1, h.decisions.calls, "plan() 应恰好决定一次")
-
-        session.write()
-        assertEquals(1, h.decisions.calls, "write() 必须复用 plan() 的同一份 Policy（不重新 Decision）")
-        assertTrue(
-            h.writerInputs.last().contains("- STORY_DIRECTION → PROGRESSIVE_REVEAL (source=RULE_MATRIX)"),
-            "Writer 输入应携带 plan() 阶段决定的 Policy",
-        )
-    }
-
-    // ---------------- 6. ChapterWriting：幂等重入不重新 Decision ----------------
-
-    @Test
-    fun `chapter writing idempotent re-entry does not decide again`() {
-        val h = Harness()
-        h.seedAuthorPreferences()
-        val novelId = h.app.novels.createOriginal(title = "T")
-        val ch = h.newChapter(novelId)
-        val session = h.chapterWriting.open(ch, novelId, null)
-
-        session.plan()
-        session.plan()
-        session.write()
-        session.write()
-
-        assertEquals(1, h.decisions.calls, "链内重复推进不得重新 Decision")
-        assertEquals(1, h.app.draftRepository.listByChapter(ch).size)
-    }
 }
