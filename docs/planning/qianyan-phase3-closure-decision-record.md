@@ -53,7 +53,7 @@
 | **U4** ErrorMapper | §12 无错误映射要求 | `ErrorMapper.map` 无 `WorldModelUpdateException` 分支（知识更新有 2 个，`ErrorMapper.kt:58-59`） | **无需修改**：当前无路径把该异常交给 `map()`（挂载点显式 catch；`guard {}` 只包仓储调用） | 否 | 潜在隐患：若未来有调用方用 `guard { onCommit() }` 包装，会被误标为 `UnknownStorage` |
 | **U6** participants / evidence | §12.9 @540 只要求"落库依赖 Phase 2 补列"（v27 已具备） | 恒为默认 `'[]'`；`ExtractedFact` 无对应字段 | **无需修改**（无可靠来源，不得凭空填充） | 否 | 事件事实信息密度低于 §12.9 预期（完成度说明） |
 | **U7** §12.7 文件清单 | §12.7 @523 列出 6 处文件/模块 | 触及 `CommitUseCases`、`story/*`；未触及 `StoryWorldContextResolver`、`core/engine`、`StoryState.sq`、`CommitHistory.sq` | **已登记**：读取经既有 `StoryStateRepository`，确定性校验在 Application 层（与 `KnowledgeValidator` 同层）⇒ 职责由既有能力完成，非真实遗漏 | 否 | 无功能风险；仅口径差异 |
-| **U9** `commitApprovedDraft` | Phase 3 要求"挂载点";生产链路由 Phase 1 提供 | 挂载点存在（`:398`），但该路径**无生产调用者**（Phase 1 遗留） | **既有遗留 → 仅登记**，不新增生产调用路径 | 否 | 该路径触发逻辑仅由测试覆盖 |
+| **U9** `commitApprovedDraft` | Phase 3 要求"挂载点";生产链路由 Phase 1 提供 | 过渡/遗留入口；当前仓库无生产调用方或对应测试调用；本轮已从生产代码删除 | **既有遗留 → 已删除**；正式 `commit(...)` 仍为 AI 正式提交入口并负责完整 Gate 绑定校验 | 是（删除遗留方法） | 无遗留入口；Phase 3 挂载点由正式 `commit(...)` 承接（`runWorldModelUpdate`） |
 | **U10** 候选队列消费 | §12 未要求本阶段消费；§12.8 若接 Gate 才需要 | 仅有 `listByHistory` / `listByStatus` 查询，无 UI / 无 Worker | **当前范围外（后续阶段）** | 否 | 候选（含 CONFLICT）暂无人工处理入口 |
 
 ---

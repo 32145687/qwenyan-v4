@@ -52,7 +52,7 @@
 - 列表：`container.chapters.listByNovel(novelId, variantId?): List<Chapter>`
 - 创建：`container.chapters.createNextChapter(title, novelId, variantId?): Chapter`
 - 查询单章：`container.chapters.findById(chapterId): Chapter?`
-- 章节内容（正文 Draft）：**读写经 P20-P3 Writer seam**（`container.writerGateway` / `container.writerUseCases`）；阅读经 P20-P4 Reader seam（`container.reading`）。UI **不得**直连 `DraftRepository`。
+- 章节内容（正文 Draft）：编辑读取与作者保存经 P20-P3 Writer seam（`container.writerGateway.loadContext` / `saveContent`）；AI 继续写/改写经 `container.writerGateway.continueWriting` / `rewrite`；阅读经 P20-P4 Reader seam（`container.reading`）。UI **不得**直连 `DraftRepository`、`WriterUseCases` 写原语或写作 Execution UseCase。
 - 状态：`Chapter.status: ChapterStatus`（PLANNED / WRITTEN 等）。
 
 ### 4. 词库
@@ -71,12 +71,14 @@
 - Agent：`container.planner`（PlannerAgent，经 AgentRuntime→LLMGateway）。当前默认 **Mock**。
 
 ### 7. 写作
-- `container.writingExecution.execute(taskId, request, plan): Draft`（或 `container.taskRunner.executeWriting`）
+- **内部 AI 写作链**：`WorkflowOrchestrator` WRITING 步骤 → `WritingExecutionUseCase.executeIntoWorkingDraft(taskId, request, plan, decisionPolicies): WorkingDraft` → WorkingDraft → Human Gate → `CommitUseCases.commit(projectId: ProjectId, artifactId: ChangeArtifactId, approval: CommitApproval?)` → Canonical。
+- **UI 入口**：`container.writerGateway.continueWriting(...)`；UI 不得直接调用 `executeIntoWorkingDraft` / `TaskRunner.executeWriting` / `DraftRepository`。
 - 当前默认 **Mock**；MiMo 后处理为 `WritingPostProcessor` seam，默认 `Passthrough`（算法未实现）。
 
 ### 8. 审校
 - Critique：`container.critique.execute(taskId, draft): ValidationResult`
-- Revision：`container.revision.execute(taskId, currentDraft, critiqueResult): Draft`（revisionCount≤3）
+- **内部 Revision 链**：`WorkflowOrchestrator` REVISION 步骤 → `RevisionExecutionUseCase.reviseWorking(taskId, workingDraftId, content, critique, novelId): String` → 回写 WorkingDraft（不产生章节 Draft）；`revisionCount ≤ 3`。
+- **UI 入口**：`container.writerGateway.rewrite(...)`。
 - Knowledge Update：`container.knowledgeUpdate.execute(taskId, draft): KnowledgeUpdateOutcome`（需 CONFIRMED Final）
 
 ### 9. 人工确认（HITL）
@@ -86,7 +88,7 @@
 
 ### 10. Workflow / Task
 - Task：`container.tasks`（create/start/pause/resume/cancel/complete/fail/saveCheckpoint/restoreCheckpoint/findCheckpoints）
-- TaskRunner：`container.taskRunner`（execute / executePlanning / executeWriting / executeCritique / executeRevision / executeKnowledgeUpdate）
+- TaskRunner（internal）：`container.taskRunner`（execute / executePlanning / executeCritique / executeKnowledgeUpdate）；**不承载** WRITING / REVISION 正文写入。
 - Workflow：`container.workflowOrchestrator`（runForward / approveGate / continueToNextWorkflow）+ `container.workflowService` + `container.workflowFacade`（ChapterWorkflowGateway：startChapter/advance/resume/getChapterProgress/approve/continueToNextChapter）
 - 能力：Durable Workflow、Retry(Attempt)≠Revision、Human Gate 幂等、Recovery、Continuation（Ch1→Ch2）。
 
@@ -116,8 +118,8 @@
 - 约束（FD-1）：新产生的 Draft 打标；已有 format 不回溯改写；legacy 不做 Markdown 解析
 
 ### 15. P20-P3 Writer seam（已实现 · **PC 已于 PC-2 接线**）
-- `container.writerGateway`（`WriterGateway`）：`loadContext` / `saveContent` / `continueWriting` / `rewrite`
-- `container.writerUseCases`（`WriterUseCases`）：Draft 读写 + `stampControlledMarkdown`（由 `WriterFacade` 内部复用）
+- `container.writerGateway`（`WriterGateway`）：`loadContext` / `saveContent` / `continueWriting` / `rewrite` / `rejectGate`
+- `container.writerUseCases`（`WriterUseCases`）：**只读** `latestDraft` / `draft`；`saveContent` / `save` / `stampControlledMarkdown` 为 `internal` 写原语，仅由正式 Commit / WriterFacade 内部使用。
 - 约束：正文读写经该 seam，**不得 UI → DraftRepository 直连**
 - PC-2 状态：Desktop `WriteScreen → WriterController → WriterGateway`；HITL 与阶段投影经 `workflowFacade`
   （`getChapterProgress.waitingForUser` / `approve`）；保存只改 `content`+`updatedAt`；
@@ -222,15 +224,18 @@ UI功能：为章节生成 ChapterPlan
 
 ### 12. 写作
 ```text
-UI功能：由 plan 生成正文 Draft
-后端：WritingExecutionUseCase.execute(taskId, request: UserWritingRequest, plan: ChapterPlan): Draft；或 TaskRunner.executeWriting(taskId, request, plan): Draft
+UI功能：由 plan 生成正文，并停在人工确认
+UI入口：WriterGateway.continueWriting(novelId, variantId, chapterId): ChapterWorkflowProgress
+内部链：WorkflowOrchestrator WRITING → WritingExecutionUseCase.executeIntoWorkingDraft(taskId, request: UserWritingRequest, plan: ChapterPlan, decisionPolicies): WorkingDraft
+        → WorkingDraft → Human Gate → CommitUseCases.commit(projectId: ProjectId, artifactId: ChangeArtifactId, approval: CommitApproval?) → Canonical
 状态：✅ 可接入，当前默认 Mock；MiMo 后处理 = Passthrough（未实现算法）
 ```
 
 ### 13. Critique / Revision / KU
 ```text
 Critique：CritiqueExecutionUseCase.execute(taskId, draft: Draft): ValidationResult
-Revision：RevisionExecutionUseCase.execute(taskId, currentDraft: Draft, critique: ValidationResult): Draft（revisionCount≤3）
+Revision（内部链）：RevisionExecutionUseCase.reviseWorking(taskId, workingDraftId: String, content: String, critique: ValidationResult, novelId: NovelId): String（revisionCount≤3；不产生章节 Draft）
+Revision（UI 入口）：WriterGateway.rewrite(novelId, variantId, chapterId): ChapterWorkflowProgress
 KU：KnowledgeUpdateExecutionUseCase.execute(taskId, draft: Draft): KnowledgeUpdateOutcome（需 CONFIRMED Final）
 状态：✅ 接口完整，默认 Mock
 ```
@@ -249,7 +254,8 @@ KU：KnowledgeUpdateExecutionUseCase.execute(taskId, draft: Draft): KnowledgeUpd
 
 ### 16. TaskRunner 受管执行
 ```text
-后端：TaskRunner.execute(taskId, source: TxtSource, title): Task；executePlanning(...)；executeWriting(taskId, request, plan): Draft；executeCritique(taskId, draft): ValidationResult；executeRevision(...)；executeKnowledgeUpdate(taskId, draft): KnowledgeUpdateOutcome
+后端（internal）：TaskRunner.execute(taskId, source: TxtSource, title): Task；executePlanning(...)；executeCritique(taskId, draft): ValidationResult；executeKnowledgeUpdate(taskId, draft): KnowledgeUpdateOutcome
+说明：WRITING / REVISION 是 Workflow 步骤，经 executeIntoWorkingDraft / reviseWorking 执行；TaskRunner 不承载正文写入。
 状态：✅ 可直接使用（编排层）
 ```
 
@@ -303,7 +309,7 @@ Service：container.workflowService（WorkflowService）
 > 这些能力的**接口与持久化真实存在**，仅"AI 生成内容"当前为 Mock；其余（Task/Checkpoint/Draft/记忆落库）为真实。
 1. 词法 AI 分析（`container.analysis`，默认 MockLLMGateway）—产出 PENDING 候选。
 2. 规划 `container.planning` / `container.planner`（默认 Mock）→ ChapterPlan。
-3. 写作 `container.writingExecution` / `container.writer`（默认 Mock）→ Draft。
+3. 写作（内部）`container.workflowOrchestrator` → `WritingExecutionUseCase.executeIntoWorkingDraft` / `container.writer`（默认 Mock）→ WorkingDraft（Human Gate 前不产生章节 Draft）。
 4. Critique `container.critique` / Revision `container.revision` / Knowledge Update `container.knowledgeUpdate`（默认 Mock）。
 5. MiMo 后处理 = `PassthroughWritingPostProcessor`（算法未实现）。
 > **PC 侧补充（P20-PC1）**：桌面 `ProviderType.MOCK` 走 `DesktopOfflineLlmGateway`——上游自带
@@ -341,7 +347,7 @@ Service：container.workflowService（WorkflowService）
 - **P15（User Creative Decision Loop）**：后端**已交付**（`foundationDecisions` / `ideaFirstGateway`）。PC UI 接线属 PC-4。
 - **P16–P19（Author Intelligence / Decision Model）**：后端**已交付**（`authorPreferenceUseCases` / `authorCoreUseCases` / `authorDnaUseCases` / `decisionModelUseCases` / `decisionModelGateway`）。PC UI 接线属 PC-6。
 - **P20-P2（Controlled Markdown v1）**：**已交付**（FD-1）；PC 展示接线属 PC-2 / PC-3。
-- **P20-P3（Writer seam）**：**已交付**（`writerGateway` / `writerUseCases`）；**PC 已接线（PC-2）**。
+- **P20-P3（Writer seam）**：**已交付**（用户层 `writerGateway`；`writerUseCases` 只读 + `internal` 写原语）；**PC 已接线（PC-2）**。
 - **P20-P4（Reader seam）**：**已交付**（`reading` / `ReadingProgress`，schema v17）；Android 已接线，PC 接线属 PC-3。
 - **P20-PC1（PC Foundation）**：**已落地**——桌面应用可运行、真实 SQLite v17、Provider 设置可用。
 - **P20-PC2（Desktop Writer）**：**已落地**——「04 正文创作」真实接线（`writerGateway` + `workflowFacade`：

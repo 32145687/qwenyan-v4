@@ -56,6 +56,8 @@ Qianyan **不是**：小说版 VS Code / Cursor / Codex / 编程 IDE · ChatGPT 
 
 ## 当前进度（P0–P12.1.8）
 
+> **历史记录说明**：本节 P0–P12.1.8 为历史路线记录；其中 `TaskRunner.executeWriting` / `executeRevision`、`ChapterWritingUseCases` / `ChapterWritingSession` 已在 v3.1 Phase 1 清理中删除。当前 AI 写作/修订链为 `WorkflowOrchestrator` → `WritingExecutionUseCase.executeIntoWorkingDraft` / `RevisionExecutionUseCase.reviseWorking` → `WorkingDraft` → Human Gate → Commit；作者保存走 `WriterGateway.saveContent`。历史细节保留不删。
+
 | 阶段      | 内容                                                                                                                                                                                                                                                                                                                                           | 状态 |
 | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -- |
 | P0      | 13 模块工程骨架 + Gradle/CI 全绿                                                                                                                                                                                                                                                                                                                     | ✅  |
@@ -146,6 +148,8 @@ Qianyan **不是**：小说版 VS Code / Cursor / Codex / 编程 IDE · ChatGPT 
 
 **Current Phase = P13 Long-form Continuity Layer = COMPLETE / SEALED**（Commit `f291853`）。P12.3 TD1 Variant 实体级 Merge/Override = COMPLETE / Final Acceptance ACCEPTED，Commit `b76986d`；P12.4 Limited Hardening = DELIVERED；P12.5 Android Real Provider Bridge = DELIVERED。**P13 Planning = DELIVERED（master-plan §32）**；**P13 LCL-A Narrative State = DELIVERED / SEALED，Commit `e8c0528`**；**P13 LCL-B Chapter Context Pack = DELIVERED / SEALED，Commit `ddd52f9`**；**P13 LCL-C Foreshadow Lifecycle = DELIVERED / SEALED，Commit `0d965ec`**；**P13 LCL-D Reveal / Rolling Horizon = DELIVERED / SEALED，Commit `f291853`**（RevealSubject=READER only、Reveal 不进 ChapterContextPack/NarrativeState、Rolling Horizon 有界 Workflow-local）。**下一阶段 = P14 Story Intent / Idea Intelligence Layer（PLANNED / NEXT，NOT IMPLEMENTED）**，见 master-plan §32。
 
+> ⚠️ **阶段口径提示（2026-10-21）**：上述 P13/P14 为历史路线记录，不代表当前仓库阶段。v3.1 **Phase 4（Context + Retrieval）与 Phase 5（Novel Tool）已按各自 Gate 收口**；下一任务为 **Phase 6 第一单元（Skill 契约字段生产读取）**，尚未开始。P0-3B GUI G1–G8 仍是独立 `PENDING_VERIFICATION`。当前状态以 `docs/project-control/v3.1-roadmap.md` 为准。
+
 ### 现行状态（2026-09-28 核实，取代上表后续阶段的旧标注）
 
 > 上表为**历史路线记录**（保留不删）。以下为**按当前仓库实际代码核实**的状态；与上表冲突时以本段为准。
@@ -224,6 +228,8 @@ Checkpoint（PLANNING）→ COMPLETED
 
 ### P11.3 Writing 最小链路（已同步）
 
+> **历史 API 提示**：以下 P11.3 链路中的 `TaskRunner.executeWriting` / 直接 `DraftRepository.save` 为当时实现；该入口已删除。当前 AI 写作链见上方“历史记录说明”。
+
 P11.3 建立**ChapterPlan → WriterAgent → Draft → 持久化 → WRITING Checkpoint → COMPLETED** 的最小可运行写作链路，**全 Mock、无网络**，**不做 Critique/Revision/完整 Pipeline**（明确 P11.4+ 范围外）：
 
 ```text
@@ -294,6 +300,8 @@ P12.1 为「连续章节创作」建立基础能力。**已同步完成 P12.1.1�
 - **P12.1.5 Provider Runtime Configuration**：`ProviderType / ProviderConfiguration / ProviderCredentialStore / ProviderAssembler` + `DefaultProviderAssembler`（DeepSeek / MiMo / Mock）；API Key 不进入 SQLite / Domain / Task / Checkpoint / Memory / Story State / Prompt / 普通日志 / Exception；**Android Keystore 仅为 seam（接口 + DI 占位），真实安全持久化 = NOT IMPLEMENTED**。
 
 - **P12.1.6 Android Chapter Creation / Basic UI**：`NovelList → NovelDetail → ChapterList → Create Chapter → ChapterDetail`；章节读/写走 `ChapterUseCases`（Application seam）→ `ChapterRepository` → SQLite；**Chapter order 用 Application / Repository 原子创建（`createNextChapter`** **单事务** **`MAX(order_no)+1`），Android 不自行计算 max+1**；使用真实 `chapterId`；Novel / Variant isolation；返回 ChapterList 重新查询可见新章节。
+
+> **历史 API 提示**：`ChapterWritingUseCases.ChapterWritingSession` 已随 v3.1 Phase 1 清理删除；Android 现行章节写作入口是 `ChapterWorkflowFacade`，AI 产出进入 WorkingDraft 并经 Human Gate / Commit。以下为 P12.1.7 历史记录。
 
 - **P12.1.7 Android Planning / Writing / Review Chain**：ChapterDetail 的「开始创作」真实入口，跑通 `ChapterDetail → Planning → Writing → Critique → Revision → Final Draft → Confirmation → Knowledge Update` 真实链；新增 `ChapterWritingUseCases.ChapterWritingSession`（编排）与 `ChapterWritingViewModel` / `ChapterWritingScreen`（Android Compose）；全部复用既有真实 UseCases + Task/Checkpoint（Planning 经 ContinuationResolver / 真实 PlannerAgent‑Provider；Writing / Critique / Revision / Confirmation / KnowledgeUpdate 均真实落库）；Draft / Plan / Checkpoint / Memory 持久化；Revision lineage(不覆盖旧稿)；Confirmation Gate（FINAL 区分 CONFIRMED、幂等）；ContinuationReference（既有章节续篇 source）；Variant / Novel isolation；Loading / Error / 防重复点击；15 项集成测试（T1–T15）全绿。
 

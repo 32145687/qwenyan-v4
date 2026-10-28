@@ -214,3 +214,19 @@ Memory：MemoryEntry(Schema.sq:96) ← KnowledgeUpdate 写入(KnowledgeUpdateExe
 | `ContextEngineBuildTest.kt` | `application/src/test/kotlin/com/qianyan/application/usecase/context/ContextEngineBuildTest.kt` |
 | `ProjectIndexQueryTest.kt` | `application/src/test/kotlin/com/qianyan/application/usecase/index/ProjectIndexQueryTest.kt` |
 | `ProjectIndexBuildTest.kt` | `application/src/test/kotlin/com/qianyan/application/usecase/index/ProjectIndexBuildTest.kt` |
+
+---
+
+## 9. 增补（2026-10-17）：Alt A payload 审计与新增发现（**追加，不改上文原文**）
+
+> 本节为 Phase 4B.1 阻断（§七.1）后的补充审计；完整设计见
+> [`qianyan-phase4a-context-contract-freeze-addendum-payload.md`](qianyan-phase4a-context-contract-freeze-addendum-payload.md)。
+
+1. **结构化数据丢失点**：各 Source 在调用 `contextItem(...)` 的字符串模板参数处压平（`ContextSources.kt:81/104/131/173/207/236/265`）；之后 item 仅保留文本。NOVEL / STORY_FOUNDATION 的结构化对象在同一函数内仍可用（`:124`、`:230`），可无损构造 payload。
+2. **新增发现（4A 原文未覆盖）**：`VOCABULARY` source 读取 **`VocabularyCandidate`**（`:257`），而 `PlanningContextAssembly` 读取 **`VocabularyEntry`**（`PlanningContextAssembly.kt:72-76`）——两者是不同表/不同语义（候选 ≤10 且排序 vs 全部已确认词条）。**已由 J-1 裁决 = A**（改为读取已确认 entry，实施前须证明内容等价，见 addendum §J-1）。
+3. **新增发现**：默认预算 1200 tokens + `ceil(len/4)` 估算（`ContextPack.kt:104/128`）意味着 DRAFT（正文全文）可能挤掉 MEDIUM/LOW 条目，导致按"入选条目投影"的覆盖字段在 prompt 中消失。**已由 J-2 裁决 = A**（关键上下文 NOVEL / STORY_FOUNDATION / VOCABULARY 两阶段入选保障，规则见 addendum §J-2）。
+4. **新增发现**：pack 的 Variant 作用域取 `ProjectState.activeVariantId`（`ContextEngineUseCases.kt:81`），写作请求取 `chapter.variantId`（`NovelAgent.kt:529/697`），二者一致性**未被校验**。**已由 J-3 裁决 = A**（ContextEngine 调用前 fail-fast，见 addendum §J-3）。
+5. **兼容性事实**：`ContextPack` 未被序列化/持久化（main 源集无 encode/decode/checkpoint 使用）；`content` 的消费者（`ContextSelector:223`、`ContextPackVersion:273-278`、`WorkspaceProjections:74`、测试）均不解析文本 ⇒ 新增 `payload` 字段对既有消费者无破坏。
+6. **Legacy 入口**：**已由 J-4 裁决 = C（受控豁免）**：保留无 pack 重载 + `@Deprecated` + `application/src/main` 静态守卫；内部实现（fail-fast vs 旧实现+告警）留待 4B.1 确认；7 个既有测试文件本轮不改。
+7. **本轮文档修正**：`FoundationPayload` 规范化只使用真实结构字段 `genre/direction/audience/policy`（嵌套模型按其自身字段规范化），不得把 content 渲染模板字段当作 payload 结构字段；"编译期强制"表述修正为 **"工厂约定 + 消费侧 `requirePayload` 双重保证"**。
+8. **复审修复（2026-10-17 第二轮）**：addendum §E.2 升级为完整递归 **canonical-v1** 编码（类型标记、UTF-8 字节长度前缀、列表计数、null/空串/空列表、嵌套模型递归、Replacement 三态 `0:` / `1:0:` / `1:<n>:`、内容与分隔符安全、唯一性要求）；R1–R5 与 S1–S3 已落实到 addendum / AC 草案。冻结 D2 与 Phase 3 DR 未修改。
