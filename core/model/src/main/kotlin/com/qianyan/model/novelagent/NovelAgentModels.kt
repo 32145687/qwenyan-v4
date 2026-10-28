@@ -121,6 +121,26 @@ data class NovelAgentFailure(
 )
 
 /**
+ * O-42 · 前章 Canonical 未纳入续写时的稳定原因。
+ *
+ * 只用于 [NovelAgentResult.continuationAbsentReason]，不是失败错误码：
+ * 出现原因值表示任务**按降级语义继续执行**（不硬拒）。
+ */
+object NovelAgentContinuationReasons {
+    /** 当前章不是章程序列中的第 1 章，但无法定位其紧邻前章（数据异常）。 */
+    const val NO_PREVIOUS_CHAPTER: String = "NO_PREVIOUS_CHAPTER"
+
+    /** 紧邻前章存在，但没有已提交的 Canonical。 */
+    const val NO_CANONICAL: String = "NO_CANONICAL"
+
+    /** 紧邻前章的 Canonical carrier 不是 CONFIRMED（O-23 情形）。 */
+    const val CARRIER_NOT_CONFIRMED: String = "CARRIER_NOT_CONFIRMED"
+
+    /** ContinuationResolver 的类型化校验失败（前章 Canonical 已存在，但引用无法解析）。 */
+    const val CONTINUATION_UNRESOLVED: String = "CONTINUATION_UNRESOLVED"
+}
+
+/**
  * D-36 · 初次只读分析（analysis_critique）的结论摘要。
  *
  * 只承载可观测的结论字段，不复制 CritiqueResult / issues / 正文。
@@ -161,6 +181,15 @@ data class NovelAgentResult(
     val workingDraftId: WorkingDraftId? = null,
     val artifactId: ChangeArtifactId? = null,
     val artifactStatus: ChangeArtifactStatus? = null,
+    /**
+     * O-42：本次运行是否把**紧邻前章**的 CONFIRMED Canonical 摘录注入 Planner/Writer。
+     * 非续写类任务（分析 / 规划）与第 1 章恒为 false。
+     */
+    val continuationIncluded: Boolean = false,
+    /** O-42：被纳入续写来源的前章（[continuationIncluded]=true 时非 null）。 */
+    val continuationSourceChapterId: ChapterId? = null,
+    /** O-42：未纳入前章时的显式原因（降级但不静默；第 1 章正常无前章时为 null）。 */
+    val continuationAbsentReason: String? = null,
     val approvalGateId: WorkflowHumanGateId? = null,
     /** P0-3B · 候选与正式审批的接入状态（见 [NovelAgentApprovalState]；UI 事实源仍是正式 Workflow 投影）。 */
     val approvalState: NovelAgentApprovalState = NovelAgentApprovalState.NOT_REQUIRED,

@@ -422,6 +422,8 @@ class ApplicationContainer(
         characterConsistency = characterConsistency,
         characterConsistencyAgent = characterConsistencyAgent,
         planningContexts = planningContextAssembly,
+        continuationResolver = continuationResolver,
+        canonicalRead = canonicalRead,
         reader = writerUseCases,
         // P0-3B D2 · 正式审批桥接：候选经既有用户层 seam 进入章节 Workflow（批准 / 拒绝 / 提交仍由正式链路负责）
         workflowGateway = workflowFacade,

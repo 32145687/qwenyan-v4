@@ -134,6 +134,8 @@ class AgentContextPackPipelineTest {
         characterConsistency = app.characterConsistency,
         characterConsistencyAgent = app.characterConsistencyAgent,
         planningContexts = app.planningContextAssembly,
+        continuationResolver = app.continuationResolver,
+        canonicalRead = app.canonicalRead,
         reader = app.writerUseCases,
         // P0-3B：测试真实桥接路径（候选进入正式章节 Workflow）
         workflowGateway = app.workflowFacade,

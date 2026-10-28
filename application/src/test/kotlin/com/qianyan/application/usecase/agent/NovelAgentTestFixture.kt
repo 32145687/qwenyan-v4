@@ -190,6 +190,8 @@ internal fun novelAgentWithRegistry(f: NovelAgentFixture, registry: SkillRegistr
     characterConsistency = f.app.characterConsistency,
     characterConsistencyAgent = f.app.characterConsistencyAgent,
     planningContexts = f.app.planningContextAssembly,
+    continuationResolver = f.app.continuationResolver,
+    canonicalRead = f.app.canonicalRead,
     reader = f.app.writerUseCases,
     errorMapper = f.app.errorMapper,
 )

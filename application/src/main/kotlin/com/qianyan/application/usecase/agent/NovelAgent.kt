@@ -2,10 +2,12 @@ package com.qianyan.application.usecase.agent
 
 import com.qianyan.agent.agents.CoreSkills
 import com.qianyan.agent.agents.SkillRegistry
+import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.action.ActionPolicyUseCases
+import com.qianyan.application.usecase.canonical.CanonicalReadUseCases
 import com.qianyan.application.usecase.change.ChangeUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.commit.CommitUseCases
@@ -27,7 +29,9 @@ import com.qianyan.application.usecase.writing.consistency.CharacterConsistencyA
 import com.qianyan.application.usecase.writing.consistency.CharacterConsistencyUseCase
 import com.qianyan.application.usecase.writing.critique.CritiqueAgent
 import com.qianyan.application.usecase.writing.planning.PlannerAgent
+import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
+import com.qianyan.application.usecase.writing.planning.ResolvedContinuation
 import com.qianyan.application.usecase.writing.revision.RevisionAgent
 import com.qianyan.model.ActivityId
 import com.qianyan.model.AgentId
@@ -60,6 +64,7 @@ import com.qianyan.model.context.TargetRefId
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.novelagent.NovelAgentAnalysisSummary
 import com.qianyan.model.novelagent.NovelAgentApprovalState
+import com.qianyan.model.novelagent.NovelAgentContinuationReasons
 import com.qianyan.model.novelagent.NovelAgentErrorCodes
 import com.qianyan.model.novelagent.NovelAgentFailure
 import com.qianyan.model.novelagent.NovelAgentOutcome
@@ -79,6 +84,8 @@ import com.qianyan.model.workingdraft.WorkingDraftTarget
 import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.WorkflowHumanGateId
 import com.qianyan.model.story.Chapter
+import com.qianyan.model.story.ContinuationReference
+import com.qianyan.model.writing.DraftStatus
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -141,6 +148,10 @@ class NovelAgent internal constructor(
     private val characterConsistency: CharacterConsistencyUseCase,
     private val characterConsistencyAgent: CharacterConsistencyAgent,
     private val planningContexts: PlanningContextAssembly,
+    /** O-42：闸紧邻前章 Canonical 来源（复用 P12.1.3 ContinuationResolver 校验契约）。 */
+    private val continuationResolver: ContinuationResolver,
+    /** O-42：读取前章已提交 Canonical carrier（只读；不新增正文读取路径）。 */
+    private val canonicalRead: CanonicalReadUseCases,
     private val reader: WriterUseCases,
     /**
      * P0-3B D2 · 正式审批桥接 seam（可为 null = 未装配；此时正文候选以 UNBRIDGED 显式呈现，绝不伪装待审批）。
@@ -1016,7 +1027,14 @@ class NovelAgent internal constructor(
     ): SkillOutcome {
         val chapter = requireFocusChapter(request)
         val baseDraftId = latestCanonicalDraftId(skill, request, chapter.chapterId, activityId, state)
-        val context = planningContexts.assemble(writingRequest(request, project, chapter, intent), contextPack)
+        // O-42：紧邻前章 CONFIRMED Canonical → 注入 Planner/Writer；缺失 / 非 CONFIRMED → 降级继续并显式记录原因。
+        val continuation = resolveContinuation(request, project, chapter, intent, state)
+        val context = planningContexts.assemble(
+            writingRequest(request, project, chapter, intent),
+            contextPack,
+            continuation?.reference,
+            continuation?.resolved,
+        )
         // 既有 Planner → 既有 Writer（复用其 Prompt / Parser 语义）；plan.chapterId 绑定到焦点章节（纯数据，不落库、不建章）
         val plan = planner.plan(context, emptyList(), activityId, skill.allowedTools).copy(
             chapterId = chapter.chapterId,
@@ -1026,6 +1044,74 @@ class NovelAgent internal constructor(
         )
         val draft = writer.write(context, plan)
         return SkillOutcome.Draft(content = draft.content, baseDraftId = baseDraftId, chapterId = chapter.chapterId)
+    }
+
+    /** O-42：已解析的前章续写来源（reference + resolved 必须成对传回同一份 assemble）。 */
+    private data class ContinuationInput(
+        val reference: ContinuationReference,
+        val resolved: ResolvedContinuation,
+    )
+
+    /**
+     * O-42 · 解析紧邻前章 Canonical 来源。
+     *
+     * 语义（已裁）：
+     *  - 前章 = 同 Novel + 同 Variant 章程序列中当前章的紧邻前一章（仓储按 order ASC 返回）；
+     *  - 第 1 章 = 正常无前章：不构造 reference，且**不**记录降级原因（`continuationAbsentReason=null`）；
+     *  - 前章存在但无 Canonical → `NO_CANONICAL`，降级继续；
+     *  - 前章 carrier 非 CONFIRMED（O-23）→ `CARRIER_NOT_CONFIRMED`，降级继续；
+     *  - 复用 [ContinuationResolver] 的既有硬校验契约；其类型化异常在此**只读映射**为原因，不改变 Resolver 行为，
+     *    也不把失败升级为任务失败（工作流链仍保持硬拒）。
+     */
+    private fun resolveContinuation(
+        request: NovelAgentRequest,
+        project: Project,
+        chapter: Chapter,
+        intent: NovelIntentAnalysis,
+        state: RunState,
+    ): ContinuationInput? {
+        val siblings = chapters.listByNovel(project.novelId, chapter.variantId)
+        val index = siblings.indexOfFirst { it.chapterId == chapter.chapterId }
+        if (index < 0) {
+            state.continuationAbsentReason = NovelAgentContinuationReasons.NO_PREVIOUS_CHAPTER
+            return null
+        }
+        if (index == 0) return null
+        val previous = siblings[index - 1]
+
+        val carrier = canonicalRead.committedDraft(previous.chapterId)
+        if (carrier == null) {
+            state.continuationAbsentReason = NovelAgentContinuationReasons.NO_CANONICAL
+            return null
+        }
+        if (carrier.status != DraftStatus.CONFIRMED) {
+            state.continuationAbsentReason = NovelAgentContinuationReasons.CARRIER_NOT_CONFIRMED
+            return null
+        }
+
+        val reference = ContinuationReference(previous.chapterId, carrier.draftId)
+        val resolved = try {
+            continuationResolver.resolve(writingRequest(request, project, chapter, intent), reference)
+        } catch (e: ApplicationException) {
+            state.continuationAbsentReason = when (e.error) {
+                is ApplicationError.DraftConfirmationRequired,
+                is ApplicationError.EntityNotFound,
+                -> NovelAgentContinuationReasons.NO_CANONICAL
+
+                is ApplicationError.InvalidContinuationSource ->
+                    if ((e.message ?: "").contains("非 CONFIRMED")) {
+                        NovelAgentContinuationReasons.CARRIER_NOT_CONFIRMED
+                    } else {
+                        NovelAgentContinuationReasons.CONTINUATION_UNRESOLVED
+                    }
+
+                else -> NovelAgentContinuationReasons.CONTINUATION_UNRESOLVED
+            }
+            return null
+        }
+        state.continuationIncluded = true
+        state.continuationSourceChapterId = previous.chapterId
+        return ContinuationInput(reference, resolved)
     }
 
     /** 改写（REWRITE）：既有 Critique + Revision 产出修订正文 → Working Draft；不落 Canonical。 */
@@ -1413,6 +1499,9 @@ class NovelAgent internal constructor(
         workingDraftId = state.workingDraftId,
         artifactId = state.artifactId,
         artifactStatus = state.artifactStatus,
+        continuationIncluded = state.continuationIncluded,
+        continuationSourceChapterId = state.continuationSourceChapterId,
+        continuationAbsentReason = state.continuationAbsentReason,
         approvalGateId = approvalGateId,
         approvalState = approvalState,
         commitId = commitId,
@@ -1434,6 +1523,9 @@ class NovelAgent internal constructor(
         var workingDraftId: WorkingDraftId? = null
         var artifactId: ChangeArtifactId? = null
         var artifactStatus: ChangeArtifactStatus? = null
+        var continuationIncluded: Boolean = false
+        var continuationSourceChapterId: ChapterId? = null
+        var continuationAbsentReason: String? = null
     }
 
     /** 编排中止（内部信号；统一转成稳定 [NovelAgentFailure]，不向调用方抛业务异常）。 */
