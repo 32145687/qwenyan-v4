@@ -99,6 +99,16 @@ class DecisionModelTest {
         assertEquals(DecisionPolicySource.RULE_MATRIX, p.source)
     }
 
+    @Test
+    fun `story direction uses dna only when preference and core are absent`() {
+        val c = ctx(dnas = listOf(dna(AuthorDnaDimension.NARRATIVE, "progressive")))
+
+        val p = DecisionModel.evaluate(c, DecisionType.STORY_DIRECTION)
+
+        assertEquals(DecisionOutcome.PROGRESSIVE_REVEAL, p.outcome)
+        assertEquals(DecisionPolicySource.RULE_MATRIX, p.source)
+    }
+
     // ---- 3. No conflict：同向 → RULE_MATRIX 同结果 ----
 
     @Test
@@ -133,6 +143,26 @@ class DecisionModelTest {
             dnas = listOf(dna(AuthorDnaDimension.SENTENCE, "long")),
         )
         assertEquals(DecisionOutcome.SHORT_DOMINANT, DecisionModel.evaluate(c, DecisionType.WRITING_STYLE).outcome)
+    }
+
+    @Test
+    fun `writing style uses core only and covers long dominant`() {
+        val c = ctx(cores = listOf(core("long 长句为主")))
+
+        val p = DecisionModel.evaluate(c, DecisionType.WRITING_STYLE)
+
+        assertEquals(DecisionOutcome.LONG_DOMINANT, p.outcome)
+        assertEquals(DecisionPolicySource.RULE_MATRIX, p.source)
+    }
+
+    @Test
+    fun `writing style uses dna only and covers long dominant`() {
+        val c = ctx(dnas = listOf(dna(AuthorDnaDimension.SENTENCE, "long")))
+
+        val p = DecisionModel.evaluate(c, DecisionType.WRITING_STYLE)
+
+        assertEquals(DecisionOutcome.LONG_DOMINANT, p.outcome)
+        assertEquals(DecisionPolicySource.RULE_MATRIX, p.source)
     }
 
     // ---- 5. Fallback：NEUTRAL + DETERMINISTIC_DEFAULT ----

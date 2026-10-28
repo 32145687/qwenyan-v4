@@ -176,6 +176,21 @@ class CharacterConsistencyNovelAgentE2ETest {
     }
 
     @Test
+    fun `A8 character consistency pass completes with empty findings`() {
+        val script = ScriptedGateway().apply { answer = PASS_JSON }
+        val h = setup(script)
+
+        val result = run(h)
+
+        assertEquals(NovelAgentOutcome.COMPLETED, result.outcome)
+        val consistency = assertNotNull(result.characterConsistency)
+        assertEquals(CharacterConsistencyStatus.PASS, consistency.status)
+        assertTrue(consistency.findings.isEmpty())
+        assertTrue(consistency.missingInputs.isEmpty())
+        h.f.close()
+    }
+
+    @Test
     fun `V6 no prior canonical still uses missing prior semantic`() {
         val script = ScriptedGateway().apply { answer = INSUFFICIENT_PRIOR }
         val h = setup(script, withCanonical = false)
@@ -200,5 +215,8 @@ class CharacterConsistencyNovelAgentE2ETest {
 
         const val INSUFFICIENT_PRIOR =
             """{"status":"INSUFFICIENT_EVIDENCE","scope":"CURRENT_CHAPTER","findings":[],"checkedCharacters":[],"missingInputs":["PRIOR_CANONICAL"],"summary":"prior canonical missing"}"""
+
+        const val PASS_JSON =
+            """{"status":"PASS","scope":"CURRENT_CHAPTER","findings":[],"checkedCharacters":[{"characterId":"c1","name":"林岚"}],"missingInputs":[],"summary":"pass"}"""
     }
 }
