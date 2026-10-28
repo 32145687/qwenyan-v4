@@ -99,6 +99,15 @@ class PlanningContextAssembly(
             .filter { it.source == ContextSourceKind.VOCABULARY }
             .map { it.requirePayload<VocabularyPayload>(ContextSourceKind.VOCABULARY) }
 
+        // 本章当前稿只从 Pack 的 DRAFT item 投影；无 DRAFT item → null（不回退读仓储）。
+        val currentDraft = contextPack.request.focusChapterId?.let { focusChapterId ->
+            contextPack.items
+                .firstOrNull { it.source == ContextSourceKind.DRAFT && it.ref?.chapterId == focusChapterId }
+                ?.let { item ->
+                    item.ref?.draftId?.let { draftId -> CurrentDraftLite(draftId, item.content) }
+                }
+        }
+
         val scope = if (variantId == null) com.qianyan.model.VariantScope.ORIGINAL else com.qianyan.model.VariantScope.VARIANT
         val worldContext = worldContextResolver.resolve(
             novelId = contextPack.novelId,
@@ -143,6 +152,7 @@ class PlanningContextAssembly(
             vocabulary = vocabularyPayloads.map {
                 VocabularyLite(canonical = it.canonical, aliases = it.aliases, replacement = it.replacement)
             },
+            currentDraft = currentDraft,
             worldContext = worldContext,
             continuationReference = continuationReference,
             sourceChapter = resolved?.sourceChapter,

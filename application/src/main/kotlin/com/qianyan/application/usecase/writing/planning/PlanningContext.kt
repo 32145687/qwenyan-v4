@@ -1,14 +1,19 @@
 package com.qianyan.application.usecase.writing.planning
 
 import com.qianyan.model.CharacterId
+import com.qianyan.model.DraftId
 import com.qianyan.model.GenreId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
 import com.qianyan.model.VariantScope
 import com.qianyan.model.author.AuthorContext
+import com.qianyan.model.character.Character
+import com.qianyan.model.character.CharacterState
 import com.qianyan.model.context.StoryWorldContext
 import com.qianyan.model.context.UserWritingRequest
 import com.qianyan.model.foundation.NarrativeProfile
+import com.qianyan.model.timeline.Event
+import com.qianyan.model.world.WorldRule
 import com.qianyan.model.foundation.StoryDirection
 import com.qianyan.model.foundation.WritingPolicy
 import com.qianyan.model.story.Chapter
@@ -45,6 +50,8 @@ data class PlanningContext(
     val memories: List<String> = emptyList(),
     /** 与本次规划相关的既有 Vocabulary 最小投影（canonical + aliases + replacement）。 */
     val vocabulary: List<VocabularyLite> = emptyList(),
+    /** 本章当前稿（来自 ContextPack 的 DRAFT item；与续篇 sourceFinalDraft 语义分开）。 */
+    val currentDraft: CurrentDraftLite? = null,
     /** 确定性组装的故事世界上下文视图（canon/layer 分层，P11.6；供渲染与检索，非新持久化）。 */
     val worldContext: StoryWorldContext? = null,
     // ---- P12.1.3：Explicit ContinuationReference ----
@@ -95,6 +102,88 @@ data class VocabularyLite(
     val aliases: List<String> = emptyList(),
     val replacement: String? = null,
 )
+
+/** 本章当前稿最小投影（来源：ContextPack 的 DRAFT item；正文不截断）。 */
+@Serializable
+data class CurrentDraftLite(
+    val draftId: DraftId,
+    val content: String,
+)
+
+/** Planner / Writer 共用的本章当前稿 prompt 节。 */
+internal fun CurrentDraftLite.toPromptSection(): String =
+    "【本章当前稿】\ndraftId: ${draftId.value}\n$content"
+
+private const val WORLD_MODEL_CHARACTER_STATE_LIMIT = 20
+private const val WORLD_MODEL_RULE_LIMIT = 20
+private const val WORLD_MODEL_EVENT_LIMIT = 20
+
+/** Planner / Writer 共用的世界模型 prompt 节；只消费 Assembly 已解析的同一 [PlanningContext.worldContext]。 */
+internal fun PlanningContext.worldModelPromptSection(): String? {
+    val world = worldContext ?: return null
+    val sections = buildList {
+        if (world.characters.isNotEmpty()) add(renderCharacterProfiles(world.characters))
+        if (world.characterStates.isNotEmpty()) add(renderCharacterStates(world.characterStates, world.characters))
+        if (world.worldRules.isNotEmpty()) add(renderWorldRules(world.worldRules))
+        if (world.events.isNotEmpty()) add(renderEvents(world.events))
+    }
+    return sections.takeIf { it.isNotEmpty() }?.joinToString("\n\n")
+}
+
+private fun renderCharacterProfiles(characters: List<Character>): String = buildString {
+    appendLine("【人物档案】")
+    characters
+        .sortedWith(compareBy({ it.name }, { it.characterId.value }))
+        .forEach { appendLine("- ${it.name}(${it.characterId.value}): ${it.goals}") }
+}.trimEnd()
+
+private fun renderCharacterStates(states: List<CharacterState>, characters: List<Character>): String {
+    val names = characters.associate { it.characterId.value to it.name }
+    val ordered = states.sortedWith(compareBy({ it.characterId.value }, { it.id.value }))
+    val shown = ordered.take(WORLD_MODEL_CHARACTER_STATE_LIMIT)
+    return buildString {
+        appendLine("【人物状态】")
+        shown.forEach { state ->
+            val name = names[state.characterId.value] ?: "?"
+            appendLine(
+                "- $name(${state.characterId.value}): " +
+                    "currentGoal=${state.currentGoal ?: "-"}; " +
+                    "currentMotivation=${state.currentMotivation ?: "-"}; " +
+                    "location=${state.location?.value ?: "-"}; " +
+                    "physical=${state.physicalState.label}/${state.physicalState.details}; " +
+                    "emotional=${state.emotionalState.label}/${state.emotionalState.intensity}; " +
+                    "known=${state.knownFacts.joinToString(",") { it.value }.ifBlank { "-" }}; " +
+                    "unknown=${state.unknownFacts.joinToString(",") { it.value }.ifBlank { "-" }}",
+            )
+        }
+        if (ordered.size > WORLD_MODEL_CHARACTER_STATE_LIMIT) {
+            appendLine("truncated=true; total=${ordered.size}")
+        }
+    }.trimEnd()
+}
+
+private fun renderWorldRules(rules: List<WorldRule>): String {
+    val ordered = rules.sortedWith(compareBy({ it.category }, { it.ruleId.value }))
+    val shown = ordered.take(WORLD_MODEL_RULE_LIMIT)
+    return buildString {
+        appendLine("【世界规则】")
+        shown.forEach { appendLine("- [${it.category}] ${it.content}") }
+        if (ordered.size > WORLD_MODEL_RULE_LIMIT) appendLine("truncated=true; total=${ordered.size}")
+    }.trimEnd()
+}
+
+private fun renderEvents(events: List<Event>): String {
+    val ordered = events.sortedWith(compareByDescending<Event> { it.createdAt }.thenBy { it.id.value })
+    val shown = ordered.take(WORLD_MODEL_EVENT_LIMIT)
+    return buildString {
+        appendLine("【近期事件】")
+        shown.forEach {
+            val summary = it.what.ifBlank { it.description }
+            appendLine("- ${it.name}: $summary [${it.type}/${it.status}]")
+        }
+        if (ordered.size > WORLD_MODEL_EVENT_LIMIT) appendLine("truncated=true; total=${ordered.size}")
+    }.trimEnd()
+}
 
 /** Planner / Writer 共用的词条 prompt 行；别名保持原始顺序并忽略空字符串。 */
 internal fun VocabularyLite.toPromptLine(): String {

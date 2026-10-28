@@ -12,6 +12,8 @@ import com.qianyan.application.usecase.writing.planning.PlanningContext
 import com.qianyan.application.usecase.writing.planning.WRITER_CONTINUATION_MAX_CODE_POINTS
 import com.qianyan.application.usecase.writing.planning.continuationExcerpt
 import com.qianyan.application.usecase.writing.planning.toPromptLine
+import com.qianyan.application.usecase.writing.planning.toPromptSection
+import com.qianyan.application.usecase.writing.planning.worldModelPromptSection
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
 import com.qianyan.model.decision.DecisionPolicy
@@ -130,6 +132,8 @@ class WriterAgent(
             }
         }
 
+        context.worldModelPromptSection()?.let { appendLine(it) }
+
         appendLine("【本章规划】")
         if (plan.chapterGoal.isNotBlank()) appendLine("chapterGoal: ${plan.chapterGoal}")
         if (plan.expectedEvents.isNotEmpty()) appendLine("expectedEvents: ${plan.expectedEvents}")
@@ -150,6 +154,7 @@ class WriterAgent(
             appendLine(excerpt.text)
         }
 
+        context.currentDraft?.let { appendLine(it.toPromptSection()) }
         if (context.memories.isNotEmpty()) {
             appendLine("【相关记忆】")
             context.memories.forEach { appendLine("- $it") }

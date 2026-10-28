@@ -142,12 +142,8 @@ class PlannerAgent(
             }
         }
 
-        if (context.characters.isNotEmpty()) {
-            appendLine("【相关人物】")
-            context.characters.forEach { c ->
-                appendLine("- ${c.name}(${c.characterId.value}): ${c.goals}")
-            }
-        }
+        context.worldModelPromptSection()?.let { appendLine(it) }
+        context.currentDraft?.let { appendLine(it.toPromptSection()) }
         if (context.memories.isNotEmpty()) {
             appendLine("【相关记忆】")
             context.memories.forEach { appendLine("- $it") }
