@@ -292,7 +292,9 @@ class StoryFoundationSource(private val foundations: StoryFoundationRepository) 
 // ---- VOCABULARY ----
 
 /**
- * 来源：作品词汇（J-1=A：与 `PlanningContextAssembly` 相同的 **approved `VocabularyEntry`** 数据集）。
+ * 来源：作品词汇（J-1=A：正式数据集为 approved `VocabularyEntry`）。
+ *
+ * V2-①：Original 只读 NOVEL；Variant 读取 NOVEL 基座 + VARIANT 同 canonical 覆盖。
  *
  * 与旧 candidate 来源的差异（已由 Phase 4A J-1 裁决）：
  *  - 数据表：`VocabularyEntry`（不再使用 `VocabularyCandidate`）；
@@ -305,17 +307,37 @@ class VocabularySource(private val entries: VocabularyRepository) : ContextSourc
     override val kind: ContextSourceKind = ContextSourceKind.VOCABULARY
 
     override fun candidates(scope: ContextBuildScope, request: ContextRequest): List<ContextItem> {
-        // 与 PlanningContextAssembly 的作用域选择一致：Variant 作用域读 variant entry，否则读 Original entry。
         val scoped = if (scope.activeVariantId != null) {
-            entries.findEntriesByVariant(scope.activeVariantId)
+            mergedApprovedEntries(
+                novelEntries = entries.findEntriesByNovel(scope.novelId),
+                variantEntries = entries.findEntriesByVariant(scope.activeVariantId),
+            )
         } else {
             entries.findEntriesByNovel(scope.novelId)
+                .filter { it.status == VocabularyEntryStatus.APPROVED }
+                .sortedWith(VocabularyEntryOrder)
         }
-        return scoped
-            .filter { it.status == VocabularyEntryStatus.APPROVED }
-            .sortedWith(compareBy({ it.canonical }, { it.entryId.value }))
-            .map { vocabularyItem(it, ContextPriorities.of(kind, request.purpose)) }
+        return scoped.map { vocabularyItem(it, ContextPriorities.of(kind, request.purpose)) }
     }
+}
+
+private val VocabularyEntryOrder = compareBy<VocabularyEntry>({ it.canonical }, { it.entryId.value })
+
+/** V2-①：NOVEL 基座 + VARIANT 同 canonical 覆盖；两集合均只取 APPROVED。 */
+private fun mergedApprovedEntries(
+    novelEntries: List<VocabularyEntry>,
+    variantEntries: List<VocabularyEntry>,
+): List<VocabularyEntry> {
+    val merged = LinkedHashMap<String, VocabularyEntry>()
+    novelEntries
+        .filter { it.status == VocabularyEntryStatus.APPROVED }
+        .sortedWith(VocabularyEntryOrder)
+        .forEach { merged[it.canonical] = it }
+    variantEntries
+        .filter { it.status == VocabularyEntryStatus.APPROVED }
+        .sortedWith(VocabularyEntryOrder)
+        .forEach { merged[it.canonical] = it }
+    return merged.values.sortedWith(VocabularyEntryOrder)
 }
 
 // ---- 工厂（ApplicationContainer 组装用） ----

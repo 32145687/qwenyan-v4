@@ -200,6 +200,8 @@ class PlanningContextAssembly(
         }
 
         // 3) 当前作用域可见 Vocabulary
+        // V2-①：正式 VocabularySource 已合并 NOVEL 基座；本 legacy 无生产调用方，
+        // 保留二选一旧语义以避免改动死代码（见 NoPackAssemblyGuardTest）。
         val vocabulary = if (variantId != null) {
             guard { vocabularyRepository.findEntriesByVariant(variantId) }
         } else {
