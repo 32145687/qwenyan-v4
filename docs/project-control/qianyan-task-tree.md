@@ -9,11 +9,11 @@
 
 ## 0. 当前焦点
 
-- 当前单元：**G1 提交执行（T-G1-C）** — 4/6 已提交，批次 4/5 待续（`5466f98` gate 瑕疵已裁接受）
-- 阻塞：无；批次 4/5 需严格 gate（`&&` / `|| exit 1`）后继续
-- 已完成：2A（D-20）；2B（D-21/D-23/D-24）；2C（D-25/D-26/D-27）；Gate（D-29/D-30/D-31 + GATE_PASS_WITH_LIMITATIONS）；G1 拆分（T-G1）+ sessionId 修复（T-G1-S）+ 提交 0–3（D-32）
-- 并行决策：V1–V3（词库）、W1（工作树）
-- 仓库快照：HEAD `5466f98`，本地领先 `5b047b0` **6 commits**，未 push；工作区 **9 porcelain 条目 / 15 文件**（批次 4/5 未提交）
+- 当前单元：**词库线已收口（T-V1/V2/V3/V3-A/V2-A 全 DONE）**；下一步待选：**G2 提交本批** / W1 工作树 / T-7-2 GUI
+- 阻塞：无；O-37（Rule 执行）/O-38（Critic 漂移）/O-39（variant_id 无 FK）为登记项
+- 已完成：Phase 4/5/6 DONE；G1 六批；T-7-1 收口；词库 D-34 + T-V3-A + T-V2-A
+- 并行决策：W1（工作树）、T-7-2（GUI，暂停）
+- 仓库快照：HEAD `e3be34c`，领先 `5b047b0` **8 commits**（未 push）；工作区 **13 项**（10 M + 3 ??），全部为本轮 Phase 7 测试 + 词库 V3-A/V2-A + D-34 文档
 
 ## 1. 阶段总览
 
@@ -66,6 +66,8 @@
 | D-30 | LongContinuation 是工作流能力，非 Skill | DONE（裁决） | 撤销 D-28 的"LongContinuation=WRITING Skill"映射：2A 链（`WorkflowOrchestrator.continueToNextWorkflow` + `ContinuationResolver` + canonicalRead）是独立工作流能力，不挂 CoreSkills、不新建 Skill。Gate 判据 = 2A 链自身 |
 | D-31 | WRITING CONTINUE 的 R3 偏差属 Phase 7 | DONE（裁决） | `NovelAgent.latestCanonicalDraftId`（:1190）实调 `get_latest_draft`→`writer.latestDraft`，非 canonical——命名陷阱 + 既有 R3 偏差（早于 Phase 6）。登记 O-32，Phase 7（NovelAgent base-draft 对齐）处理，不算 Phase 6 Gate 阻断。Desktop 无 `continueToNextChapter` 接线登记 O-33 |
 | D-32 | 提交 3 的 whitespace gate 瑕疵 | DONE（裁决） | **接受 `5466f98`**：唯一问题是历史审计快照 `qianyan-project-worktree.md` 末尾空行（EOF blank line），而快照应**按原样归档、不改写**（符合"历史基线只加指针不改写"）；因此不对快照类文件套用 whitespace gate。**不 reset、不 amend、不追加修复提交**。流程错误（`git diff --cached --check` 与 `commit` 用 `;` 串联，未把 exit 0 作为前置）单独记录；批次 4/5 必须用 `&&` 串联（或用 `set -e` / `|| exit 1`），gate 失败即停 |
+| D-33 | T-7-1 决策点语义裁决（7 项） | DONE（裁决） | (a) 空 Pack 不新增 CONTEXT 拒绝（D-25）；Writing/Plan 现映射 `EXECUTION_FAILED` 属错误语义缺口 → O-34，不测为期望行为。(b) `Analysis.passed=false` 保持 COMPLETED（信息性结果），补"结果携带 passed/计数"断言。(c) CharacterConsistency 三态均 COMPLETED，补 PASS 结果级断言。(d) ActionPolicy `Denied/Allowed` 当前策略下不可达且 `ActionPolicyUseCases` 是 final class → **不测、不改结构**，登记 O-35。(e) `DecisionPolicySource` 只有 `RULE_MATRIX`/`DETERMINISTIC_DEFAULT`；`PREFERENCE` 是**规划层上一轮提示词的口径错误**，以代码为准，不新增枚举。(f) 防御/不可达分支（S7/C5/E6/R2）不纳入 T-7-1。(g) 已提交事实三入口：补 `bridgeCandidate` 幂等分支（G4），与 resume/refresh 对齐 |
+| D-34 | 词库 V1–V3 归属裁决 | DONE（裁决，FINALIZED） | 见 `docs/planning/qianyan-vocabulary-ownership-decision.md`。**文档优先级**：p20 FD-6 / Phase 4A J-1 / Phase 4C AC-30 > v3.1 §11A 禁止条款（按文档性质与形成时间，不以"代码已存在"倒推动机）。**V1-A** 承认现行独立词库域（唯一表族，不得再新增第二套）；**V2-①** 作用域 = NOVEL + VARIANT（VARIANT 合并 NOVEL，同名 canonical 由 VARIANT 覆盖），`scope_level` 降级为标注，GLOBAL/TASK 标注未启用，不做 BOOK/SERIES/AUTHOR；**V3-A** MVP 只做别名收敛进 prompt + 修预算不一致，Rule/Critic/TEMPLATE/UI 不做（O-37/O-38）。§11A 已加指针，本文件仅追加未改写 |
 
 ## 3. 未完成 / 部分完成 / 阻塞
 
@@ -77,6 +79,12 @@
 | O-31 | tool→AgentActionKind 映射 | **OPEN** | D-27 的 action 级 observed ⊆ expectedActions 需工具→动作类别映射；2C 只做工具级，未发明 |
 | O-32 | WRITING CONTINUE 用 latest draft 非 canonical | **OPEN（Phase 7）** | `NovelAgent.latestCanonicalDraftId`（:1190-1207）实调 `get_latest_draft`→`writer.latestDraft`（`ProductTools.kt:204-209`），违反 R3"Agent Context=Canonical 前文"；命名陷阱。早于 Phase 6，Phase 7 NovelAgent base-draft 对齐时修 |
 | O-33 | Desktop 无 continueToNextChapter 接线 | **OPEN（UI 恢复时）** | 2A 续篇唯一生产 caller 是 Android `ChapterWritingViewModel.kt:87`（Android 暂停）；Desktop `WritePage.kt` 的"下一章"仅导航、`continueWriting` 是同章推进（非续篇）。UI 线恢复时补 |
+| O-34 | 空 Pack 的错误语义 | **OPEN** | D-33a：空 Pack 允许进入 EXECUTE（D-25），但 Writing/Plan 缺 payload 现映射为 `EXECUTION_FAILED`——把"缺输入"说成"执行失败"，语义不准。应改为可区分的类型化缺失输入错误；改与不改待裁，T-7-1 不测为期望行为 |
+| O-35 | ActionPolicy Denied/Allowed 不可达 | **DEFERRED** | D-33d：`COMMIT_CANONICAL` 在 `ActionPolicyUseCases` 恒 `NeedsHuman`，NovelAgent GATE 的 `Denied→ACTION_DENIED` / `Allowed→COMMIT` 当前不可达；且该类是 final（`ActionPolicyUseCases.kt:44`），测试替换需改结构。不为不可达分支改结构，暂不测 |
+| O-36 | R3/R4 失败路径缺可注入缝隙 | **OPEN** | `WorkingDraftUseCases` / `ChangeUseCases` 均为具体类（非接口/非 open），无法在测试中注入创建失败 / `prepare` 失败，故 R3（`WORKING_DRAFT_FAILED`）与 R4（`ARTIFACT_FAILED`）无行为测试。改结构只为测试不划算；将来若要覆盖，优先用 DB 层故障注入而非改类 |
+| O-37 | `VocabularyRule` 执行语义 | **OPEN（V3-A 外）** | D-34/V3-A：Rule 有模型、无生产消费者，且"确定性替换"的执行位置（Writer 后处理？Revision？写回？）、`deterministicOnly` 语义均未定义。先有契约再实现，不用现状反推 |
+| O-38 | Critic/Revision 别名漂移检查 | **OPEN（V3-A 外）** | 当前 `CritiqueAgent` / `RevisionAgent` 不接收 vocabulary；别名漂移检查属新能力，需独立契约（判定标准、severity、是否自动修正） |
+| O-39 | `VocabularyEntry.variant_id` 无外键/归属校验 | **OPEN（残余完整性风险）** | `NovelVariant.variant_id` 是主键（`Schema.sq:22-34`）故合法数据下唯一；但 `VocabularyEntry.variant_id` 无 FK（`Schema.sq:56-68`），`findEntriesByVariant` 只按 variant_id 过滤（不带 novelId）。若未来错误写入跨作品 variant_id，会读到他人词条。当前无 VARIANT 生产写入路径，无实际泄漏样本；schema 级保证需另立单元（FK 或写入归属校验） |
 | O-03 | 2C Skill 契约收口 | **DONE** | T-2C-1/2/3 实施 + T-2C-4 核验，全量 1575/0 + 桌面 46/0；缺口转 O-30/O-31 |
 | O-04 | 词库别名收敛 / VocabularyRule / Critic 漂移 | **NOT_STARTED** | prompt 只渲染 canonical + replacement，aliases 被丢弃；Rule 无消费者；无 Critic 检查 |
 | O-05 | 多 TXT 全书章节顺序 | **NOT_STARTED** | R1–R5 已裁，功能未实现 |
@@ -153,16 +161,27 @@
 
 ### 4.5 Phase 7 / 8
 
-- [ ] `T-7-1` 决策点行为测试：Result X → A，Result Y → B
+- [x] `T-7-1-0` 决策点枚举与覆盖审计（只读）— **DONE（2026-10-28）**
+  枚举 40 个分支对（S1–S7 / C1–C5 / E1–E7 / R1–R4 / G1–G8 / D1–D8）；已覆盖 19、缺一支 9、完全无 6、N/A 若干。规划层裁 D-33（7 项语义）；工作树 `M docs/project-control/qianyan-task-tree.md` 已确认是规划层更新，非异常。
+- [x] `T-7-1-A` 决策点行为测试第一批 — **DONE（2026-10-28）**
+  新增 10 个测试（DecisionModelTest +3：DNA-only / core-only / DNA-only LONG；`DecisionPointBehaviorTest` +6：A4 已提交幂等不重复 Commit、A5a/b/c refresh 三状态、A6 reject 已提交不新增 Commit/Cancel、A7 passed=false 仍 COMPLETED 且 summary 可见计数；E2E +1：A8 PASS 空 findings）。规划层复核断言均为行为级（含 CommitHistory 条数、Canonical 内容、session 状态、summary 文本）。application 1117/0（+10）、root 1586/0（含 Android 120）、desktop 47/0（未改动、沿用）。A9 未写（见 O-36）。
+- [x] `T-7-1-B` 依赖裁决项 — **DONE（登记，无需测试）**：G1 Denied/Allowed → O-35（不可达/final class）；C4 空 Pack → O-34（错误语义缺口，不测为期望）；D8 `PREFERENCE` → 已勘误（代码无此枚举）。
+- [x] `T-7-1-C` 防御/不可达分支 — **DONE（记录不测）**：S7/C5/E6/R2 为防御分支，当前不可达；不为不可达路径造 mock 内部状态的测试。
 - [ ] `T-7-2` P0-3B GUI G1–G8 真实验收
 - [ ] `T-8-1` 17 段完整纵切 E2E
 - [ ] `T-8-2` Phase 8 验收
 
 ### 4.6 并行决策 / 治理
 
-- [ ] `T-V1` 词库归属：承认现行域并修订 §11A / 迁移
-- [ ] `T-V2` 作用域映射：NOVEL / VARIANT 与 BOOK / SERIES
-- [ ] `T-V3` 词库 MVP 范围：先 prompt 别名收敛，还是连 Rule + Critic
+- [x] `T-V0` 词库现状只读盘点 — **DONE（2026-10-28）**
+  16 项缺口（E1–E16）+ 渲染矩阵 + §11A/v0.1 差异 + V1-A/B 成本表。关键：`scope_level` 不是查询键（`Vocabulary.sq:12-16` 只按 variant_id/novel_id 过滤）；VARIANT 不合并 NOVEL（`ContextSources.kt:309-313`）；`VocabularyRule` 无生产消费者；`search_vocabulary` 查的是候选而非正式词条。
+- [x] `T-V1` 词库归属 — **DONE：V1-A**（承认现行独立域，修订 §11A；见 D-34 与 `qianyan-vocabulary-ownership-decision.md`）
+- [x] `T-V2` 作用域映射 — **DONE：V2-①**（NOVEL + VARIANT 两轴；VARIANT 继承 NOVEL；`scope_level` 降为标注；GLOBAL/TASK 未启用；不做 BOOK/SERIES/AUTHOR）
+- [x] `T-V3` MVP 范围 — **DONE：V3-A**（只做别名收敛进 prompt + 预算一致性；Rule/Critic/TEMPLATE/UI 不做）
+- [x] `T-V3-A` 实施：Planner/Writer 渲染别名 + 修 Context 预算不一致 + 测试 — **DONE（2026-10-28）**
+  共享 `VocabularyLite.toPromptLine()`（`PlanningContext.kt:99-105`：别名保持顺序、过滤空串、两处逐字一致）；`PlannerAgent.kt:155-158` 与 `WriterAgent.kt:157-160` 都改用它。TDD 先红（`VocabularyPromptIntegrationTest` 1 failed）后绿；新增集成测试（Planner/Writer 别名格式、无别名旧格式、空别名过滤、content vs prompt 一致）。application **1118/0**（+1）、root **1587/0**、desktop 47/0。
+- [x] `T-V2-A` 实施：`VocabularySource` 的 VARIANT 分支合并 NOVEL — **DONE（2026-10-28）**
+  `ContextSources.kt:307-339`：`activeVariantId == null` 保持原逻辑；非空走 `mergedApprovedEntries`（两边只取 APPROVED，NOVEL 先入、VARIANT 同 canonical 覆盖，最终 `(canonical, entryId)` 排序）。legacy `PlanningContextAssembly` 仅加注释（无生产调用方，`NoPackAssemblyGuardTest` 3/0 佐证）。TDD 先红（V-2 缺 NOVEL 基座 / V-4 集合不符）后绿；新增 `VocabularyVariantInheritanceTest` 6 测试。application **1124/0**（+6）、root **1593/0**、desktop 47/0。
 - [ ] `T-W1` 四个工作树：冻结归档 / 清理（先出 manifest + patch）
 - [x] `T-G1` 提交拆分清单（只读，不执行）— **DONE（2026-10-28）**
   盘点：152 porcelain → 展开 **172 文件**（106 tracked 变更 + 66 新文件）；无 .sq/.sqm、无密钥、无 build/IDE 产物、无 >1MiB 新文件。
@@ -171,10 +190,10 @@
 - [x] `T-G1-S` 提交前修 Desktop 候选操作 sessionId 缺口 — **DONE（2026-10-28）**
   `Common.kt:347`：`lastAgentRequest = result.sessionId?.let { request.copy(sessionId = it) } ?: request`（null 不编造）；`DesktopAgentApprovalUiTest` 新增行为级测试（`DesktopOfflineLlmGateway` + 真实 NovelAgent + 临时 DB，逐一断言 bridgeCandidate/refreshCandidate/reject 不再 `SESSION_REQUIRED`）+ 源码行断言。桌面 47/0、root 1576/0，XML 00:24–00:26Z > 源码 00:24:41Z；porcelain 仍 152、staged=0。
   注：报告称"本轮未新增代码改动、仅复核"，与同报告的"修复前 2 failed → 修复后 5/5、旧赋值断言已同步"自相矛盾（表述问题，不影响结论）；另源码文本断言较脆，属辅助手段。
-- [ ] `T-G1-C` 执行提交 — **PARTIAL：4/6 已提交，批次 4/5 待续**
-  已提交：`c2c3681`（4 文件，提交 0）、`0530e2b`（141 文件，提交 1）、`77c5718`（5 文件，提交 2）、`5466f98`（7 文件，提交 3）。本地 `0 6`（origin…HEAD），未 push。
-  **过程错误**：批次 3 用 `;` 串联 `git diff --cached --check` 与 `commit`，check 返回 exit 2（`qianyan-project-worktree.md:181 new blank line at EOF`）仍提交。已 HARD STOP，未 amend/reset。
-  待续：批次 4（8 文件：README + 7 docs/planning）、批次 5（7 文件：docs/project-control）。剩余 9 porcelain 条目 = 15 文件。
+- [x] `T-G1-C` 执行提交 — **DONE（2026-10-28）**
+  6 批全部落本地：`c2c3681`(4) → `0530e2b`(141) → `77c5718`(5) → `5466f98`(7，D-32 接受) → `0919b86`(8) → `e3be34c`(7)。**六批文件数合计 172 = 清单全量**（独立一致性证明）；porcelain 0、staged 空、HEAD `e3be34c`、本地领先 `5b047b0` **8 commits**、**未 push / 未 tag / 未 amend / 未 reset**。
+  提交 4/5 的 gate 均为 `set -e` + 短路，`--check` exit 0、敏感扫描 0 命中、staged 集合 MATCH；控制层四处状态一致（README / roadmap / feature-status / 任务树）。
+  残留：远端 live 状态因网络不可达未复核（`ls-remote` exit 128），仅能证明本地未 push。
 - [ ] `T-LEGACY` `commitApprovedDraft`：删除或补齐 Gate 绑定
 
 ## 5. 更新日志
@@ -198,3 +217,10 @@
 | 2026-10-28 | G1 只读拆分审查通过：T-G1 → DONE（172 文件 / 6 批）；控制层三份文档由规划层对账（Phase 6 DONE、2C 限制刷新、提交 5 HOLD 解除）；新增 T-G1-S（sessionId 先修）与 T-G1-C（待授权执行） | 规划层复核：152 porcelain = 172 文件（106 tracked + 66 新）；`docs/project-control` 7 / `docs/audit` 7 计数一致；`Common.kt:337-341` 建请求确无 sessionId、`:347` 存原始 request，`bridgeCandidate`/`reject` 的 SESSION_REQUIRED 确认存在；控制层 README/roadmap/feature-status 原写 Phase 6 IN_PROGRESS / CharacterConsistency BLOCKED，已更新为 DONE（GATE_PASS_WITH_LIMITATIONS）并保留限制 |
 | 2026-10-28 | T-G1-S 审查通过 → DONE：Desktop 候选操作 sessionId 缺口已修（`Common.kt:347`），桌面 47/0 + root 1576/0；T-G1-C 待用户逐批授权 | 规划层实测：`lastAgentRequest = result.sessionId?.let { request.copy(sessionId = it) } ?: request`；`DesktopAgentApprovalUiTest` 5/5（含真实 NovelAgent + 临时 DB 断言 bridge/refresh/reject 不再 SESSION_REQUIRED）；desktop XML 5/0、最新 2026-10-28 08:25(+0800)=00:25Z > 源码 00:24:41Z；porcelain 152、staged=0、HEAD `be1b755`。报告"未新增代码改动"与"修复前 2 failed"自相矛盾，已注明为表述问题 |
 | 2026-10-28 | G1 提交 0–3 已完成并审查：`c2c3681`(4) / `0530e2b`(141) / `77c5718`(5) / `5466f98`(7)；批次 3 gate 瑕疵裁 D-32 接受（快照不改写），流程错误单列；批次 4/5 待续 | 规划层实测：`git log` 四个 SHA 与文件数一致（4/141/5/7）；`git show --stat` insertion/deletion 与报告一致；HEAD `5466f98`，`rev-list origin...HEAD = 0 6`；剩余 9 porcelain 条目（5 M + 4 ??）= 15 文件（批次 4 的 8 + 批次 5 的 7）；staged=0；未 push。执行层自报 `ls-remote` 因网络不可达未复核远端，但未执行 push，本地 tracking ref 仍 `5b047b0` |
+| 2026-10-28 | **G1 收口**：T-G1-C → DONE；6 批全部落本地（`c2c3681`/`0530e2b`/`77c5718`/`5466f98`/`0919b86`/`e3be34c`），工作树 clean，本地领先 8，未 push；下一单元 Phase 7 / T-7-1 | 规划层独立复核（非自报）：六批 `--numstat` 文件数 4+141+5+7+8+7 = **172**，与 G1 清单全量相等；porcelain 0、staged 空、`rev-list origin...HEAD = 0 8`；控制层四处（README:28/30、roadmap:24、feature-status:112-117、任务树 Phase 6 行）均含 GATE_PASS_WITH_LIMITATIONS；远端 live 未复核（网络 128），仅证明未 push |
+| 2026-10-28 | T-7-1-0 审计通过 → DONE；裁 D-33（7 项语义）、新增 O-34/O-35；T-7-1 拆为 A/B/C；确认工作树 `M 任务树` 是规划层更新非异常 | 规划层复核执行层枚举：40 个分支对（S/C/E/R/G/D 六组）；已覆盖 19 / 缺一支 9 / 完全无 6；`ActionPolicyUseCases.kt:44` 确为 final class（"Denied/Allowed 不可达"成立）；`DecisionPolicySource` 无 PREFERENCE（上轮提示词口径错误，已勘误）；`git status` 仅 `M docs/project-control/qianyan-task-tree.md` +9/−8 = 规划层本轮更新 |
+| 2026-10-28 | T-7-1-A/B/C 全部 DONE → **T-7-1 收口**；新增 O-36（R3/R4 无可注入缝隙）；application 1117/0（+10）、root 1586/0、desktop 47/0 | 规划层复核：新增 10 测试均为行为级（A4 断言 CommitHistory 条数不变 + Canonical 内容不变；A6 断言无新增 Commit 且 session 未 CANCELLED；A5b 断言 CANDIDATE_UNBRIDGED + CANDIDATE_APPROVED_NOT_COMMITTED + 0 commits；A7 断言 COMPLETED + summary 含 passed=false/问题1项/ERROR 1 + 不写 Canonical；A1–A3 断言 outcome + RULE_MATRIX；A8 断言 PASS + 空 findings/missingInputs）；`git status` 仅 3 测试文件 + 规划层任务树 M；生产零改动；A9 无 seam 属实（`WorkingDraftUseCases`/`ChangeUseCases` 非接口非 open） |
+| 2026-10-28 | 用户选定下一单元为 **V1–V3 词库裁决**；新增 `T-V0` 只读盘点作为裁决前置；T-7-1 收口（A/B/C 全 DONE） | 规划层初查（待 T-V0 补全）：`VocabularyModels.kt` 有 `VocabularyScopeLevel{GLOBAL,NOVEL,VARIANT,TASK}`、`VocabularyEntry.aliases`、`VocabularyRule`；`ContextSources.kt:119-120` 渲染 aliases，但 `PlannerAgent.kt:158-159` 与 `WriterAgent.kt:158-159` 只渲染 `canonical -> replacement` ⇒ 别名在 Agent prompt 被丢弃；`VocabularyRule` 无生产消费者 |
+| 2026-10-28 | T-V0 审计通过：T-V0/V1/V2/V3 → DONE；裁 **D-34**（V1-A / V2-① / V3-A，FINALIZED）；新增 `docs/planning/qianyan-vocabulary-ownership-decision.md` 并在 §11A 加指针（仅追加）；新增 O-37/O-38；下一步 T-V3-A 实施 | 规划层复核 16 项缺口：`Vocabulary.sq:12-16` 不按 `scope_level` 过滤（标签非查询键）；`ContextSources.kt:309-313` VARIANT 不合并 NOVEL；`VocabularyRule` 仅模型+备份读取、无 application 消费者；`ProductTools.kt:249-270` `search_vocabulary` 查候选不筛状态；`CritiqueAgent`/`RevisionAgent` 无 vocabulary 输入。文档冲突属实：§11A:496 禁止 vs FD-6:64-66 / J-1:67 / AC-30:129-136 → 按"后形成的冻结/裁决优先于规划条文"裁 V1-A |
+| 2026-10-28 | T-V3-A 审查通过 → DONE：共享 `toPromptLine()`，Planner/Writer 均渲染别名；预算不一致消除；application 1118/0（+1）、root 1587/0、desktop 47/0 | 规划层实测：`PlanningContext.kt:99-105` 空串过滤 + 别名原序 + `、` 分隔；无别名 `- 词 -> 替`、有别名 `- 词（别名：a、b）-> 替`，与 brief 逐字一致；`PlannerAgent.kt:157` 与 `WriterAgent.kt:159` 均 `appendLine(it.toPromptLine())`；`VocabularyPromptIntegrationTest` 4/4（新增 :114）；`VocabularySource.content` 未改动（`ContextSources.kt:117-132`）；TDD 先红后绿属实 |
+| 2026-10-28 | T-V2-A 审查通过 → DONE；**词库线收口**（V1/V2/V3/V3-A/V2-A 全 DONE，仅余 O-37/38/39 登记）；新增 O-39；application 1124/0（+6）、root 1593/0、desktop 47/0 | 规划层实测：`ContextSources.kt:322-339` `mergedApprovedEntries`（NOVEL 先入 → VARIANT 同 canonical 覆盖 → `(canonical, entryId)` 排序，两边均 APPROVED）；`activeVariantId==null` 分支与改前一致；legacy `PlanningContextAssembly.kt:202-204` 仅注释且 `NoPackAssemblyGuardTest` 3/0 佐证无生产调用；V-2/V-4 修复前为红（TDD 诚实）；`VocabularyVariantInheritanceTest` 6/6；未改 SQL/scope_level/Schema |

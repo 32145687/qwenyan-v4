@@ -495,6 +495,12 @@ BOOK → 未命中 → SERIES → 未命中 → AUTHOR → 未命中 → empty
 
 **禁止**：不建立第二套事实源；不新增词库表 / `VocabularyUseCase` / `VocabularyContext`；不新增独立 Vocabulary 领域层。
 
+> **2026-10-28 修订指针（规划层 V1–V3 裁决）**：本节的作用域模型与"禁止"条款已被
+> `docs/planning/qianyan-vocabulary-ownership-decision.md`（V1-A / V2-① / V3-A，FINALIZED）取代。
+> 现行口径：词库是本项目**承认的独立域**（唯一表族，不得再新增第二套词库模型）；
+> 作用域 = **NOVEL + VARIANT**（VARIANT 读取时继承 NOVEL 基座）；`GLOBAL`/`TASK` 标注未启用。
+> 本节其余文字保留为历史记录，不再作为约束；FD-6 / J-1 / AC-30A/B 继续有效。
+
 ---
 
 ## 12. Phase 3 — World Model Update
