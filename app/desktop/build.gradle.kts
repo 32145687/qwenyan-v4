@@ -39,6 +39,8 @@ kotlin {
                 implementation(libs.kotlinx.coroutines.core)
                 implementation(libs.kotlinx.coroutines.swing)
                 implementation(libs.kotlinx.datetime)
+                // 备份包（BackupPackage）读写：复用既有 @Serializable 领域模型
+                implementation(libs.kotlinx.serialization.json)
             }
         }
         val jvmTest by getting {

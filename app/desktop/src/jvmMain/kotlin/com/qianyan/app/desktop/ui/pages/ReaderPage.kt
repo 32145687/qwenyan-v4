@@ -1,6 +1,7 @@
 package com.qianyan.app.desktop.ui.pages
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,17 +13,24 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -42,6 +50,7 @@ import com.qianyan.app.desktop.ui.formatCount
 import com.qianyan.app.desktop.ui.theme.QianyanChapterStyle
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanDimens
+import com.qianyan.app.desktop.ui.theme.QianyanShapes
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.app.desktop.ui.theme.qianyanProseStyle
 import com.qianyan.app.desktop.ui.wordCount
@@ -51,6 +60,8 @@ import com.qianyan.model.reading.ReadingProgress
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * 阅读（Reader seam · P20-P4 的 PC 接线位）。
@@ -70,6 +81,13 @@ fun ReaderPage(state: DesktopAppState) {
     var saved by remember { mutableStateOf<ReadingProgress?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+
+    val scroll = rememberScrollState()
+    // 块序号 → 相对滚动内容顶部的像素位置（普通 map，不参与重组）
+    val blockTops = remember { mutableMapOf<Int, Int>() }
+    val scrollRootY = remember { floatArrayOf(0f) }
+    var restoredChapter by remember { mutableStateOf<String?>(null) }
+    var displayPosition by remember { mutableStateOf(0) }
 
     val novel = state.novel
     val variantId = ws.selection?.variantId
@@ -103,6 +121,56 @@ fun ReaderPage(state: DesktopAppState) {
         }.onFailure { error = it.message }.getOrNull()
         reader = chapter
         saved = runCatching { state.load { it.reading.position(chapterId) } }.getOrNull()
+        displayPosition = chapter?.position ?: 0
+    }
+
+    // 章节切换：清空上一章的块位置与恢复标记
+    LaunchedEffect(chapterId) {
+        blockTops.clear()
+        restoredChapter = null
+    }
+
+    // 恢复到上次阅读位置（等首个布局完成后再滚动）
+    LaunchedEffect(reader?.chapterId, reader?.position) {
+        val r = reader ?: return@LaunchedEffect
+        if (restoredChapter == r.chapterId.value) return@LaunchedEffect
+        restoredChapter = r.chapterId.value
+        displayPosition = r.position
+        if (r.position > 0) {
+            var waited = 0
+            while (!blockTops.containsKey(r.position) && waited < 40) {
+                delay(25)
+                waited++
+            }
+            blockTops[r.position]?.let { top -> scroll.scrollTo(top) }
+        }
+    }
+
+    // 滚动停止后保存当前可见块序号（700ms 防抖）
+    LaunchedEffect(scroll.isScrollInProgress, reader?.chapterId, restoredChapter) {
+        val r = reader ?: return@LaunchedEffect
+        if (scroll.isScrollInProgress || restoredChapter != r.chapterId.value) return@LaunchedEffect
+        delay(700)
+        val firstVisible = blockTops.filterValues { it <= scroll.value + 8 }
+            .maxByOrNull { it.value }?.key ?: 0
+        if (firstVisible == displayPosition) return@LaunchedEffect
+        val novelId = state.novel?.novelId ?: return@LaunchedEffect
+        runCatching { state.load { it.reading.savePosition(novelId, r.chapterId, firstVisible) } }
+            .onSuccess { displayPosition = firstVisible }
+    }
+
+    // 离开阅读页时落一次位置（应用级 scope，切页/切章也能完成）
+    val currentReader by rememberUpdatedState(reader)
+    DisposableEffect(Unit) {
+        onDispose {
+            val r = currentReader ?: return@onDispose
+            val novelId = state.novel?.novelId ?: return@onDispose
+            val firstVisible = blockTops.filterValues { it <= scroll.value + 8 }
+                .maxByOrNull { it.value }?.key ?: 0
+            state.scope.launch {
+                runCatching { state.container.reading.savePosition(novelId, r.chapterId, firstVisible) }
+            }
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -122,7 +190,7 @@ fun ReaderPage(state: DesktopAppState) {
 
         when {
             novel == null -> Box(Modifier.padding(QianyanDimens.PageX)) {
-                EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             }
 
             loading -> Box(Modifier.padding(QianyanDimens.PageX)) { LoadingState() }
@@ -131,9 +199,21 @@ fun ReaderPage(state: DesktopAppState) {
                 EmptyState("这部作品还没有章节", "导入 TXT 或新建章节后再阅读")
             }
 
-            else -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
-                Spacer(Modifier.height(26.dp))
-                Column(Modifier.width(QianyanDimens.EditorWidth).padding(horizontal = 8.dp)) {
+            else -> Column(
+                Modifier.fillMaxSize()
+                    .onGloballyPositioned { scrollRootY[0] = it.positionInRoot().y }
+                    .verticalScroll(scroll),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Spacer(Modifier.height(28.dp))
+                Column(
+                    Modifier.width(QianyanDimens.EditorWidth)
+                        .shadow(2.dp, RoundedCornerShape(QianyanShapes.r3), clip = false)
+                        .clip(RoundedCornerShape(QianyanShapes.r3))
+                        .background(palette.raised)
+                        .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.r3))
+                        .padding(start = 62.dp, end = 62.dp, top = 52.dp, bottom = 56.dp),
+                ) {
                     val r = reader
                     if (r == null) {
                         EmptyState("本章正文读取失败", error)
@@ -141,33 +221,32 @@ fun ReaderPage(state: DesktopAppState) {
                         PendingNote("reading.openChapter(novelId, variantId, chapterId)")
                     } else {
                         Text(
-                            "第 ${r.chapterOrder} 章",
+                            "Chapter ${r.chapterOrder}",
                             style = MaterialTheme.typography.labelSmall,
                             color = palette.text3,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
+                            letterSpacing = 1.1.sp,
                         )
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(13.dp))
                         Text(
                             chapterTitleOnly(r.chapterTitle).ifBlank { "未命名" },
                             style = QianyanChapterStyle,
                             color = palette.text,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
                         )
-                        Spacer(Modifier.height(20.dp))
+                        Spacer(Modifier.height(26.dp))
 
                         if (!r.hasDraft) {
                             EmptyState("本章还没有正文", "正文由「正文」页的继续写生成，或直接写入后再阅读")
                         } else {
-                            MarkdownBody(r.blocks, state.proseSize.size)
+                            MarkdownBody(r.blocks, state.proseSize.size) { index, topInRoot ->
+                                blockTops[index] = (topInRoot - scrollRootY[0] + scroll.value).toInt()
+                            }
                         }
 
-                        Spacer(Modifier.height(28.dp))
+                        Spacer(Modifier.height(32.dp))
                         HLine()
-                        Spacer(Modifier.height(10.dp))
+                        Spacer(Modifier.height(14.dp))
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                            val pos = saved?.position ?: r.position
+                            val pos = displayPosition
                             Text(
                                 "共 ${formatCount(wordCount(r.blocks.joinToString("") { blockText(it) }))} 字 · " +
                                     "格式 ${r.format ?: "纯文本"} · 阅读位置 $pos",
@@ -176,11 +255,12 @@ fun ReaderPage(state: DesktopAppState) {
                             )
                             Spacer(Modifier.weight(1f))
                         }
-                        PendingNote(
-                            "reading.savePosition(novelId, chapterId, position)",
-                            "「记住阅读位置 / 从上次位置续读」尚未接入；上方显示的阅读位置是既有 ReadingProgress 的真实值。",
-                        )
-                        SourceNote("来源：reading.openChapter + reading.position（P20-P4 Reader seam，只读）")
+                    }
+                }
+
+                Column(Modifier.width(QianyanDimens.EditorWidth).padding(start = 62.dp, end = 62.dp, top = 14.dp)) {
+                    if (reader != null) {
+                        SourceNote("来源：reading.openChapter + reading.savePosition / reading.position（阅读进度按可见段落自动保存）")
                     }
                 }
                 Spacer(Modifier.height(50.dp))
@@ -191,50 +271,56 @@ fun ReaderPage(state: DesktopAppState) {
 
 /** 按受控 Markdown 的块类型渲染（block 结构来自引擎，不做二次解析）。 */
 @Composable
-private fun MarkdownBody(blocks: List<MarkdownBlock>, sizeSp: Int) {
+private fun MarkdownBody(
+    blocks: List<MarkdownBlock>,
+    sizeSp: Int,
+    onBlockTop: (Int, Int) -> Unit = { _, _ -> },
+) {
     val palette = QianyanTheme.palette
     val prose = qianyanProseStyle(sizeSp.sp)
     if (blocks.isEmpty()) {
         EmptyState()
         return
     }
-    blocks.forEach { block ->
-        when (block) {
-            is MarkdownBlock.Heading -> {
-                Text(
-                    block.text,
-                    style = prose.copy(
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = (sizeSp + 3).sp,
-                    ),
-                    color = palette.text,
-                    modifier = Modifier.padding(top = 14.dp, bottom = 8.dp),
-                )
-            }
-
-            is MarkdownBlock.UnorderedListItem -> {
-                Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
-                    Text("·", style = prose, color = palette.text3)
-                    Spacer(Modifier.width(8.dp))
-                    Text(block.text, style = prose, color = palette.text)
+    blocks.forEachIndexed { index, block ->
+        Box(Modifier.onGloballyPositioned { onBlockTop(index, it.positionInRoot().y.toInt()) }) {
+            when (block) {
+                is MarkdownBlock.Heading -> {
+                    Text(
+                        block.text,
+                        style = prose.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = (sizeSp + 3).sp,
+                        ),
+                        color = palette.text,
+                        modifier = Modifier.padding(top = 14.dp, bottom = 8.dp),
+                    )
                 }
-            }
 
-            is MarkdownBlock.Quote -> {
-                Row(Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 10.dp)) {
-                    Box(Modifier.width(2.dp).height(20.dp).background(palette.lineStrong))
-                    Spacer(Modifier.width(10.dp))
-                    Text(block.text, style = prose.copy(color = palette.text2), color = palette.text2)
+                is MarkdownBlock.UnorderedListItem -> {
+                    Row(Modifier.fillMaxWidth().padding(bottom = 6.dp)) {
+                        Text("·", style = prose, color = palette.text3)
+                        Spacer(Modifier.width(8.dp))
+                        Text(block.text, style = prose, color = palette.text)
+                    }
                 }
-            }
 
-            is MarkdownBlock.Degraded -> {
-                SectionLabel("未支持的 Markdown 结构（原文保留）")
-                Text(block.text, style = QianyanCodeStyle, color = palette.text3)
-            }
+                is MarkdownBlock.Quote -> {
+                    Row(Modifier.fillMaxWidth().padding(start = 2.dp, bottom = 10.dp)) {
+                        Box(Modifier.width(2.dp).height(20.dp).background(palette.lineStrong))
+                        Spacer(Modifier.width(10.dp))
+                        Text(block.text, style = prose.copy(color = palette.text2), color = palette.text2)
+                    }
+                }
 
-            is MarkdownBlock.Paragraph -> {
-                Text(block.text, style = prose, color = palette.text, modifier = Modifier.padding(bottom = 10.dp))
+                is MarkdownBlock.Degraded -> {
+                    SectionLabel("未支持的 Markdown 结构（原文保留）")
+                    Text(block.text, style = QianyanCodeStyle, color = palette.text3)
+                }
+
+                is MarkdownBlock.Paragraph -> {
+                    Text(block.text, style = prose, color = palette.text, modifier = Modifier.padding(bottom = 10.dp))
+                }
             }
         }
     }

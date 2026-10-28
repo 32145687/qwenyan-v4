@@ -107,7 +107,7 @@ internal fun StoryDirectionTab(state: DesktopAppState) {
 
     Column(Modifier.fillMaxWidth()) {
         when {
-            novelId == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+            novelId == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             loading -> LoadingState()
             else -> {
                 if (intent.isNullOrBlank()) {
@@ -183,7 +183,7 @@ internal fun NarrativeLedgerTab(state: DesktopAppState) {
 
     Column(Modifier.fillMaxWidth()) {
         when {
-            novelId == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+            novelId == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             loading -> LoadingState()
             stateLine.isEmpty() && deltas.isEmpty() -> {
                 EmptyState(
@@ -273,7 +273,7 @@ internal fun ContextPackTab(state: DesktopAppState) {
 
     Column(Modifier.fillMaxWidth()) {
         when {
-            state.novel == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+            state.novel == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             loading -> LoadingState()
             pack == null -> EmptyState("无法编译上下文包")
             else -> {
@@ -367,7 +367,7 @@ internal fun RollingHorizonTab(state: DesktopAppState) {
 
     Column(Modifier.fillMaxWidth()) {
         when {
-            state.novel == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+            state.novel == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             loading -> LoadingState()
             else -> {
                 Text(
@@ -441,7 +441,7 @@ internal fun WorldFullViewTab(state: DesktopAppState) {
 
     Column(Modifier.fillMaxWidth()) {
         when {
-            novelId == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+            novelId == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             loading -> LoadingState()
             groups.isEmpty() -> EmptyState("全量视图为空", "该作用域下没有可合并的世界上下文")
             else -> {

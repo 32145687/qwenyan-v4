@@ -2,6 +2,7 @@ package com.qianyan.app.desktop.ui.pages
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,6 +21,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +39,7 @@ import com.qianyan.app.desktop.ui.LoadingState
 import com.qianyan.app.desktop.ui.PageHeader
 import com.qianyan.app.desktop.ui.SectionLabel
 import com.qianyan.app.desktop.ui.Tag
+import com.qianyan.app.desktop.ui.UiCard
 import com.qianyan.app.desktop.ui.foreshadowStateLabel
 import com.qianyan.app.desktop.ui.preview
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
@@ -55,22 +58,24 @@ import com.qianyan.model.workspace.WorkspaceSelection
 private fun PageTabs(tabs: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     val palette = QianyanTheme.palette
     Row(
-        Modifier.fillMaxWidth().background(palette.surface)
+        Modifier.fillMaxWidth().background(palette.surface).horizontalScroll(rememberScrollState())
             .padding(start = QianyanDimens.PageX, end = QianyanDimens.PageX, top = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
         tabs.forEachIndexed { index, label ->
             val on = index == selected
+            val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+            val hovered by source.collectIsHoveredAsState()
             // 下划线宽度 = 标签自身宽度（IntrinsicSize.Max），否则 fillMaxWidth 会吞掉整行
             Column(
-                Modifier.clickable { onSelect(index) }.width(IntrinsicSize.Max),
+                Modifier.clickable(interactionSource = source, indication = null) { onSelect(index) }.width(IntrinsicSize.Max),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
                     label,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (on) FontWeight.Medium else FontWeight.Normal,
-                    color = if (on) palette.text else palette.text3,
+                    color = if (on || hovered) palette.text else palette.text3,
                     modifier = Modifier.padding(vertical = 8.dp),
                 )
                 Box(
@@ -139,19 +144,20 @@ fun StoryPage(state: DesktopAppState) {
 
     Column(Modifier.fillMaxSize()) {
         PageHeader("故事", meta = state.novel?.title)
-        PageTabs(listOf("故事基础", "大纲", "剧情", "伏笔", "故事方向", "叙事账本", "上下文包", "滚动地平线"), tab) { tab = it }
+        PageTabs(listOf("总览", "故事基础", "大纲", "剧情", "伏笔", "故事方向", "叙事账本", "上下文包", "滚动地平线"), tab) { tab = it }
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
             when {
-                state.novel == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                state.novel == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
                 loading -> LoadingState()
-                tab == 0 -> StoryFoundationBlock(foundation)
-                tab == 1 -> EmptyState(
+                tab == 0 -> StoryOverview(foundation, events, foreshadows, chapterTitles)
+                tab == 1 -> StoryFoundationBlock(foundation)
+                tab == 2 -> EmptyState(
                     "大纲没有稳定来源",
                     "当前领域模型里没有 Canonical 的分卷 / 分幕结构（不伪造）。剧情节拍请见「剧情」。",
                 )
 
-                tab == 2 -> if (events.isEmpty()) {
+                tab == 3 -> if (events.isEmpty()) {
                     EmptyState("还没有事件", "Story State 里还没有事件记录")
                 } else {
                     Column(Modifier.fillMaxWidth()) {
@@ -168,7 +174,7 @@ fun StoryPage(state: DesktopAppState) {
                     }
                 }
 
-                tab == 3 -> if (foreshadows.isEmpty()) {
+                tab == 4 -> if (foreshadows.isEmpty()) {
                     EmptyState("还没有伏笔", "Story State 里还没有伏笔记录")
                 } else {
                     Column(Modifier.fillMaxWidth()) {
@@ -204,9 +210,9 @@ fun StoryPage(state: DesktopAppState) {
                         }
                     }
                 }
-                tab == 4 -> StoryDirectionTab(state)
-                tab == 5 -> NarrativeLedgerTab(state)
-                tab == 6 -> ContextPackTab(state)
+                tab == 5 -> StoryDirectionTab(state)
+                tab == 6 -> NarrativeLedgerTab(state)
+                tab == 7 -> ContextPackTab(state)
                 else -> RollingHorizonTab(state)
             }
             Spacer(Modifier.height(24.dp))
@@ -216,6 +222,100 @@ fun StoryPage(state: DesktopAppState) {
                 color = palette.text3,
             )
         }
+    }
+}
+
+@Composable
+private fun StoryOverview(
+    foundation: StoryFoundationView?,
+    events: List<Pair<String, String>>,
+    foreshadows: List<ForeshadowRow>,
+    chapterTitles: Map<String, String>,
+) {
+    val palette = QianyanTheme.palette
+    Column(Modifier.fillMaxWidth()) {
+        SectionLabel("故事线")
+        if (foundation == null) {
+            EmptyState("故事基础尚未确认", "确认后会在这里显示题材、主题、冲突与承诺")
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                UiCard(
+                    modifier = Modifier.weight(1f),
+                    title = foundation.theme.ifBlank { "故事基础" },
+                    meta = listOf(foundation.genre, foundation.pov).filter { it.isNotBlank() }.joinToString(" · "),
+                    tags = listOf(foundation.storyType, foundation.readerTone).filter { it.isNotBlank() },
+                ) {
+                    if (foundation.conflict.isNotBlank()) {
+                        Spacer(Modifier.height(9.dp))
+                        Text(foundation.conflict, style = MaterialTheme.typography.bodySmall, color = palette.text2, maxLines = 4)
+                    }
+                }
+                UiCard(
+                    modifier = Modifier.weight(1f),
+                    title = "叙事承诺",
+                    meta = "故事方向",
+                    tags = foundation.rules.take(2).map { preview(it, 12) },
+                ) {
+                    Spacer(Modifier.height(9.dp))
+                    Text(
+                        foundation.promise.ifBlank { "尚未填写承诺" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.text2,
+                        maxLines = 4,
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
+        SectionLabel("剧情节点 · ${events.size}")
+        if (events.isEmpty()) {
+            EmptyState("还没有事件", "Story State 里还没有事件记录")
+        } else {
+            events.take(6).forEach { (name, desc) ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f)) {
+                        Text(name.ifBlank { "未命名事件" }, style = MaterialTheme.typography.bodyLarge, color = palette.text, maxLines = 2)
+                        if (desc.isNotBlank()) {
+                            Spacer(Modifier.height(3.dp))
+                            Text(desc, style = MaterialTheme.typography.bodySmall, color = palette.text2, maxLines = 2)
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Tag("事件", palette.text3)
+                }
+                HLine()
+            }
+        }
+
+        Spacer(Modifier.height(22.dp))
+        SectionLabel("伏笔 · ${foreshadows.size}")
+        if (foreshadows.isEmpty()) {
+            EmptyState("还没有伏笔", "Story State 里还没有伏笔记录")
+        } else {
+            foreshadows.take(6).forEach { row ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(row.content.ifBlank { row.id }, style = MaterialTheme.typography.bodyLarge, color = palette.text, maxLines = 2)
+                        val where = row.chapterLabel?.let { chapterTitles[it] }
+                        if (where != null) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(where, style = QianyanCodeStyle, color = palette.text3)
+                        }
+                    }
+                    Spacer(Modifier.width(10.dp))
+                    Tag(foreshadowStateLabel(row.state), statusTintForForeshadow(row.state))
+                }
+                HLine()
+            }
+        }
+
+        Spacer(Modifier.height(24.dp))
+        Text(
+            "以上为只读展示：这些设定是 Qianyan 写作时的约束来源。",
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.text3,
+        )
     }
 }
 
@@ -334,16 +434,18 @@ fun WorldPage(state: DesktopAppState) {
 
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
             when {
-                state.novel == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                state.novel == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
                 loading -> LoadingState()
 
                 tab == 0 -> if (rules.isEmpty()) {
                     EmptyState("还没有世界规则", "Story State 里还没有世界规则记录")
                 } else {
-                    Column(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         rules.forEach { (id, content) ->
-                            Row(
-                                Modifier.fillMaxWidth().clickable {
+                            UiCard(
+                                modifier = Modifier.fillMaxWidth(),
+                                meta = "世界规则",
+                                onClick = {
                                     state.workspace.select(
                                         WorkspaceSelection(
                                             projectId = state.novel!!.projectId,
@@ -352,11 +454,10 @@ fun WorldPage(state: DesktopAppState) {
                                             worldRuleId = WorldRuleId(id),
                                         ),
                                     )
-                                }.padding(vertical = 9.dp, horizontal = 4.dp),
+                                },
                             ) {
-                                Text(content, style = MaterialTheme.typography.bodyLarge, color = palette.text)
+                                Text(content, style = MaterialTheme.typography.bodyMedium, color = palette.text, maxLines = 5)
                             }
-                            HLine()
                         }
                     }
                 }

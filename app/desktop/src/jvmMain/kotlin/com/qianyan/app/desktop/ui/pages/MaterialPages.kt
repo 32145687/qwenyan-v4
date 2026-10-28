@@ -1,5 +1,8 @@
 package com.qianyan.app.desktop.ui.pages
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,10 +13,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +26,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.qianyan.app.desktop.ui.DesktopAppState
 import com.qianyan.app.desktop.ui.EmptyState
@@ -32,6 +39,7 @@ import com.qianyan.app.desktop.ui.PendingNote
 import com.qianyan.app.desktop.ui.QianyanTabs
 import com.qianyan.app.desktop.ui.SectionLabel
 import com.qianyan.app.desktop.ui.SourceNote
+import com.qianyan.app.desktop.ui.consumeClicks
 import com.qianyan.app.desktop.ui.Tag
 import com.qianyan.app.desktop.ui.formatCount
 import com.qianyan.app.desktop.ui.preview
@@ -39,8 +47,13 @@ import com.qianyan.app.desktop.ui.shortTime
 import com.qianyan.app.desktop.ui.statusLabel
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanDimens
+import com.qianyan.app.desktop.ui.theme.QianyanShapes
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.model.NovelId
+import com.qianyan.model.core.BackupPackage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.qianyan.app.desktop.ui.ActionButton
 import com.qianyan.app.desktop.ui.ActionLevel
 import com.qianyan.model.vocabulary.VocabularyCandidateStatus
@@ -102,7 +115,7 @@ fun VocabularyPage(state: DesktopAppState) {
 
         when {
             novel == null -> Box(Modifier.padding(QianyanDimens.PageX)) {
-                EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             }
 
             loading -> Box(Modifier.padding(QianyanDimens.PageX)) { LoadingState() }
@@ -214,7 +227,7 @@ fun MemoryPage(state: DesktopAppState) {
 
         Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
             when {
-                novel == null -> EmptyState("尚未打开作品", "在「Qianyan Agent」中打开或新建作品")
+                novel == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
                 loading -> LoadingState()
                 baseId == null -> Column {
                     EmptyState("无法构造记忆作用域", "记忆查询需要 VariantContext(baseNovelId, variantId)，而 baseNovelId 来自已确认的 Story Foundation")
@@ -261,12 +274,23 @@ fun MemoryPage(state: DesktopAppState) {
 @Composable
 fun BackupPage(state: DesktopAppState) {
     var schemaVersion by remember { mutableStateOf("—") }
+    var pendingRestore by remember { mutableStateOf<BackupPackage?>(null) }
     LaunchedEffect(state.refreshKey) {
         schemaVersion = runCatching { state.load { it.backupStore.schemaVersion } }.getOrDefault("—")
     }
 
     Column(Modifier.fillMaxSize()) {
-        PageHeader("备份", meta = state.graph.appDir.fileName?.toString())
+        PageHeader(
+            title = "备份",
+            meta = state.graph.appDir.fileName?.toString(),
+            actions = {
+                ActionButton("导出备份…", ActionLevel.SECONDARY, !state.busy) { exportBackup(state) }
+                Spacer(Modifier.width(8.dp))
+                ActionButton("恢复备份…", ActionLevel.SECONDARY, !state.busy) {
+                    pickBackupForRestore(state) { pendingRestore = it }
+                }
+            },
+        )
 
         Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
             Column(Modifier.fillMaxWidth()) {
@@ -280,10 +304,17 @@ fun BackupPage(state: DesktopAppState) {
                     ),
                 )
                 Spacer(Modifier.height(18.dp))
-                SectionLabel("导出 / 恢复")
-                PendingNote(
-                    "backupStore.exportBackup() / backupStore.restoreBackup(package_)",
-                    "导出会读取整库、恢复是单事务清空并覆盖——两者都需要先确定落盘位置与确认流程，本轮未接入。",
+                SectionLabel("备份包")
+                Text(
+                    "导出的 JSON 包含 schema 版本、导出时间与整库快照；恢复会清空当前本地库，并在单事务内写入备份内容。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QianyanTheme.palette.text3,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "恢复不可撤销，建议先导出当前数据。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = QianyanTheme.palette.del,
                 )
                 Spacer(Modifier.height(14.dp))
                 SectionLabel("库管理")
@@ -291,7 +322,115 @@ fun BackupPage(state: DesktopAppState) {
                     "shelf.properties / deleted-backups（PC-7 决策项）",
                     "作品删除与归档按 R2 决策不提供入口；Original 受 novel_original_delete_protect 保护。",
                 )
-                SourceNote("来源：backupStore.schemaVersion + DesktopGraph.appDir（真实本地路径）")
+                SourceNote("来源：backupStore.exportBackup / restoreBackup + DesktopGraph.appDir")
+            }
+        }
+    }
+
+    pendingRestore?.let { pkg ->
+        RestoreBackupDialog(state, pkg) { pendingRestore = null }
+    }
+}
+
+private fun exportBackup(state: DesktopAppState) {
+    if (state.busy) {
+        state.toast("任务进行中，请稍后再导出备份")
+        return
+    }
+    val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss").format(java.util.Date())
+    state.scope.launch {
+        try {
+            val file = com.qianyan.app.desktop.adapter.DesktopFilePicker.saveBackup("qianyan-backup-$stamp.json")
+                ?: return@launch
+            state.io(then = { state.toast("已导出备份：${file.name}") }) {
+                val pkg = state.container.backupStore.exportBackup()
+                file.writeText(
+                    com.qianyan.storage.QianyanJson.json.encodeToString(BackupPackage.serializer(), pkg),
+                    Charsets.UTF_8,
+                )
+            }
+        } catch (e: Exception) {
+            state.toast("导出备份失败：${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+}
+
+private fun pickBackupForRestore(state: DesktopAppState, onPicked: (BackupPackage) -> Unit) {
+    if (state.busy) {
+        state.toast("任务进行中，请稍后再恢复备份")
+        return
+    }
+    state.scope.launch {
+        try {
+            val file = com.qianyan.app.desktop.adapter.DesktopFilePicker.chooseBackup() ?: return@launch
+            val (pkg, currentSchema) = withContext(Dispatchers.IO) {
+                val text = file.readText(Charsets.UTF_8)
+                val decoded = com.qianyan.storage.QianyanJson.json.decodeFromString(BackupPackage.serializer(), text)
+                decoded to state.container.backupStore.schemaVersion
+            }
+            if (pkg.schemaVersion != currentSchema) {
+                state.toast("备份 schema ${pkg.schemaVersion} 与当前 $currentSchema 不一致，拒绝恢复")
+                return@launch
+            }
+            onPicked(pkg)
+        } catch (e: Exception) {
+            state.toast("读取备份失败：${e.message ?: e.javaClass.simpleName}")
+        }
+    }
+}
+
+@Composable
+private fun RestoreBackupDialog(state: DesktopAppState, pkg: BackupPackage, onClose: () -> Unit) {
+    val palette = QianyanTheme.palette
+    var working by remember { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        state.modalOpen = true
+        onDispose { state.modalOpen = false }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier.fillMaxSize()
+                .background(Color.Black.copy(alpha = if (QianyanTheme.isDark) 0.55f else 0.32f))
+                .clickable { if (!working) onClose() },
+        )
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.width(460.dp)
+                    .clip(RoundedCornerShape(QianyanShapes.r3))
+                    .background(palette.raised)
+                    .consumeClicks()
+                    .padding(18.dp),
+            ) {
+                Text("恢复备份", style = MaterialTheme.typography.titleLarge, color = palette.text)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "将清空当前本地数据库，并写入 ${pkg.exportedAt} 导出的备份（schema ${pkg.schemaVersion}）。此操作不可撤销。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text3,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text("建议先导出当前备份再恢复。", style = MaterialTheme.typography.bodySmall, color = palette.del)
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ActionButton("返回", ActionLevel.TEXT, !working, onClose)
+                    Spacer(Modifier.width(8.dp))
+                    ActionButton("清空并恢复", ActionLevel.PRIMARY, !working && !state.busy) {
+                        working = true
+                        state.io(
+                            then = {
+                                working = false
+                                onClose()
+                                state.applyNovelSwitch(null)
+                                state.toast("已恢复备份，请重新打开作品")
+                            },
+                            onFailure = { working = false },
+                        ) {
+                            state.container.backupStore.restoreBackup(pkg)
+                        }
+                    }
+                }
             }
         }
     }
