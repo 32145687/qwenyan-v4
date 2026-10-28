@@ -9,11 +9,11 @@
 
 ## 0. 当前焦点
 
-- 当前单元：**Phase 8 已收口（GATE_PASS）**；下一步待选：**G3 提交本轮 18 项** / T-7-2 GUI / W1
-- 阻塞：无；Phase 7 剩 T-7-2 GUI（PENDING_GUI），不影响 Phase 8 Gate
-- 已完成：Phase 4/5/6/8 DONE；G1 六批 + G2 四批；词库线；T-8-0/A/1A/C/D/E/1；T-7-1/T-7-3；T-8-2（GATE_PASS）
-- 并行决策：W1（工作树）、T-7-2（GUI，暂停）
-- 仓库快照：HEAD `42320c3`，领先 12（未 push、远端 live 同 SHA）；工作区 **18 项**（T-8-A/C/D/E/1 + T-7-3 未提交）
+- 当前单元：**无进行中单元**；下一步待选：G4 提交 O-42 本批 / T-7-2 GUI 验收
+- 阻塞：无；Phase 7 仅剩 T-7-2（PENDING_GUI）
+- 已完成：Phase 4/5/6/8 DONE（8=GATE_PASS）；18 commit 已 push（远端 `cfff011`）；词库线；T-7-1/T-7-3/T-42；T-8 全系；W1 归档
+- 并行决策：T-7-2（GUI，暂停）、O-37/38/39（需产品契约）、O-43（质量增强）
+- 仓库快照：HEAD `cfff011`（已推送到 `origin`）；工作区 **7 项**（O-42：5 M + 1 ??，另加本文件 M）
 
 ## 1. 阶段总览
 
@@ -80,7 +80,7 @@
 | O-30 | 其余 Skill 的"缺失输入"可见性 | **OPEN（3 项登记）** | D-25 已定语义为 Result 可见；CharacterConsistency 满足。**O-30-1** STORY_PLANNING：结果/Artifact 无 coverage，声明来源（含 STORY_FOUNDATION）缺失不可见。**O-30-2** WRITING：新章无 DRAFT 合法，但 foundation/vocab 缺失静默。**O-30-3** REWRITE_REVISION / ANALYSIS_CRITIQUE：非 Pack Skill，仅 DRAFT 缺失有 `BASE_DRAFT_NOT_FOUND` 兜底，其余声明来源不可见。均只登记，未改行为 |
 | O-31 | tool→AgentActionKind 映射 | **OPEN** | D-27 的 action 级 observed ⊆ expectedActions 需工具→动作类别映射；2C 只做工具级，未发明 |
 | O-32 | `latestCanonicalDraftId` 命名与实际语义 | **DONE（改判，2026-10-28）** | 复核 R3：**"Agent Context = Canonical 前文 + 当前章 Draft"** ⇒ 当前章生成基线取 latest draft **符合 R3**，不是违规。真实问题是**函数名**（`latestCanonicalDraftId` 实际返回 draft）与**前章正文**：`generateNewContent` 调 `planningContexts.assemble(writingRequest, contextPack)` 未传 `continuationReference`，故 NovelAgent 多章续写**不带前章 Canonical**。前者改名即可（非缺陷），后者登记 O-42（本 17 段场景是"同一章"，不受影响） |
-| O-42 | NovelAgent 多章续写缺前章 Canonical | **OPEN（Phase 8 之后）** | `NovelAgent.generateNewContent` / `planChapter` 调 `PlanningContextAssembly.assemble(request, pack)` 时未传 `continuationReference`（2A 链才有），故 NL 路径续写第 2 章起拿不到前章正文。17 段固定场景为"继续写这一章"，不受阻；跨章 NL 续写需另立单元 |
+| O-42 | NL 跨章续写缺前章 Canonical | **DONE（2026-10-28，T-42）** | `NovelAgent.resolveContinuation`（:1066-1112）：`listByNovel(novelId, chapter.variantId)` 取紧邻前章 → `canonicalRead.committedDraft` → 仅 CONFIRMED 才构造 reference → 复用 `ContinuationResolver` → `assemble(..., reference, resolved)`。**NL 侧降级不硬拒**：`NO_PREVIOUS_CHAPTER` / `NO_CANONICAL` / `CARRIER_NOT_CONFIRMED` / `CONTINUATION_UNRESOLVED` 写入新增三字段（`continuationIncluded` / `continuationSourceChapterId` / `continuationAbsentReason`），工作流链的硬拒契约未改（V-6 回归 7/7 + 13/13）。5 个新测试 V1–V5 |
 | O-43 | 续步后无"对修订稿复评" | **OPEN（质量增强）** | D-36 选项文字写的是"有界 Revision → 再评审"；实现为"分析 → 续步（该路径内部 critique 基线 + revise）"，**没有对修订后文本再 critique**。Gate 判据（§20-12 的 X→A/Y→B）不因此失效，但"修订是否真的解决了 ERROR"未验证。属质量增强，不阻塞 Phase 8；如需，另立单元（会增加一次 LLM 调用） |
 | O-33 | Desktop 无 continueToNextChapter 接线 | **OPEN（UI 恢复时）** | 2A 续篇唯一生产 caller 是 Android `ChapterWritingViewModel.kt:87`（Android 暂停）；Desktop `WritePage.kt` 的"下一章"仅导航、`continueWriting` 是同章推进（非续篇）。UI 线恢复时补 |
 | O-34 | 空 Pack 的错误语义 | **OPEN** | D-33a：空 Pack 允许进入 EXECUTE（D-25），但 Writing/Plan 缺 payload 现映射为 `EXECUTION_FAILED`——把"缺输入"说成"执行失败"，语义不准。应改为可区分的类型化缺失输入错误；改与不改待裁，T-7-1 不测为期望行为 |
@@ -195,8 +195,10 @@
   `NovelAgent.kt:238-292`：`SkillOutcome.Analysis` 后按 `errorCount` 决策——0 → `COMPLETED`（只读，`analysis` 入结果）；>0 → 取 `skill.rewrite-revision`、校验 `enabled`、记 `followUpSkillId`，**再走同一个 `executeSkill`**（含 `SkillExecutionGuard`）执行一次续步，要求 `Draft` 否则类型化失败；随后沿用既有 REVIEW → ActionPolicy → Bridge/Gate。有界 1 次、无循环。结果新增最小字段：`NovelAgentAnalysisSummary(passed/issueCount/errorCount)`、`analysis`、`followUpSkillId`。
   测试：`DecisionPointAnalysisFollowUpTest` 4/4（V1 PASS→COMPLETED 且只读；V2 同一请求 ERROR→WAITING_HUMAN + WorkingDraft/Artifact + `followUpSkillId`；V3 EXECUTE 恰 2 次；V5 空 bindings → `SKILL_NOT_EXECUTABLE` 反证守卫未被绕过）；既有 `DecisionPointBehaviorTest.A7` 按 D-36 强化（null→notNull，summary 三条断言保留）。application **1147/0**、root **1616/0**、desktop 49/0（合计 1665）。
 
-### 4.6 并行决策 / 治理
+- [x] `T-42` **O-42 跨章续写** — **DONE（2026-10-28）**
+  `NovelAgent.resolveContinuation`：同 Novel+同 Variant 取紧邻前章 → `canonicalRead.committedDraft` → 仅 CONFIRMED 构造 `ContinuationReference` → 复用 `ContinuationResolver` → 4 参 `assemble`；Planner 1200 / Writer 4000 摘录由 2A 原样生效。**NL 降级不静默**：四种原因写入 `continuationIncluded` / `continuationSourceChapterId` / `continuationAbsentReason`。5 新测试 V1–V5；V-6 回归 `WorkflowContinuationE2ETest` 7/7、`ContinuationReferenceTest` 13/13（工作流硬拒未改）。application **1152/0**（+5）、标准聚合 root **1621/0**、desktop 49/0。
 
+### 4.6 并行决策 / 治理
 - [x] `T-V0` 词库现状只读盘点 — **DONE（2026-10-28）**
   16 项缺口（E1–E16）+ 渲染矩阵 + §11A/v0.1 差异 + V1-A/B 成本表。关键：`scope_level` 不是查询键（`Vocabulary.sq:12-16` 只按 variant_id/novel_id 过滤）；VARIANT 不合并 NOVEL（`ContextSources.kt:309-313`）；`VocabularyRule` 无生产消费者；`search_vocabulary` 查的是候选而非正式词条。
 - [x] `T-V1` 词库归属 — **DONE：V1-A**（承认现行独立域，修订 §11A；见 D-34 与 `qianyan-vocabulary-ownership-decision.md`）
@@ -206,7 +208,9 @@
   共享 `VocabularyLite.toPromptLine()`（`PlanningContext.kt:99-105`：别名保持顺序、过滤空串、两处逐字一致）；`PlannerAgent.kt:155-158` 与 `WriterAgent.kt:157-160` 都改用它。TDD 先红（`VocabularyPromptIntegrationTest` 1 failed）后绿；新增集成测试（Planner/Writer 别名格式、无别名旧格式、空别名过滤、content vs prompt 一致）。application **1118/0**（+1）、root **1587/0**、desktop 47/0。
 - [x] `T-V2-A` 实施：`VocabularySource` 的 VARIANT 分支合并 NOVEL — **DONE（2026-10-28）**
   `ContextSources.kt:307-339`：`activeVariantId == null` 保持原逻辑；非空走 `mergedApprovedEntries`（两边只取 APPROVED，NOVEL 先入、VARIANT 同 canonical 覆盖，最终 `(canonical, entryId)` 排序）。legacy `PlanningContextAssembly` 仅加注释（无生产调用方，`NoPackAssemblyGuardTest` 3/0 佐证）。TDD 先红（V-2 缺 NOVEL 基座 / V-4 集合不符）后绿；新增 `VocabularyVariantInheritanceTest` 6 测试。application **1124/0**（+6）、root **1593/0**、desktop 47/0。
-- [ ] `T-W1` 四个工作树：冻结归档 / 清理（先出 manifest + patch）
+- [x] `T-W1` 四个工作树：冻结归档（manifest + patch）— **DONE（2026-10-28，仅归档，未清理）**
+  归档目录 `D:/qwenyan-v4/backup/w1-20261028-192312/`：4 patch + 4 untracked tar.gz + 4 空 log + MANIFEST（12 个导出文件哈希 12/12 一致，规划层抽验 4 个哈希吻合）。四树 HEAD 均 `be1b755`、**无 HEAD 之外新 commit**；实测未提交 **59 个展开文件**（A 21 / B 9 / C 22 / D 7）——控制层旧记的"52"是历史统计，以此为准。31 个与 MAIN 同名不同内容的文件已在 MANIFEST 列为高风险，声明"不得直接 apply"。
+  **未删除 / 未移动 / 未合并 / 未复制 / 未 prune**；MAIN 与四树前后状态逐字节一致。
 - [x] `T-G1` 提交拆分清单（只读，不执行）— **DONE（2026-10-28）**
   盘点：152 porcelain → 展开 **172 文件**（106 tracked 变更 + 66 新文件）；无 .sq/.sqm、无密钥、无 build/IDE 产物、无 >1MiB 新文件。
   拆分：提交 0（纯视觉 4 文件，可选）→ **提交 1（141 文件，必须单批）** → 提交 2（Desktop U 5 文件，可选）→ 提交 3（`docs/audit` 7 文件，建议）→ 提交 4（docs 8 文件）→ 提交 5（`docs/project-control` 7 文件，HOLD 已解除）。
@@ -220,6 +224,12 @@
   残留：远端 live 状态因网络不可达未复核（`ls-remote` exit 128），仅能证明本地未 push。
 - [x] `T-G2` 提交第二批（本批 13 项）— **DONE（2026-10-28）**
   4 批：`2ab6da3`(3，T-7-1 测试) → `cdbbf14`(4，V3-A 别名进 prompt) → `dd9fb41`(3，V2-A 变体继承) → `42320c3`(3，D-34 文档+任务树)。**13 文件全覆盖**；HEAD `42320c3`、本地领先 **12**、porcelain 0、staged 空；`§11A` 仅 6 行新增（无删除）；**远端 live 复核成功 = `5b047b0`**（网络已恢复），未 push。
+- [x] `T-G3` 提交第三批（Phase 8 收口 19 项）— **DONE（2026-10-28）**
+  6 批：`fee163d`(6，当前稿+世界模型进 prompt) → `e549410`(1，Partial E2E) → `c69e7cb`(6，显式收敛评审轮) → `c8e5c89`(1，十七段 E2E) → `e0a0926`(4，analysis 结果驱动续步) → `cfff011`(1，任务树)。**19 文件全覆盖**；HEAD `cfff011`、领先 **18**、porcelain 0、staged 空。
+  **关键改进**：前 5 批是"近似验证"（工作树仍脏）；第 6 批后执行 **clean-tree `--rerun-tasks` 全量**（root 1616/0 + desktop 49/0，合计 1665）——这是本轮唯一一次对 HEAD 的真验证。
+  残留：远端 live 未复核（网络不可达），只能说本地领先 18，不能断言远端未变。
+- [x] `T-PUSH` 推送 18 个本地 commit — **DONE（2026-10-28）**
+  推送输出 `5b047b0..cfff011  feature/novel-ide -> feature/novel-ide`（fast-forward，非 force）；第 1 次网络失败、第 2 次成功。**远端 live = cfff011**（执行层 ls-remote 独立确认；规划层本轮 ls-remote 因网络未复核，但本地 tracking ref 已被成功 push 更新为 cfff011 + `rev-list origin...HEAD = 0 0`）。未 force / 未打 tag（前后均为 0）/ 未改配置；任务树 M 未被夹带（推送后仍是未提交 M）。
 - [ ] `T-LEGACY` `commitApprovedDraft`：删除或补齐 Gate 绑定
 
 ## 5. 更新日志
@@ -263,3 +273,7 @@
 | 2026-10-28 | 用户裁决 O-11 形态 = 真实结果驱动 → 新增 D-36；T-7-3 定义为"analysis Result（PASS/ERROR）决定是否再执行一次 rewrite-revision，有界 1 次"；Phase 8 待 T-7-3 后重 Gate | 用户选择：不采用"既有数据分支交差"，也不改 v3.1 范围；决策点必须是 Result 驱动且可写 X→A / Y→B 两条行为测试；复用既有 ANALYSIS_CRITIQUE（保持只读）与 REWRITE_REVISION（写 WorkingDraft），不新增 Skill |
 | 2026-10-28 | T-7-3 审查通过 → DONE；**O-11 → DONE**（D-36 真实结果驱动已落地）；Phase 7 → PARTIAL（仅剩 T-7-2 GUI）；application 1147/0、root 1616/0、desktop 49/0（合计 1665）；下一单元 **重跑 T-8-2 Gate** | 规划层实测：`NovelAgent.kt:238-292` 按 `errorCount` 分支，续步走**同一个 `executeSkill`**（含 Guard）且要求 `Draft`；`NovelAgentModels.kt:129/158/160` 三字段最小；`DecisionPointAnalysisFollowUpTest` V1/V2 使用**同一请求**只换 critic Result（X→A / Y→B 成立）；V3 `EXECUTE` 恰 2 次（有界）；V5 空 bindings → `SKILL_NOT_EXECUTABLE`（守卫反证）；A7 适配为强化（null→notNull，summary 三断言保留）。记录：续步不经 `purposes` 选择，是 D-36 既定设计 |
 | 2026-10-28 | **T-8-2R 复审 → GATE_PASS；Phase 8 → DONE**：①17 段全 ✓（段 4 由 D-36 补齐）；②三边界绿；③禁止项零引入；④P0–P7 slice 全绿（O-11 DONE）。新增 O-43（续步后无对修订稿复评，质量增强不阻塞） | 规划层亲验：V1/V2 均为 `request(w, analysisIntent)`，仅 fixture 由 `PASS_JSON`→`ERROR_JSON`（同一请求只换 Result）；`Phase8FullLoopE2ETest` XML 18:30:32 > `NovelAgent.kt` 18:28:47、`NovelAgentModels.kt` 18:27:47（证据时效成立）；17 段 E2E 未被改写（mtime 17:53:09）且在 T-7-3 后运行。**判定边界**：GUI（T-7-2）不属 §21.2 P7 slice 也不算 17 段，故不降级；"再评审"仅指续步路径内对基线的 critique，**不是**对修订稿复评 → 记 O-43 |
+| 2026-10-28 | **G3 收口**：T-G3 → DONE；6 批提交（`fee163d`/`e549410`/`c69e7cb`/`c8e5c89`/`e0a0926`/`cfff011`），19 文件；HEAD `cfff011`、领先 **18**、工作树 clean；**clean-tree `--rerun-tasks` 全量 1665/0 + 桌面 49/0（真 HEAD 验证）** | 规划层独立复核：`git show --numstat` 六批 6+1+6+1+4+1 = **19**；批 1 文件清单与预期逐字一致；`porcelain=0`、`staged=0`、`rev-list origin...HEAD = 0 18`；逐模块 XML 求和 root 1616 + desktop 49 = 1665。远端 `ls-remote` 网络失败 → **明确记为未复核**，不得推断远端未变 |
+| 2026-10-28 | **W1 收口**：T-W1 → DONE（仅归档，未清理）；产出 `backup/w1-20261028-192312/`（12 导出 + MANIFEST）；四树未提交实测 **59** 展开文件（旧记 52 作废）；31 个高风险同名文件已登记 | 规划层独立复核：目录 13 个文件、字节数逐一相符；抽验 `tracked-a.patch` / `untracked-c.tar.gz` / `worktree-d.log` / `MANIFEST.md` 的 SHA-256 与报告一致；四树 HEAD 均 `be1b755`、pending 21/9/22/7；MAIN porcelain 1（规划层任务树 M），HEAD `cfff011` 未变。**清理工作树仍需用户逐条授权** |
+| 2026-10-28 | **PUSH 完成**：T-PUSH → DONE；`feature/novel-ide` 已推送至远端 `cfff011`（18 个 commit 全部上云）；执行层 ls-remote 独立确认、`0 0`、tag 0、未 force/未改配置；第 1 次网络失败、第 2 次成功 | 规划层复核：本地 tracking ref `origin/feature/novel-ide = cfff011`（由成功 push 更新）+ `rev-list 0 0`；规划层本轮 ls-remote 因网络（Empty reply）未独立复核，**以执行层 push 输出 `5b047b0..cfff011` + 其 ls-remote 为准**，待网络稳定可再抽验。任务树 M（规划层更新）仍在工作区，随下次文档批提交 |
+| 2026-10-28 | **O-42 收口**：T-42 → DONE、O-42 → DONE；NL 跨章续写接入前章 Canonical（降级不静默，工作流硬拒未改）；application 1152/0（+5）、标准聚合 root **1621/0**、desktop 49/0 | 规划层实测：`NovelAgent.kt:1066-1112` 按四种原因降级；`:1502-1504` 三字段写入 Result、`NovelAgentModels.kt:188-192`；5 个新测试 V1–V5；V-6 回归 7/7 + 13/13。**数字口径提醒**：执行层"1703"把 `runtime/api`(5) 与 `runtime/dsh`(28) 也加进来了——这两个模块**不在 `./gradlew test` 聚合**，标准口径应为 root **1621** + desktop 49；后续报告统一用标准聚合，非聚合模块单列 |
