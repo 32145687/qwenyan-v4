@@ -9,11 +9,11 @@
 
 ## 0. 当前焦点
 
-- 当前单元：**无进行中单元**；下一步待选：G4 提交 O-42 本批 / T-7-2 GUI 验收
+- 当前单元：**无进行中单元**；下一步待选：**G5 提交 T-43 本批 + push** / T-7-2 GUI 验收
 - 阻塞：无；Phase 7 仅剩 T-7-2（PENDING_GUI）
-- 已完成：Phase 4/5/6/8 DONE（8=GATE_PASS）；18 commit 已 push（远端 `cfff011`）；词库线；T-7-1/T-7-3/T-42；T-8 全系；W1 归档
-- 并行决策：T-7-2（GUI，暂停）、O-37/38/39（需产品契约）、O-43（质量增强）
-- 仓库快照：HEAD `cfff011`（已推送到 `origin`）；工作区 **7 项**（O-42：5 M + 1 ??，另加本文件 M）
+- 已完成：Phase 4/5/6/8 DONE（8=GATE_PASS）；远端 `cfff011` + 本地 2 未推；T-43（D-37）已实施待提交；词库线；T-7-1/T-7-3/T-42；T-8 全系；W1；G1–G4
+- 并行决策：T-7-2（GUI，暂停）、O-37/38/39（需产品契约）、O-44（低优先）
+- 仓库快照：HEAD `5237033`，领先 2（未 push）；工作区 **5 项**（T-43：3 M + 1 ??，另加本文件 M）
 
 ## 1. 阶段总览
 
@@ -70,6 +70,7 @@
 | D-34 | 词库 V1–V3 归属裁决 | DONE（裁决，FINALIZED） | 见 `docs/planning/qianyan-vocabulary-ownership-decision.md`。**文档优先级**：p20 FD-6 / Phase 4A J-1 / Phase 4C AC-30 > v3.1 §11A 禁止条款（按文档性质与形成时间，不以"代码已存在"倒推动机）。**V1-A** 承认现行独立词库域（唯一表族，不得再新增第二套）；**V2-①** 作用域 = NOVEL + VARIANT（VARIANT 合并 NOVEL，同名 canonical 由 VARIANT 覆盖），`scope_level` 降级为标注，GLOBAL/TASK 标注未启用，不做 BOOK/SERIES/AUTHOR；**V3-A** MVP 只做别名收敛进 prompt + 修预算不一致，Rule/Critic/TEMPLATE/UI 不做（O-37/O-38）。§11A 已加指针，本文件仅追加未改写 |
 | D-35 | 段 16「第二次 Agent」的产品语义 | DONE（用户裁决） | **显式"收敛评审轮"**：Commit 后由用户显式触发；第二轮**只读**——用新 Context（含刚写入的 WM Event/CharacterState）对已提交正文做一致性与偏离检查，输出 findings/suggestions；**不写正文、不自动进 Gate**；轮次上限 1。实现形态：一次新的 `NovelAgent.run`（新会话、`preferredSkillId`=只读 Skill），结果与 `sourceCommitId` 绑定。T-8-E 的 Proposal = 该结构化复审结果，不另造空泛类型 |
 | D-36 | O-11 决策点实现形态 | DONE（用户裁决） | **真实结果驱动决策**：同一 Task 内，`analysis_critique` 的 Result 决定下一步——PASS → 结束（COMPLETED，无产物）；含 ERROR → Agent **自行决定**再执行一次 `rewrite-revision`（产出 WorkingDraft → 正式 Gate，WAITING_HUMAN）。**有界（最多 1 次续步）**；不新增 Skill、不改 ANALYSIS_CRITIQUE 的只读契约；决策点可写 X→A / Y→B 两条行为测试 |
+| D-37 | analysis 续步的 Revision 复用初次 critique | DONE（裁决，2026-10-28） | 为满足"critique ≤ 2（初次 + 复评）"，analysis ERROR 续步不再重复 critique **同一基线**：初次 analysis 的 `ValidationResult` 直接作为 `RevisionAgent` 输入（`executeSkill(..., critiqueOverride)`），省掉一次对相同内容的冗余 LLM 调用；仅在 analysis 续步生效，其他 REWRITE/EXPAND 入口仍保持内部 critique。顺序与有界性不变；D-36 的"analysis Result 驱动下一步"因此更名副其实 |
 
 ## 3. 未完成 / 部分完成 / 阻塞
 
@@ -81,7 +82,8 @@
 | O-31 | tool→AgentActionKind 映射 | **OPEN** | D-27 的 action 级 observed ⊆ expectedActions 需工具→动作类别映射；2C 只做工具级，未发明 |
 | O-32 | `latestCanonicalDraftId` 命名与实际语义 | **DONE（改判，2026-10-28）** | 复核 R3：**"Agent Context = Canonical 前文 + 当前章 Draft"** ⇒ 当前章生成基线取 latest draft **符合 R3**，不是违规。真实问题是**函数名**（`latestCanonicalDraftId` 实际返回 draft）与**前章正文**：`generateNewContent` 调 `planningContexts.assemble(writingRequest, contextPack)` 未传 `continuationReference`，故 NovelAgent 多章续写**不带前章 Canonical**。前者改名即可（非缺陷），后者登记 O-42（本 17 段场景是"同一章"，不受影响） |
 | O-42 | NL 跨章续写缺前章 Canonical | **DONE（2026-10-28，T-42）** | `NovelAgent.resolveContinuation`（:1066-1112）：`listByNovel(novelId, chapter.variantId)` 取紧邻前章 → `canonicalRead.committedDraft` → 仅 CONFIRMED 才构造 reference → 复用 `ContinuationResolver` → `assemble(..., reference, resolved)`。**NL 侧降级不硬拒**：`NO_PREVIOUS_CHAPTER` / `NO_CANONICAL` / `CARRIER_NOT_CONFIRMED` / `CONTINUATION_UNRESOLVED` 写入新增三字段（`continuationIncluded` / `continuationSourceChapterId` / `continuationAbsentReason`），工作流链的硬拒契约未改（V-6 回归 7/7 + 13/13）。5 个新测试 V1–V5 |
-| O-43 | 续步后无"对修订稿复评" | **OPEN（质量增强）** | D-36 选项文字写的是"有界 Revision → 再评审"；实现为"分析 → 续步（该路径内部 critique 基线 + revise）"，**没有对修订后文本再 critique**。Gate 判据（§20-12 的 X→A/Y→B）不因此失效，但"修订是否真的解决了 ERROR"未验证。属质量增强，不阻塞 Phase 8；如需，另立单元（会增加一次 LLM 调用） |
+| O-43 | 续步后无"对修订稿复评" | **DONE（2026-10-28，T-43）** | 复评已落地：续步产出 Draft 后 `critic.critiqueContent(修订稿)` 一次，结果写入 `postRevisionAnalysis`；复评失败写 `postRevisionCheckFailure`（INVALID_OUTPUT / CALL_FAILED）且任务继续。配合 D-37，raw critique 恒为 2（初次 + 复评） |
+| O-44 | 复评未进 Activity | **OPEN（低优先）** | `reviewRevisedContent` 不在 `step()` 内，故 Activity 轨迹不显示复评；目前只能从 `postRevisionAnalysis` / `postRevisionCheckFailure` 观察。若日后要求"每次 LLM 调用都可审计"，需为其分配 Activity 或等价审计记录 |
 | O-33 | Desktop 无 continueToNextChapter 接线 | **OPEN（UI 恢复时）** | 2A 续篇唯一生产 caller 是 Android `ChapterWritingViewModel.kt:87`（Android 暂停）；Desktop `WritePage.kt` 的"下一章"仅导航、`continueWriting` 是同章推进（非续篇）。UI 线恢复时补 |
 | O-34 | 空 Pack 的错误语义 | **OPEN** | D-33a：空 Pack 允许进入 EXECUTE（D-25），但 Writing/Plan 缺 payload 现映射为 `EXECUTION_FAILED`——把"缺输入"说成"执行失败"，语义不准。应改为可区分的类型化缺失输入错误；改与不改待裁，T-7-1 不测为期望行为 |
 | O-35 | ActionPolicy Denied/Allowed 不可达 | **DEFERRED** | D-33d：`COMMIT_CANONICAL` 在 `ActionPolicyUseCases` 恒 `NeedsHuman`，NovelAgent GATE 的 `Denied→ACTION_DENIED` / `Allowed→COMMIT` 当前不可达；且该类是 final（`ActionPolicyUseCases.kt:44`），测试替换需改结构。不为不可达分支改结构，暂不测 |
@@ -228,6 +230,17 @@
   6 批：`fee163d`(6，当前稿+世界模型进 prompt) → `e549410`(1，Partial E2E) → `c69e7cb`(6，显式收敛评审轮) → `c8e5c89`(1，十七段 E2E) → `e0a0926`(4，analysis 结果驱动续步) → `cfff011`(1，任务树)。**19 文件全覆盖**；HEAD `cfff011`、领先 **18**、porcelain 0、staged 空。
   **关键改进**：前 5 批是"近似验证"（工作树仍脏）；第 6 批后执行 **clean-tree `--rerun-tasks` 全量**（root 1616/0 + desktop 49/0，合计 1665）——这是本轮唯一一次对 HEAD 的真验证。
   残留：远端 live 未复核（网络不可达），只能说本地领先 18，不能断言远端未变。
+- [x] `T-G4` 提交 O-42 本批（7 项）— **DONE（2026-10-28）**
+  2 批：`af4b0bd`(6，O-42 代码+测试) → `5237033`(1，任务树)。HEAD **`5237033`**、porcelain 0、staged 空、领先 **2**；clean-tree `--rerun-tasks` 全量 **1621/0** + desktop **49/0**（合计 1670）。未 push。
+  **口径更正**：`runtime/api` / `runtime:dsh` **不在 `settings.gradle.kts`**（只有 `:agent:runtime`、`:runtime`），此前执行的1703混入了 10-06 的遗留 XML —— 此后总数只算聚合模块，遗留 XML 不得引用。
+- [x] `T-43` **O-43 续步后复评** — **DONE（2026-10-28）**
+  `NovelAgent.kt:1189-1205` `reviewRevisedContent`：续步 Draft 后 `critic.critiqueContent(修订稿)` 一次，
+  写 `postRevisionAnalysis`；失败写 `postRevisionCheckFailure`（INVALID_OUTPUT / CALL_FAILED）且任务继续。
+  **D-37 副产物**：为守住"critique ≤ 2"，续步不再重复 critique 同一基线，初次 analysis 的 `ValidationResult`
+  直接作为 Revision 输入（`executeSkill(..., critiqueOverride)` → `reviseExistingContent` `:1140`）。
+  三条路径次数：无续步 = 1 critique / 0 revision；续步 = 2 / 1；复评失败 = 2 / 1 且任务继续。
+  新增 `PostRevisionReviewTest` 4/4；既有 `DecisionPointAnalysisFollowUpTest` 4/4（仅两条说明文字改为"复评"，计数不变）。
+  application **1156/0**（+4）、聚合 root **1625/0**、desktop 49/0（合计 1674）。
 - [x] `T-PUSH` 推送 18 个本地 commit — **DONE（2026-10-28）**
   推送输出 `5b047b0..cfff011  feature/novel-ide -> feature/novel-ide`（fast-forward，非 force）；第 1 次网络失败、第 2 次成功。**远端 live = cfff011**（执行层 ls-remote 独立确认；规划层本轮 ls-remote 因网络未复核，但本地 tracking ref 已被成功 push 更新为 cfff011 + `rev-list origin...HEAD = 0 0`）。未 force / 未打 tag（前后均为 0）/ 未改配置；任务树 M 未被夹带（推送后仍是未提交 M）。
 - [ ] `T-LEGACY` `commitApprovedDraft`：删除或补齐 Gate 绑定
@@ -277,3 +290,5 @@
 | 2026-10-28 | **W1 收口**：T-W1 → DONE（仅归档，未清理）；产出 `backup/w1-20261028-192312/`（12 导出 + MANIFEST）；四树未提交实测 **59** 展开文件（旧记 52 作废）；31 个高风险同名文件已登记 | 规划层独立复核：目录 13 个文件、字节数逐一相符；抽验 `tracked-a.patch` / `untracked-c.tar.gz` / `worktree-d.log` / `MANIFEST.md` 的 SHA-256 与报告一致；四树 HEAD 均 `be1b755`、pending 21/9/22/7；MAIN porcelain 1（规划层任务树 M），HEAD `cfff011` 未变。**清理工作树仍需用户逐条授权** |
 | 2026-10-28 | **PUSH 完成**：T-PUSH → DONE；`feature/novel-ide` 已推送至远端 `cfff011`（18 个 commit 全部上云）；执行层 ls-remote 独立确认、`0 0`、tag 0、未 force/未改配置；第 1 次网络失败、第 2 次成功 | 规划层复核：本地 tracking ref `origin/feature/novel-ide = cfff011`（由成功 push 更新）+ `rev-list 0 0`；规划层本轮 ls-remote 因网络（Empty reply）未独立复核，**以执行层 push 输出 `5b047b0..cfff011` + 其 ls-remote 为准**，待网络稳定可再抽验。任务树 M（规划层更新）仍在工作区，随下次文档批提交 |
 | 2026-10-28 | **O-42 收口**：T-42 → DONE、O-42 → DONE；NL 跨章续写接入前章 Canonical（降级不静默，工作流硬拒未改）；application 1152/0（+5）、标准聚合 root **1621/0**、desktop 49/0 | 规划层实测：`NovelAgent.kt:1066-1112` 按四种原因降级；`:1502-1504` 三字段写入 Result、`NovelAgentModels.kt:188-192`；5 个新测试 V1–V5；V-6 回归 7/7 + 13/13。**数字口径提醒**：执行层"1703"把 `runtime/api`(5) 与 `runtime/dsh`(28) 也加进来了——这两个模块**不在 `./gradlew test` 聚合**，标准口径应为 root **1621** + desktop 49；后续报告统一用标准聚合，非聚合模块单列 |
+| 2026-10-28 | **G4 收口**：T-G4 → DONE；两批 `af4b0bd`(6) / `5237033`(1)；HEAD `5237033`、porcelain 0、领先 2；clean-tree 全量 **1621/0** + 桌面 **49/0**（1670） | 规划层实测：两批 `--numstat` 6+1 = 7；porcelain=0、staged=0、`0 2`；标准聚合逐模块求和 1621 + 49 = 1670。**口径更正**：`settings.gradle.kts` 只有 `:agent:runtime` 与 `:runtime`，**不存在 `runtime/api` / `runtime:dsh`**——此前"1703"混入 10-06 遗留 XML，此后不得引用非聚合模块的旧 XML |
+| 2026-10-28 | **T-43 收口**：O-43 → DONE；新增 D-37（analysis 续步的 Revision 复用初次 critique）与 O-44（复评未进 Activity，低优先）；application 1156/0（+4）、聚合 root **1625/0**、desktop 49/0（1674） | 规划层实测：`reviewRevisedContent`（:1189-1205）用 `critic.critiqueContent`；`critiqueOverride` 贯通 `executeSkill`(:968) → `reviseExistingContent`(:1132,:1140)，仅 analysis 续步生效；Result 字段 :197/:199、RunState :1561/1562。**设计变更需记住**：该改法去掉了对同一基线的重复 critique（原为 2 次），否则复评会变成 3 次、违反我 brief 里"≤2"的硬界——这是我 brief 措辞欠精确导致的必要取舍，已由 D-37 固化 |
