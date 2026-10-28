@@ -141,6 +141,20 @@ object NovelAgentContinuationReasons {
 }
 
 /**
+ * T-43 · 续步后复评失败的稳定原因（不是任务失败错误码）。
+ *
+ * 出现原因值表示正文仍已产出并进入人工 Gate，只是“改完是否还有 ERROR”无法回答；
+ * 禁止静默。
+ */
+object NovelAgentPostRevisionFailureCodes {
+    /** 复评返回非法 / 缺失字段 / 类型错误的输出。 */
+    const val INVALID_OUTPUT: String = "INVALID_OUTPUT"
+
+    /** 复评调用失败（AgentRuntime / Provider 错误等）。 */
+    const val CALL_FAILED: String = "CALL_FAILED"
+}
+
+/**
  * D-36 · 初次只读分析（analysis_critique）的结论摘要。
  *
  * 只承载可观测的结论字段，不复制 CritiqueResult / issues / 正文。
@@ -176,6 +190,13 @@ data class NovelAgentResult(
     val characterConsistency: CharacterConsistencyResult? = null,
     /** D-36：初次 analysis_critique 结论；非分析任务 / 未执行时为 null。 */
     val analysis: NovelAgentAnalysisSummary? = null,
+    /**
+     * T-43：续步（rewrite-revision）之后对**修订稿**的复评结论；无续步时为 null。
+     * 与 [analysis] 分开，供 UI/下游判断“改完之后是否仍有 ERROR”。
+     */
+    val postRevisionAnalysis: NovelAgentAnalysisSummary? = null,
+    /** T-43：复评失败原因（[NovelAgentPostRevisionFailureCodes]）；正常 / 无续步时为 null。 */
+    val postRevisionCheckFailure: String? = null,
     /** D-36：analysis 发现 ERROR 后唯一一次续步的 Skill；未触发时为 null。 */
     val followUpSkillId: SkillId? = null,
     val workingDraftId: WorkingDraftId? = null,

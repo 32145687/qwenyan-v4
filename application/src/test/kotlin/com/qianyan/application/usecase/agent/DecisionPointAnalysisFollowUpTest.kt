@@ -150,7 +150,7 @@ class DecisionPointAnalysisFollowUpTest {
             val activities = f.app.activities.listBySession(sessionId)
             assertEquals(2, activities.count { it.kind == "EXECUTE" }, "分析 + 续步各一次 EXECUTE")
             assertTrue(activities.all { it.sessionId == sessionId }, "续步必须发生在同一 session")
-            assertEquals(2, records.count { "StoryCriticAgent" in systemOf(it) }, "分析 + 续步内部 critique")
+            assertEquals(2, records.count { "StoryCriticAgent" in systemOf(it) }, "分析 + 续步后复评")
             assertEquals(1, records.count { "StoryRevisionAgent" in systemOf(it) }, "只允许一次 Revision")
         } finally {
             f.close()
@@ -169,7 +169,7 @@ class DecisionPointAnalysisFollowUpTest {
             val sessionId = assertNotNull(result.sessionId)
             val activities = f.app.activities.listBySession(sessionId)
             val execute = activities.filter { it.kind == "EXECUTE" }
-            assertEquals(2, execute.size, "即使续步内部 critique 仍为 ERROR，也只能有 2 个 EXECUTE")
+            assertEquals(2, execute.size, "即使复评仍为 ERROR，也只能有 2 个 EXECUTE")
             assertTrue(execute[1].summary?.contains("续步") == true, "第二个 EXECUTE 必须是续步")
             assertTrue(execute[1].summary?.contains(CoreSkills.REWRITE_REVISION.skillId.value) == true)
             assertTrue(activities.size <= 7, "Activity 数量必须有上限；实际=${activities.map { it.kind }}")

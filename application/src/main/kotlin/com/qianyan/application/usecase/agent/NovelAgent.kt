@@ -68,6 +68,7 @@ import com.qianyan.model.novelagent.NovelAgentContinuationReasons
 import com.qianyan.model.novelagent.NovelAgentErrorCodes
 import com.qianyan.model.novelagent.NovelAgentFailure
 import com.qianyan.model.novelagent.NovelAgentOutcome
+import com.qianyan.model.novelagent.NovelAgentPostRevisionFailureCodes
 import com.qianyan.model.novelagent.NovelAgentRequest
 import com.qianyan.model.novelagent.NovelAgentResult
 import com.qianyan.model.novelagent.NovelIntentAnalysis
@@ -77,6 +78,7 @@ import com.qianyan.model.session.AgentSessionStatus
 import com.qianyan.model.skill.Skill
 import com.qianyan.model.skill.SkillId
 import com.qianyan.model.spec.IssueSeverity
+import com.qianyan.model.spec.ValidationResult
 import com.qianyan.model.tool.ToolRequest
 import com.qianyan.model.tool.ToolResult
 import com.qianyan.model.workingdraft.WorkingDraftId
@@ -276,6 +278,9 @@ class NovelAgent internal constructor(
                         )
                     }
                     state.followUpSkillId = followUp.skillId
+                    // T-43：初次分析 critique 就是同一基线正文的评审结论——续步直接复用它，
+                    // 避免为 Revision 再次重复 critique 基线；有界总数保持「初次 + 复评」= 2。
+                    val initialCritique = outcome.critique
                     // 有界：只在这里执行一次；续步后不论结果都进入既有 Review/Gate/Commit 或失败收口。
                     outcome = step(
                         sessionId,
@@ -284,7 +289,7 @@ class NovelAgent internal constructor(
                         state,
                         "执行续步 Skill（${followUp.skillId.value}）",
                     ) { activityId ->
-                        executeSkill(followUp, request, project, intent, activityId, pack, state)
+                        executeSkill(followUp, request, project, intent, activityId, pack, state, initialCritique)
                     }
                     if (outcome !is SkillOutcome.Draft) {
                         throw RunAbort(
@@ -292,6 +297,8 @@ class NovelAgent internal constructor(
                             "续步 ${followUp.skillId.value} 未产生正文变更",
                         )
                     }
+                    // T-43：对修订稿再评审一次（复用同一 critic 实例）；失败不升级为任务失败，但显式标记。
+                    reviewRevisedContent((outcome as SkillOutcome.Draft).content, state)
                 }
 
                 is SkillOutcome.CharacterConsistency -> {
@@ -957,6 +964,8 @@ class NovelAgent internal constructor(
         activityId: ActivityId,
         contextPack: ContextPack?,
         state: RunState,
+        /** T-43：analysis 续步时复用初次 critique，避免对同一基线重复评审。 */
+        critiqueOverride: ValidationResult? = null,
     ): SkillOutcome {
         val expectedAgentId = expectedExecutionAgent(skill.skillId)
         val violations = skillExecutionGuard.violations(skill, expectedAgentId)
@@ -968,7 +977,7 @@ class NovelAgent internal constructor(
         }
         val outcome = when (skill.skillId) {
             CoreSkills.WRITING.skillId -> generateNewContent(skill, request, project, intent, activityId, requireContextPack(contextPack), state)
-            CoreSkills.REWRITE_REVISION.skillId -> reviseExistingContent(skill, request, activityId, state)
+            CoreSkills.REWRITE_REVISION.skillId -> reviseExistingContent(skill, request, activityId, state, critiqueOverride)
             CoreSkills.STORY_PLANNING.skillId ->
                 planChapter(skill, request, project, intent, activityId, requireContextPack(contextPack))
             CoreSkills.ANALYSIS_CRITIQUE.skillId -> analyzeChapter(skill, request, activityId, state)
@@ -1120,13 +1129,15 @@ class NovelAgent internal constructor(
         request: NovelAgentRequest,
         activityId: ActivityId,
         state: RunState,
+        critiqueOverride: ValidationResult? = null,
     ): SkillOutcome {
         val chapter = requireFocusChapter(request)
         val baseDraftId = latestCanonicalDraftId(skill, request, chapter.chapterId, activityId, state)
             ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "改写需要章节已有 Canonical 正文：${chapter.chapterId.value}")
         val current = reader.draft(baseDraftId)
             ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "Canonical Draft 不存在: ${baseDraftId.value}")
-        val critique = critic.critique(current)
+        // T-43：analysis 续步时复用初次 critique（同一基线），避免重复评审；其他入口仍按既有路径。
+        val critique = critiqueOverride ?: critic.critique(current)
         val revised = rewriter.revise(current, critique)
         return SkillOutcome.Draft(content = revised.content, baseDraftId = baseDraftId, chapterId = chapter.chapterId)
     }
@@ -1164,7 +1175,33 @@ class NovelAgent internal constructor(
             passed = critique.passed,
             issueCount = critique.issues.size,
             errorCount = critique.issues.count { it.severity == IssueSeverity.ERROR },
+            critique = critique,
         )
+    }
+
+    /**
+     * T-43 · 续步后对修订稿再评审一次（复用同一 [CritiqueAgent] 实例/入口，不新建 Agent）。
+     *
+     * 有界：本方法只被调用一次；复评即使仍 ERROR 也只记录结果，不触发第二轮 Revision。
+     * 复评失败（非法输出 / 调用失败）不升级为任务失败：修订稿仍进入 REVIEW/Gate；
+     * 但必须写入 [NovelAgentResult.postRevisionCheckFailure]，禁止静默。
+     */
+    private fun reviewRevisedContent(content: String, state: RunState) {
+        try {
+            val critique = critic.critiqueContent(content)
+            state.postRevisionAnalysis = NovelAgentAnalysisSummary(
+                passed = critique.passed,
+                issueCount = critique.issues.size,
+                errorCount = critique.issues.count { it.severity == IssueSeverity.ERROR },
+            )
+            state.postRevisionCheckFailure = null
+        } catch (e: ApplicationException) {
+            state.postRevisionAnalysis = null
+            state.postRevisionCheckFailure = when (e.error) {
+                is ApplicationError.InvalidCritiqueOutput -> NovelAgentPostRevisionFailureCodes.INVALID_OUTPUT
+                else -> NovelAgentPostRevisionFailureCodes.CALL_FAILED
+            }
+        }
     }
 
     /**
@@ -1495,6 +1532,8 @@ class NovelAgent internal constructor(
         planChapterId = state.planChapterId,
         characterConsistency = state.characterConsistency,
         analysis = state.analysis,
+        postRevisionAnalysis = state.postRevisionAnalysis,
+        postRevisionCheckFailure = state.postRevisionCheckFailure,
         followUpSkillId = state.followUpSkillId,
         workingDraftId = state.workingDraftId,
         artifactId = state.artifactId,
@@ -1519,6 +1558,8 @@ class NovelAgent internal constructor(
         var planChapterId: ChapterId? = null
         var characterConsistency: CharacterConsistencyResult? = null
         var analysis: NovelAgentAnalysisSummary? = null
+        var postRevisionAnalysis: NovelAgentAnalysisSummary? = null
+        var postRevisionCheckFailure: String? = null
         var followUpSkillId: SkillId? = null
         var workingDraftId: WorkingDraftId? = null
         var artifactId: ChangeArtifactId? = null
@@ -1546,8 +1587,13 @@ class NovelAgent internal constructor(
         /** 产出章节规划引用（无正文变更）。 */
         data class Plan(val chapterId: ChapterId, val chapterPlanId: ChapterPlanId) : SkillOutcome
 
-        /** 只读分析结果（无正文变更）。 */
-        data class Analysis(val passed: Boolean, val issueCount: Int, val errorCount: Int) : SkillOutcome
+        /** 只读分析结果（无正文变更）；T-43：保留 critique 供续步复用（不在编排层重建）。 */
+        data class Analysis(
+            val passed: Boolean,
+            val issueCount: Int,
+            val errorCount: Int,
+            val critique: ValidationResult,
+        ) : SkillOutcome
 
         /** 人物一致性只读结果（无正文变更）。 */
         data class CharacterConsistency(val result: CharacterConsistencyResult) : SkillOutcome
