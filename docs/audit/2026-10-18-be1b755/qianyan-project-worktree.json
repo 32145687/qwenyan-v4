@@ -1,0 +1,2869 @@
+{
+  "auditMetadata": {
+    "generatedAt": "2026-10-17T17:31:30.242Z",
+    "head": "be1b75582322a43a114fdc174597e29cfe2de87c",
+    "branch": "feature/novel-ide",
+    "workingTreeState": "modified",
+    "auditTool": "Qoder CLI (Trae-compatible)",
+    "idempotencyCheck": "passed",
+    "idempotencyBasis": "single run; deterministic rules and input baseline recorded",
+    "schemaVersion": "qianyan-worktree-schema-1",
+    "rulesVersion": "qianyan-audit-rules-2026-10-18",
+    "inputBaseline": {
+      "gitStatusPorcelainSha256": "2cc75ae3c12dba7ffb215ba0dbb159930bf94ff1b18baa942e6fa7cddcb15e8a",
+      "staged": 0,
+      "modified": 12,
+      "untracked": 8,
+      "ahead": 2,
+      "behind": 0,
+      "includedModules": [
+        "core:model",
+        "core:engine",
+        "agent:tool",
+        "agent:runtime",
+        "agent:agents",
+        "agent:orchestration",
+        "provider:api",
+        "provider:impl",
+        "storage",
+        "application",
+        "runtime",
+        "app:android",
+        "app:desktop",
+        "test:e2e"
+      ],
+      "includedDocs": [
+        "README.md",
+        "docs/architecture/qianyan-novel-ide-direction.md",
+        "docs/architecture/p20-architecture-freeze.md",
+        "docs/planning/qianyan-dev-implementation-plan-v3.1.md",
+        "docs/planning/qianyan-phase3-closure-decision-record.md",
+        "docs/planning/qianyan-phase4a-context-contract-freeze.md",
+        "docs/planning/qianyan-phase4a-context-contract-freeze-addendum-payload.md",
+        "docs/planning/qianyan-phase4a-architecture-audit.md",
+        "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md",
+        "docs/status/qianyan-project-status.md"
+      ],
+      "testEvidenceCutoff": "2026-10-17T14:20:00Z",
+      "freshTestFiles": 243,
+      "staleTestFiles": 5,
+      "totalTests": 1444,
+      "totalFailures": 0,
+      "totalErrors": 0,
+      "totalSkipped": 0
+    }
+  },
+  "stats": {
+    "global": {
+      "total": 75,
+      "status": {
+        "ACCEPTED": 30,
+        "IMPLEMENTED_PENDING_ACCEPTANCE": 4,
+        "PARTIAL": 32,
+        "IN_PROGRESS": 2,
+        "DECISION_REQUIRED": 3,
+        "NOT_STARTED": 2,
+        "UNKNOWN": 2
+      },
+      "confidence": {
+        "strong": 32,
+        "medium": 41,
+        "weak": 2,
+        "speculative": 0,
+        "none": 0
+      }
+    },
+    "byDomain": {
+      "product": {
+        "total": 7,
+        "status": {
+          "ACCEPTED": 1,
+          "IMPLEMENTED_PENDING_ACCEPTANCE": 2,
+          "PARTIAL": 3,
+          "IN_PROGRESS": 0,
+          "DECISION_REQUIRED": 1,
+          "NOT_STARTED": 0,
+          "UNKNOWN": 0
+        },
+        "confidence": {
+          "strong": 1,
+          "medium": 6,
+          "weak": 0,
+          "speculative": 0,
+          "none": 0
+        }
+      },
+      "architecture": {
+        "total": 18,
+        "status": {
+          "ACCEPTED": 10,
+          "IMPLEMENTED_PENDING_ACCEPTANCE": 1,
+          "PARTIAL": 6,
+          "IN_PROGRESS": 0,
+          "DECISION_REQUIRED": 0,
+          "NOT_STARTED": 0,
+          "UNKNOWN": 1
+        },
+        "confidence": {
+          "strong": 9,
+          "medium": 8,
+          "weak": 1,
+          "speculative": 0,
+          "none": 0
+        }
+      },
+      "feature": {
+        "total": 32,
+        "status": {
+          "ACCEPTED": 13,
+          "IMPLEMENTED_PENDING_ACCEPTANCE": 0,
+          "PARTIAL": 18,
+          "IN_PROGRESS": 0,
+          "DECISION_REQUIRED": 0,
+          "NOT_STARTED": 1,
+          "UNKNOWN": 0
+        },
+        "confidence": {
+          "strong": 14,
+          "medium": 18,
+          "weak": 0,
+          "speculative": 0,
+          "none": 0
+        }
+      },
+      "phase": {
+        "total": 18,
+        "status": {
+          "ACCEPTED": 6,
+          "IMPLEMENTED_PENDING_ACCEPTANCE": 1,
+          "PARTIAL": 5,
+          "IN_PROGRESS": 2,
+          "DECISION_REQUIRED": 2,
+          "NOT_STARTED": 1,
+          "UNKNOWN": 1
+        },
+        "confidence": {
+          "strong": 8,
+          "medium": 9,
+          "weak": 1,
+          "speculative": 0,
+          "none": 0
+        }
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "product",
+      "name": "产品与 UI",
+      "parentId": null,
+      "type": "domain",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "README.md:1-40",
+        "docs/architecture/qianyan-novel-ide-direction.md:21-203"
+      ],
+      "files": [
+        "README.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "产品方向与 UI 落地分层；Desktop/Android 仍有未接线写路径"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "产品/UI 顶层归组"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "聚合域。"
+    },
+    {
+      "id": "product.positioning",
+      "name": "Agent 优先的 AI 小说创作客户端定位",
+      "parentId": "product",
+      "type": "product_goal",
+      "status": "ACCEPTED",
+      "confidence": "medium",
+      "evidence": [
+        "README.md:1-40",
+        "docs/architecture/qianyan-novel-ide-direction.md:21-64"
+      ],
+      "files": [
+        "README.md",
+        "docs/architecture/qianyan-novel-ide-direction.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "决策级接受，不是功能实现"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "方向文档为唯一产品定义"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "文档冻结。"
+    },
+    {
+      "id": "product.information-architecture",
+      "name": "信息架构 / 三栏形态",
+      "parentId": "product",
+      "type": "decision",
+      "status": "DECISION_REQUIRED",
+      "confidence": "strong",
+      "evidence": [
+        "README.md:29-34",
+        "docs/architecture/qianyan-novel-ide-direction.md:134-202",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/Main.kt:220-230"
+      ],
+      "files": [
+        "README.md",
+        "docs/architecture/qianyan-novel-ide-direction.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "文档称信息架构未定，但 Desktop 已有三栏 shell"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "product.desktop-shell"
+      ],
+      "acceptanceCriteria": [
+        "信息架构最终裁决"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_says_undetermined_code_has_shell",
+        "docReference": "README.md:29-34 / direction §1.5",
+        "actualState": "Desktop 已实现三栏 shell",
+        "evidence": "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/Main.kt:220-230"
+      },
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "文档与代码并存。"
+    },
+    {
+      "id": "product.desktop-shell",
+      "name": "Desktop 三栏工作区 Shell",
+      "parentId": "product",
+      "type": "feature",
+      "status": "IMPLEMENTED_PENDING_ACCEPTANCE",
+      "confidence": "medium",
+      "evidence": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/Main.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/WorkspaceController.kt",
+        "app/desktop/build/test-results/jvmTest/TEST-*.xml (2026-10-17T14:23:08Z; 27 tests)"
+      ],
+      "files": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/Main.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/Common.kt"
+      ],
+      "tests": [
+        "app/desktop/src/jvmTest/kotlin/com/qianyan/app/desktop/DesktopWorkspaceTest.kt"
+      ],
+      "gaps": [
+        "信息架构未最终裁决；部分写操作未接入"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "product.information-architecture"
+      ],
+      "acceptanceCriteria": [
+        "三栏 shell / 导航 / Inspector tab"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "代码+Desktop 测试；缺最终产品验收。"
+    },
+    {
+      "id": "product.inspector",
+      "name": "Inspector 只读检查器",
+      "parentId": "product",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/workspace/WorkspaceUseCases.kt:314-360",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt:73-120",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/workspace/WorkspaceUseCases.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/workspace/WorkspaceInspectorContextTest.kt"
+      ],
+      "gaps": [
+        "任务上下文仍是独立 rebuild，不是 Agent 实际 Pack；AC-08/AC-35 未闭合"
+      ],
+      "blockedBy": [
+        "feature.inspector-task-context"
+      ],
+      "dependsOn": [
+        "architecture.context-engine"
+      ],
+      "acceptanceCriteria": [
+        "当前对象 Context 投影；未来真实任务 Pack"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "代码+测试；任务快照语义不满足。"
+    },
+    {
+      "id": "product.natural-language-entry",
+      "name": "自然语言 / Agent 统一任务入口",
+      "parentId": "product",
+      "type": "feature",
+      "status": "IMPLEMENTED_PENDING_ACCEPTANCE",
+      "confidence": "medium",
+      "evidence": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/Common.kt:255-285",
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent/NovelAgent.kt:163-193",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/AgentPage.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent/NovelAgent.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/agent/NovelAgentRunTest.kt"
+      ],
+      "gaps": [
+        "Agent Task 的 Context 快照未回传 Inspector"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.novel-agent"
+      ],
+      "acceptanceCriteria": [
+        "自然语言启动 Agent 并返回稳定结果"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "UI 调用链+测试。"
+    },
+    {
+      "id": "product.android-app",
+      "name": "Android 伴生应用",
+      "parentId": "product",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "app/android/src/main/java/com/qianyan/app/android/ui/MainActivity.kt",
+        "app/android/build/test-results/testDebugUnitTest/TEST-*.xml (2026-10-17T14:20:43Z; 57 tests)"
+      ],
+      "files": [
+        "app/android/src/main/java/com/qianyan/app/android/ui"
+      ],
+      "tests": [
+        "app/android/src/test"
+      ],
+      "gaps": [
+        "产品策略 PAUSED；部分旧闭环不再扩展"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.android"
+      ],
+      "acceptanceCriteria": [
+        "Android 保留并可构建"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "代码+测试；产品暂停。"
+    },
+    {
+      "id": "architecture",
+      "name": "核心架构",
+      "parentId": null,
+      "type": "domain",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "settings.gradle.kts",
+        "README.md:56-170",
+        "docs/architecture/p20-architecture-freeze.md"
+      ],
+      "files": [
+        "settings.gradle.kts"
+      ],
+      "tests": [],
+      "gaps": [
+        "多数核心层稳定；Context 收敛与部分 Tool/Inspector 链路未闭合"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "核心模块/契约顶层归组"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "聚合域。"
+    },
+    {
+      "id": "architecture.modules",
+      "name": "Gradle 多模块骨架",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "settings.gradle.kts",
+        "gradle/libs.versions.toml",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)",
+        "core/model/build/test-results/test/TEST-*.xml (2026-10-17T14:43:34Z; 61 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "settings.gradle.kts",
+        "build.gradle.kts"
+      ],
+      "tests": [
+        "test/e2e/src/test"
+      ],
+      "gaps": [
+        "runtime/api、runtime/dsh 非 Gradle subproject"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "13 个声明模块可编译测试"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "settings+模块测试。"
+    },
+    {
+      "id": "architecture.domain-model",
+      "name": "领域模型与强类型 ID",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "core/model/src/main/kotlin/com/qianyan/model",
+        "core/model/build/test-results/test/TEST-*.xml (2026-10-17T14:43:34Z; 61 tests; 0 failures/errors)",
+        "README.md:62"
+      ],
+      "files": [
+        "core/model/src/main/kotlin/com/qianyan/model"
+      ],
+      "tests": [
+        "core/model/src/test"
+      ],
+      "gaps": [
+        "部分 P14+ 模型有代码但 README 标注未实现"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.modules"
+      ],
+      "acceptanceCriteria": [
+        "领域对象/ID/Context/Story/Task 模型"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "core:model 61 测试。"
+    },
+    {
+      "id": "architecture.storage-schema",
+      "name": "SQLDelight Schema / Migration v28",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "storage/src/main/sqldelight/com/qianyan/storage/db",
+        "storage/src/main/sqldelight/com/qianyan/storage/db/27.sqm",
+        "docs/planning/qianyan-phase3-closure-decision-record.md:19",
+        "storage/build/test-results/test/TEST-*.xml (2026-10-17T14:22:38Z; 166 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "storage/src/main/sqldelight/com/qianyan/storage/db",
+        "storage/src/main/kotlin/com/qianyan/storage/db/DatabaseInitializer.kt"
+      ],
+      "tests": [
+        "storage/src/test"
+      ],
+      "gaps": [
+        "未来表变更仍需逐版验证"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.domain-model"
+      ],
+      "acceptanceCriteria": [
+        "Schema v28 全新建库/迁移可达"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "27 sqm+166 测试+Phase3 记录。"
+    },
+    {
+      "id": "architecture.application-container",
+      "name": "ApplicationContainer / DI",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/di/ApplicationContainer.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/di/ApplicationContainer.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/ApplicationIntegrationTest.kt"
+      ],
+      "gaps": [
+        "部分服务仅暴露未接线"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.domain-model",
+        "architecture.storage-schema"
+      ],
+      "acceptanceCriteria": [
+        "生产用例可组装注入 UI"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "容器+集成测试。"
+    },
+    {
+      "id": "architecture.provider-runtime",
+      "name": "LLM Provider / Gateway",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "provider/api/src/main/kotlin",
+        "provider/impl/src/main/kotlin/com/qianyan/provider/impl/MockLLMGateway.kt",
+        "docs/P9-completion-report.md:4",
+        "provider/*/build/test-results/test/TEST-*.xml (2026-10-17T14:20:16..19Z)"
+      ],
+      "files": [
+        "provider/api/src/main/kotlin",
+        "provider/impl/src/main/kotlin"
+      ],
+      "tests": [
+        "provider/impl/src/test"
+      ],
+      "gaps": [
+        "真实 Provider 依赖外部配置"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.modules"
+      ],
+      "acceptanceCriteria": [
+        "LLM 契约与 Mock 分离"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "P9 DONE+测试。"
+    },
+    {
+      "id": "architecture.agent-runtime",
+      "name": "Agent Runtime / Tool",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "agent/runtime/src/main/kotlin",
+        "agent/tool/src/main/kotlin",
+        "docs/P10-completion-report.md:4",
+        "agent/*/build/test-results/test/TEST-*.xml (2026-10-17T14:20:17..24Z)"
+      ],
+      "files": [
+        "agent/runtime/src/main/kotlin",
+        "agent/tool/src/main/kotlin"
+      ],
+      "tests": [
+        "agent/runtime/src/test",
+        "agent/tool/src/test"
+      ],
+      "gaps": [
+        "Agent 自主 Tool Calling 受编排限制"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.provider-runtime"
+      ],
+      "acceptanceCriteria": [
+        "LLM/Tool 循环+maxSteps"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "P10 DONE+测试。"
+    },
+    {
+      "id": "architecture.novel-agent",
+      "name": "NovelAgent 七相位编排",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent/NovelAgent.kt:163-193",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent/NovelAgent.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/agent"
+      ],
+      "gaps": [
+        "Context Pack 真实快照未暴露；部分 Skill 未绑定"
+      ],
+      "blockedBy": [
+        "feature.inspector-task-context"
+      ],
+      "dependsOn": [
+        "architecture.context-engine"
+      ],
+      "acceptanceCriteria": [
+        "七相位执行+稳定结果"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "代码+测试；A 未闭合。"
+    },
+    {
+      "id": "architecture.context-engine",
+      "name": "Context Engine / ContextPack",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/context/ContextEngineUseCases.kt:51",
+        "core/model/src/main/kotlin/com/qianyan/model/context/ContextPack.kt:218-320",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)",
+        "core/model/build/test-results/test/TEST-*.xml (2026-10-17T14:43:34Z; 61 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/context",
+        "core/model/src/main/kotlin/com/qianyan/model/context"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/context"
+      ],
+      "gaps": [
+        "AC-06/08 未闭合；AC-30A/30B 证据不足；AC-08 任务快照未实现"
+      ],
+      "blockedBy": [
+        "feature.inspector-task-context",
+        "feature.vocabulary-budget-subset"
+      ],
+      "dependsOn": [
+        "architecture.domain-model"
+      ],
+      "acceptanceCriteria": [
+        "确定性 Pack/Source/Selector/版本"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "实现+测试；Phase4B.1 未验收。"
+    },
+    {
+      "id": "architecture.planning-assembly",
+      "name": "PlanningContextAssembly / payload 投影",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/planning/PlanningContextAssembly.kt:55-153",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/planning/PlanningContextAssembly.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/planning/PlanningContextPayloadProjectionTest.kt"
+      ],
+      "gaps": [
+        "legacy 无 Pack 路径仍存在；Inspector 任务快照不经过该 Pack"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.context-engine"
+      ],
+      "acceptanceCriteria": [
+        "覆盖字段从 payload 投影；Resolver 保留"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "正式入口+兼容路径并存。"
+    },
+    {
+      "id": "architecture.world-model",
+      "name": "World Model / Story State",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story/worldmodelupdate",
+        "docs/planning/qianyan-phase3-closure-decision-record.md:178-185",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)",
+        "storage/build/test-results/test/TEST-*.xml (2026-10-17T14:22:38Z; 166 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story",
+        "storage/src/main/sqldelight/com/qianyan/storage/db/StoryState.sq"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/story/worldmodelupdate"
+      ],
+      "gaps": [
+        "失败诊断载体、Human Gate、UPDATE/REMOVE、候选消费方仍挂起"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.change-layer",
+        "architecture.storage-schema"
+      ],
+      "acceptanceCriteria": [
+        "Commit 后候选事实链；Phase3 Gate"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "H.5 Gate 满足。"
+    },
+    {
+      "id": "architecture.change-layer",
+      "name": "Change Layer / Canonical Commit",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/change",
+        "application/src/main/kotlin/com/qianyan/application/usecase/commit",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/change",
+        "application/src/main/kotlin/com/qianyan/application/usecase/commit"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/change",
+        "application/src/test/kotlin/com/qianyan/application/usecase/commit"
+      ],
+      "gaps": [
+        "旧 saveContent 旁路需持续保护"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.storage-schema"
+      ],
+      "acceptanceCriteria": [
+        "作者保存直通 Canonical；AI 走 WorkingDraft/Change"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "Phase1/2+测试。"
+    },
+    {
+      "id": "architecture.commit-history",
+      "name": "CommitHistory / 格式契约",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "core/model/src/main/kotlin/com/qianyan/model/commit",
+        "application/src/main/kotlin/com/qianyan/application/usecase/commit/CommitUseCases.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "core/model/src/main/kotlin/com/qianyan/model/commit",
+        "storage/src/main/sqldelight/com/qianyan/storage/db/CommitHistory.sq"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/commit/CommitRevertTest.kt",
+        "storage/src/test"
+      ],
+      "gaps": [
+        "legacy 行为需按契约保护"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.change-layer"
+      ],
+      "acceptanceCriteria": [
+        "唯一事实源；四值格式/revert"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "格式契约+测试。"
+    },
+    {
+      "id": "architecture.workflow-hitl",
+      "name": "Durable Workflow / Human Gate",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/workflow",
+        "docs/status/qianyan-project-status.md:1-20",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/workflow"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/workflow"
+      ],
+      "gaps": [
+        "Desktop 批准动作待接线（P0-3）"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.change-layer",
+        "architecture.storage-schema"
+      ],
+      "acceptanceCriteria": [
+        "Workflow 恢复/Gate/Revision"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "后端+测试；Desktop 未验收。"
+    },
+    {
+      "id": "architecture.lcl",
+      "name": "Long-form Continuity Layer",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "ACCEPTED",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/lcl",
+        "docs/status/qianyan-project-status.md:1-20",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/lcl",
+        "core/model/src/main/kotlin/com/qianyan/model/lcl"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/lcl"
+      ],
+      "gaps": [
+        "部分写路径仅展示接入点"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.world-model"
+      ],
+      "acceptanceCriteria": [
+        "NarrativeState/ChapterContextPack/Foreshadow/Reveal"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "P13 封存+测试。"
+    },
+    {
+      "id": "architecture.author-intelligence",
+      "name": "Author / Decision Model",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "IMPLEMENTED_PENDING_ACCEPTANCE",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/author",
+        "application/src/main/kotlin/com/qianyan/application/usecase/decision",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/author",
+        "application/src/main/kotlin/com/qianyan/application/usecase/decision"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/author"
+      ],
+      "gaps": [
+        "README P16 标注 PLANNED；Desktop 写路径多为接入点"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.domain-model"
+      ],
+      "acceptanceCriteria": [
+        "AuthorContext/Preference/Core/DNA/Decision"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_says_planned_code_implemented",
+        "docReference": "README.md:141-142",
+        "actualState": "author/decision 模块与测试已存在",
+        "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/author"
+      },
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "文档滞后。"
+    },
+    {
+      "id": "architecture.project-index",
+      "name": "Project Index",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/index/ProjectIndexUseCases.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/workspace/WorkspaceUseCases.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/index"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/index"
+      ],
+      "gaps": [
+        "AC-03：find/findByType 检索结果缺生产消费方"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.storage-schema"
+      ],
+      "acceptanceCriteria": [
+        "五类索引构建/查询/定位"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "构建有 caller；检索消费不足。"
+    },
+    {
+      "id": "architecture.dsh-runtime",
+      "name": "DSH Runtime",
+      "parentId": "architecture",
+      "type": "module",
+      "status": "UNKNOWN",
+      "confidence": "weak",
+      "evidence": [
+        "runtime/src",
+        "runtime/api/build/test-results and runtime/dsh/build/test-results (2026-10-06; not Gradle subprojects)",
+        "README.md:170-175"
+      ],
+      "files": [
+        "runtime/src"
+      ],
+      "tests": [
+        "runtime/src/test"
+      ],
+      "gaps": [
+        "runtime/api、runtime/dsh 不在 settings；无当前生产调用链；产品动机不明"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "DSH 是否仍属项目范围"
+      ],
+      "deadCode": true,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "只有陈旧 XML/目录证据。"
+    },
+    {
+      "id": "feature",
+      "name": "用户功能",
+      "parentId": null,
+      "type": "domain",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "README.md:56-175",
+        "application/src/main/kotlin/com/qianyan/application/usecase"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase"
+      ],
+      "tests": [
+        "application/src/test"
+      ],
+      "gaps": [
+        "后端能力多于 Desktop 已接线写操作"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "用户功能顶层归组"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "聚合域。"
+    },
+    {
+      "id": "feature.txt-import",
+      "name": "TXT 导入与新小说创建",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/txt",
+        "README.md:62-70"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/txt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/TxtImportUseCaseTest.kt"
+      ],
+      "gaps": [
+        "多 TXT 合并未实现"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.domain-model"
+      ],
+      "acceptanceCriteria": [
+        "TXT 解析/导入/章节识别/持久化"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P4/P5",
+      "statusBasis": "单文档闭环。"
+    },
+    {
+      "id": "feature.txt-import.parse",
+      "name": "TXT 解析与章节识别",
+      "parentId": "feature.txt-import",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "core/engine/src/main/kotlin",
+        "application/src/main/kotlin/com/qianyan/application/usecase/txt/TxtUseCases.kt",
+        "core/engine/build/test-results/test/TEST-*.xml (2026-10-17T14:20:19Z; 41 tests)"
+      ],
+      "files": [
+        "core/engine/src/main/kotlin",
+        "application/src/main/kotlin/com/qianyan/application/usecase/txt"
+      ],
+      "tests": [
+        "core/engine/src/test",
+        "application/src/test/kotlin/com/qianyan/application/TxtImportUseCaseTest.kt"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.domain-model"
+      ],
+      "acceptanceCriteria": [
+        "确定性解析/章节块识别"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P4",
+      "statusBasis": "P4✅+测试。"
+    },
+    {
+      "id": "feature.txt-import.canonical-init",
+      "name": "Canonical 初始化",
+      "parentId": "feature.txt-import",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/txt/TxtCanonicalInitializationUseCases.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/txt/TxtCanonicalInitializationUseCases.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/TxtCanonicalInitializationTest.kt"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.txt-import.parse",
+        "architecture.change-layer"
+      ],
+      "acceptanceCriteria": [
+        "显式 documentId/原子/幂等/失败回滚"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P1-02/F1-F3",
+      "statusBasis": "F1/F3 测试。"
+    },
+    {
+      "id": "feature.txt-import.multi-document-order",
+      "name": "多 TXT 全书章节顺序",
+      "parentId": "feature.txt-import",
+      "type": "feature",
+      "status": "NOT_STARTED",
+      "confidence": "strong",
+      "evidence": [
+        "docs/planning/qianyan-dev-implementation-plan-v3.1.md:378-384",
+        "docs/planning/qianyan-phase0-baseline-register.md:173-208"
+      ],
+      "files": [],
+      "tests": [],
+      "gaps": [
+        "规则 R1-R5 已裁决，多 TXT 合并功能未实现"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.txt-import.parse"
+      ],
+      "acceptanceCriteria": [
+        "跨文档 order/混排边界"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "Phase1/后续",
+      "statusBasis": "文档明确未实现。"
+    },
+    {
+      "id": "feature.novel-create",
+      "name": "新建/打开小说",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/novel/NovelUseCases.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/ListPages.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)",
+        "app/desktop/build/test-results/jvmTest/TEST-*.xml (2026-10-17T14:23:08Z; 27 tests)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/novel",
+        "app/android/src/main/java/com/qianyan/app/android/ui/novel"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/chapter/ChapterUseCasesTest.kt",
+        "app/android/src/test"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.change-layer"
+      ],
+      "acceptanceCriteria": [
+        "Novel/Variant 创建/打开"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P4/P5/P7",
+      "statusBasis": "UseCase+双端入口+测试。"
+    },
+    {
+      "id": "feature.writing.planning",
+      "name": "章节规划",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/planning",
+        "docs/P11.2-completion-report.md:6",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/planning"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/planning"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.planning-assembly"
+      ],
+      "acceptanceCriteria": [
+        "Request→PlanningContext→ChapterPlan"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P11.2",
+      "statusBasis": "P11.2 DONE+测试。"
+    },
+    {
+      "id": "feature.writing.draft",
+      "name": "正文生成/Draft 持久化",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/WritingExecutionUseCase.kt",
+        "docs/P11.3-completion-report.md:6",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/WritingExecutionUseCase.kt",
+        "storage/src/main/sqldelight/com/qianyan/storage/db/Draft.sq"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/WritingExecutionTest.kt"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.writing.planning",
+        "architecture.storage-schema"
+      ],
+      "acceptanceCriteria": [
+        "WriterAgent→DraftParser→DraftRepository"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P11.3",
+      "statusBasis": "P11.3 DONE+测试。"
+    },
+    {
+      "id": "feature.writing.critique-revision",
+      "name": "批评与修订",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/critique",
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/revision",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/critique",
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/revision"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/critique",
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/revision"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.writing.draft"
+      ],
+      "acceptanceCriteria": [
+        "Critique/Revision/RevisionGate≤3"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P11.4",
+      "statusBasis": "P11.4 完成+测试。"
+    },
+    {
+      "id": "feature.writing.knowledge-update",
+      "name": "知识更新写入",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/knowledgeupdate",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/WritePage.kt:294-296",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/knowledgeupdate"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/knowledgeupdate"
+      ],
+      "gaps": [
+        "Desktop 菜单标注“知识更新·未接入”"
+      ],
+      "blockedBy": [
+        "feature.workflow-hitl"
+      ],
+      "dependsOn": [
+        "feature.writing.draft"
+      ],
+      "acceptanceCriteria": [
+        "CONFIRMED Final Draft→KU→Memory"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P11.5",
+      "statusBasis": "后端/测试；UI 未接。"
+    },
+    {
+      "id": "feature.writing.story-world-context",
+      "name": "故事世界上下文",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/context/StoryWorldContextResolver.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/context"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/context"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.world-model"
+      ],
+      "acceptanceCriteria": [
+        "canon-first 分层；characters/memories 进 PlanningContext"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P11.6/P12.1.2",
+      "statusBasis": "完成+测试。"
+    },
+    {
+      "id": "feature.writing.working-draft-change",
+      "name": "WorkingDraft→Change/Review",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/draft/WorkingDraftUseCases.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/change/ChangeUseCases.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/draft",
+        "application/src/main/kotlin/com/qianyan/application/usecase/change"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/draft",
+        "application/src/test/kotlin/com/qianyan/application/usecase/change"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.writing.draft"
+      ],
+      "acceptanceCriteria": [
+        "AI 产出走 WorkingDraft/Change，不直通 Canonical"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P1-02",
+      "statusBasis": "测试存在。"
+    },
+    {
+      "id": "feature.writing.confirmation-gate",
+      "name": "定稿确认 Gate",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/confirmation/ConfirmationExecutionUseCase.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/WritePage.kt:294-296",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/confirmation"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/confirmation"
+      ],
+      "gaps": [
+        "Desktop “定稿确认·未接入”"
+      ],
+      "blockedBy": [
+        "architecture.workflow-hitl"
+      ],
+      "dependsOn": [
+        "feature.writing.draft"
+      ],
+      "acceptanceCriteria": [
+        "PENDING_CONFIRMATION→CONFIRMED"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P12.1.4",
+      "statusBasis": "后端/测试；UI 未接。"
+    },
+    {
+      "id": "feature.reading",
+      "name": "阅读",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/ReaderPage.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/reading"
+      ],
+      "files": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/ReaderPage.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/reading"
+      ],
+      "gaps": [
+        "阅读位置写入在 Desktop 未接线"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.reading-canonical"
+      ],
+      "acceptanceCriteria": [
+        "阅读正文/进度"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P13",
+      "statusBasis": "投影存在；写路径不完整。"
+    },
+    {
+      "id": "feature.vocabulary.analysis",
+      "name": "TXT 词库候选分析",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/analysis/AnalysisUseCases.kt",
+        "docs/P9-completion-report.md",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/analysis"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/AnalysisUseCaseTest.kt"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.provider-runtime"
+      ],
+      "acceptanceCriteria": [
+        "TXT→AnalysisInput→PENDING candidate"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P6",
+      "statusBasis": "P6+测试。"
+    },
+    {
+      "id": "feature.vocabulary.confirmation",
+      "name": "词库候选确认/拒绝/编辑",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/vocabulary/VocabularyUseCases.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/MaterialPages.kt:115"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/vocabulary"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/vocabulary/VocabularyConfirmationTest.kt"
+      ],
+      "gaps": [
+        "Desktop 创建/部分写路径未接线"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.vocabulary.analysis"
+      ],
+      "acceptanceCriteria": [
+        "confirm/reject/edit；approved entry 写入"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P20-P1",
+      "statusBasis": "后端/测试；UI 未全接。"
+    },
+    {
+      "id": "feature.vocabulary.context-source",
+      "name": "Vocabulary Source Dataset",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/context/ContextSources.kt:303-318",
+        "docs/planning/qianyan-phase4a-context-contract-freeze-addendum-payload.md:345-387",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/context/ContextSources.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/context/VocabularyDatasetEquivalenceTest.kt"
+      ],
+      "gaps": [
+        "AC-30A 缺旧/新 A/B；非 APPROVED Entry 行未覆盖"
+      ],
+      "blockedBy": [
+        "feature.context-pack"
+      ],
+      "dependsOn": [
+        "feature.vocabulary.confirmation"
+      ],
+      "acceptanceCriteria": [
+        "APPROVED entry→确定性排序→Source Dataset"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "Phase4B.1",
+      "statusBasis": "代码存在；验收证据不足。"
+    },
+    {
+      "id": "feature.vocabulary.budget-subset",
+      "name": "Model Input Vocabulary Subset",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "core/model/src/main/kotlin/com/qianyan/model/context/ContextPack.kt:218-279",
+        "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md:130",
+        "core/model/build/test-results/test/TEST-*.xml (2026-10-17T14:43:34Z; 61 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "core/model/src/main/kotlin/com/qianyan/model/context/ContextPack.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/planning/PlanningContextAssembly.kt"
+      ],
+      "tests": [
+        "core/model/src/test/java/com/qianyan/model/context/ContextSelectorKeySourcesTest.kt"
+      ],
+      "gaps": [
+        "AC-30B 缺 prompt 级证据；omitted 互补未显式断言"
+      ],
+      "blockedBy": [
+        "feature.context-pack"
+      ],
+      "dependsOn": [
+        "feature.vocabulary.context-source"
+      ],
+      "acceptanceCriteria": [
+        "预算选择/omitted/Planner-Writer 一致"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "Phase4B.1",
+      "statusBasis": "Selector 测试；端到端缺失。"
+    },
+    {
+      "id": "feature.continuation",
+      "name": "长篇续写 / ContinuationReference",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/planning/ContinuationResolver.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/planning/ContinuationResolver.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/planning/ContinuationReferenceTest.kt"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.writing.planning"
+      ],
+      "acceptanceCriteria": [
+        "sourceChapterId+sourceDraftId；FINAL/scope/lineage"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P12.1.3",
+      "statusBasis": "完成+测试。"
+    },
+    {
+      "id": "feature.characters",
+      "name": "人物一致性 / Story State",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/ListPages.kt:532-599"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/story"
+      ],
+      "gaps": [
+        "Variant 写入路径在 Desktop 未接线；读取为主"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.world-model"
+      ],
+      "acceptanceCriteria": [
+        "Character/State 隔离与合并"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P12.1.1/P12.3",
+      "statusBasis": "后端/测试；UI 写路径不完整。"
+    },
+    {
+      "id": "feature.foreshadow",
+      "name": "伏笔生命周期 / Reveal",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story/ForeshadowLifecycleUseCases.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/story/RevealUseCases.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/ListPages.kt:617-666"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/story"
+      ],
+      "gaps": [
+        "ForeshadowLifecycle 无 UI/生产调用者；Reveal 写入未接线"
+      ],
+      "blockedBy": [
+        "feature.workflow-hitl"
+      ],
+      "dependsOn": [
+        "architecture.world-model"
+      ],
+      "acceptanceCriteria": [
+        "PLANTED/ACTIVE/RESOLVED/ABANDONED；Reveal Reader-only"
+      ],
+      "deadCode": "unknown",
+      "conflict": {
+        "type": "doc_says_sealed_no_production_caller",
+        "docReference": "README.md:147 / status doc",
+        "actualState": "UseCase+测试存在；UI/生产调用链未确认",
+        "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/story/ForeshadowLifecycleUseCases.kt"
+      },
+      "previousId": null,
+      "phase": "P13",
+      "statusBasis": "测试存在；生产调用链未确认。; 未找到生产调用者，但未穷举反射/框架入口"
+    },
+    {
+      "id": "feature.rewrite-review",
+      "name": "改写 / 审阅 / Diff / Change",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing/WriterFacade.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/change/ChangeUseCases.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/write/RewriteDialog.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/writing",
+        "application/src/main/kotlin/com/qianyan/application/usecase/change"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/writing/revision",
+        "application/src/test/kotlin/com/qianyan/application/usecase/change"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.writing.critique-revision"
+      ],
+      "acceptanceCriteria": [
+        "改写/批判/修订/Change"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P11.4/P1-02",
+      "statusBasis": "后端/测试/UI 入口。"
+    },
+    {
+      "id": "feature.history-revert",
+      "name": "历史 / Revert",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/commit/CommitUseCases.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/commit"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/commit/CommitRevertTest.kt"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.commit-history"
+      ],
+      "acceptanceCriteria": [
+        "CommitHistory 列表/revert"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P1/P20",
+      "statusBasis": "revert/legacy 测试。"
+    },
+    {
+      "id": "feature.agent-nl-task",
+      "name": "自然语言 Agent 任务",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent/NovelAgent.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/Common.kt:255-285",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/agent"
+      ],
+      "gaps": [
+        "Context Pack 任务快照未回传 Inspector"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.novel-agent"
+      ],
+      "acceptanceCriteria": [
+        "Intent→Skill→Context→Execute→Review→Gate→Commit"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "Phase4B/7",
+      "statusBasis": "主干存在；A 未闭合。"
+    },
+    {
+      "id": "feature.inspector-context",
+      "name": "Inspector 上下文展示",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/workspace/WorkspaceUseCases.kt:314-360",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/workspace",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/workspace/WorkspaceInspectorContextTest.kt"
+      ],
+      "gaps": [
+        "当前独立 rebuild；AC-08/AC-35 未实现"
+      ],
+      "blockedBy": [
+        "feature.inspector-task-context"
+      ],
+      "dependsOn": [
+        "architecture.context-engine"
+      ],
+      "acceptanceCriteria": [
+        "Context Tab 展示 pack 投影"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_requires_task_snapshot_code_rebuilds",
+        "docReference": "addendum §J-6 / AC-35",
+        "actualState": "Inspector 每次 load 调用 ContextEngine.build 生成新 Pack",
+        "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/workspace/WorkspaceUseCases.kt:314-353"
+      },
+      "previousId": null,
+      "phase": "Phase4B.1",
+      "statusBasis": "UI 可用；任务快照语义不符。"
+    },
+    {
+      "id": "feature.inspector-task-context",
+      "name": "Inspector 任务上下文四状态",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "docs/planning/qianyan-phase4a-context-contract-freeze-addendum-payload.md:447-515",
+        "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md:146",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt:195-225"
+      ],
+      "files": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/workspace/WorkspaceInspectorContextTest.kt"
+      ],
+      "gaps": [
+        "四状态文案/判定未实现；无真实 Pack 来源；AC-35 待决策"
+      ],
+      "blockedBy": [
+        "product.inspector"
+      ],
+      "dependsOn": [
+        "architecture.context-engine"
+      ],
+      "acceptanceCriteria": [
+        "无任务/失效/可获取/执行中"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_says_required_code_not_implemented",
+        "docReference": "addendum §J-6.2 / AC-35",
+        "actualState": "无任务状态逻辑；ContextTab 只有通用 EmptyState",
+        "evidence": "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt:195-225"
+      },
+      "previousId": null,
+      "phase": "Phase4B.1",
+      "statusBasis": "文档定义四状态，代码未实现。"
+    },
+    {
+      "id": "feature.android",
+      "name": "Android 功能闭环",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "app/android/src/main/java/com/qianyan/app/android/ui",
+        "app/android/build/test-results/testDebugUnitTest/TEST-*.xml (2026-10-17T14:20:43Z; 57 tests)"
+      ],
+      "files": [
+        "app/android/src/main/java/com/qianyan/app/android/ui"
+      ],
+      "tests": [
+        "app/android/src/test"
+      ],
+      "gaps": [
+        "产品状态 PAUSED；部分旧闭环不再扩展"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.writing"
+      ],
+      "acceptanceCriteria": [
+        "Novel/Chapter/Writer/Reader/Provider UI"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P7/P12.1.6-P12.1.7",
+      "statusBasis": "代码/测试；产品暂停。"
+    },
+    {
+      "id": "feature.desktop-writer",
+      "name": "Desktop 写作界面",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/WritePage.kt",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/write/WriterController.kt",
+        "app/desktop/build/test-results/jvmTest/TEST-*.xml (2026-10-17T14:23:08Z; 27 tests)"
+      ],
+      "files": [
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/WritePage.kt"
+      ],
+      "tests": [
+        "app/desktop/src/jvmTest/kotlin/com/qianyan/app/desktop/DesktopWriterTest.kt"
+      ],
+      "gaps": [
+        "定稿确认/知识更新菜单未接入"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "feature.writing"
+      ],
+      "acceptanceCriteria": [
+        "写作/改写/继续写界面"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "PC-2",
+      "statusBasis": "UI/测试；收尾写操作未接。"
+    },
+    {
+      "id": "feature.story-foundation",
+      "name": "Story Foundation / Idea",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/foundation",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/StoryExtraTabs.kt:84-136",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/foundation"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/foundation"
+      ],
+      "gaps": [
+        "Desktop 确认/修改写路径未接线；README P14 标注未实现但代码存在"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.domain-model"
+      ],
+      "acceptanceCriteria": [
+        "StoryIntent/Foundation 提案与确认"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_says_planned_code_implemented",
+        "docReference": "README.md:140",
+        "actualState": "foundation 模块/测试/UI 读取存在",
+        "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/foundation"
+      },
+      "previousId": null,
+      "phase": "P14/P15",
+      "statusBasis": "代码/测试；UI 写路径不完整。"
+    },
+    {
+      "id": "feature.author-intelligence",
+      "name": "作者智能 / Author Core",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/author",
+        "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/pages/AuthorPage.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/author"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/author"
+      ],
+      "gaps": [
+        "README P16 标注 PLANNED；Desktop 写路径多为接入点"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.author-intelligence"
+      ],
+      "acceptanceCriteria": [
+        "AuthorPreference/Core/DNA/DecisionModel"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_says_planned_code_implemented",
+        "docReference": "README.md:142",
+        "actualState": "author/decision 后端与测试存在",
+        "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/author"
+      },
+      "previousId": null,
+      "phase": "P16-P19",
+      "statusBasis": "后端存在；产品写路径未完成。"
+    },
+    {
+      "id": "feature.world-model-update",
+      "name": "World Model Update",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story/worldmodelupdate",
+        "docs/planning/qianyan-phase3-closure-decision-record.md:178-185",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story/worldmodelupdate"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/story/worldmodelupdate"
+      ],
+      "gaps": [
+        "四项后续工作挂起"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.world-model"
+      ],
+      "acceptanceCriteria": [
+        "Commit→候选事实→校验/写入/冲突"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "Phase3",
+      "statusBasis": "Phase3 Gate+测试。"
+    },
+    {
+      "id": "feature.context-pack",
+      "name": "ContextPack 统一入口 Phase 4B.1",
+      "parentId": "feature",
+      "type": "feature",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "core/model/src/main/kotlin/com/qianyan/model/context/ContextPayload.kt",
+        "application/src/main/kotlin/com/qianyan/application/usecase/context/ContextSources.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)",
+        "core/model/build/test-results/test/TEST-*.xml (2026-10-17T14:43:34Z; 61 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "core/model/src/main/kotlin/com/qianyan/model/context",
+        "application/src/main/kotlin/com/qianyan/application/usecase/context"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/context",
+        "core/model/src/test/java/com/qianyan/model/context"
+      ],
+      "gaps": [
+        "AC-06/08 未闭合；AC-30A/30B 证据不足；A 待决策"
+      ],
+      "blockedBy": [
+        "feature.inspector-task-context"
+      ],
+      "dependsOn": [
+        "architecture.context-engine"
+      ],
+      "acceptanceCriteria": [
+        "单一入口/payload/两阶段选择/canonical-v1"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "report_says_complete_audit_says_partial",
+        "docReference": "Phase 4B.1 Completion Report",
+        "actualState": "代码/测试存在，A/B 验收缺口未关闭",
+        "evidence": "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md:129-146"
+      },
+      "previousId": null,
+      "phase": "Phase4B.1",
+      "statusBasis": "实现存在；验收未通过。"
+    },
+    {
+      "id": "phase",
+      "name": "开发阶段与质量",
+      "parentId": null,
+      "type": "domain",
+      "status": "IN_PROGRESS",
+      "confidence": "medium",
+      "evidence": [
+        "README.md:56-175",
+        "docs/planning/qianyan-dev-implementation-plan-v3.1.md:261-955"
+      ],
+      "files": [
+        "docs/planning/qianyan-dev-implementation-plan-v3.1.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "v3.1 Phase 4B.1 与 README 旧 P13 口径冲突"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "阶段/契约/测试/migration 顶层归组"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "两套路线并存。"
+    },
+    {
+      "id": "phase.v31.0",
+      "name": "v3.1 Phase 0 — Preflight/Baseline",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "ACCEPTED",
+      "confidence": "medium",
+      "evidence": [
+        "docs/planning/qianyan-dev-implementation-plan-v3.1.md:281-331",
+        "docs/planning/qianyan-phase0-baseline-register.md"
+      ],
+      "files": [
+        "docs/planning/qianyan-phase0-baseline-register.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "Phase0 事后追认有条件"
+      ],
+      "blockedBy": [],
+      "dependsOn": [],
+      "acceptanceCriteria": [
+        "可信构建/测试基线"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase0",
+      "statusBasis": "文档/基线登记。"
+    },
+    {
+      "id": "phase.v31.1",
+      "name": "v3.1 Phase 1 — Change Layer",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "git log --oneline 5b047b0",
+        "application/src/main/kotlin/com/qianyan/application/usecase/change",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/change",
+        "application/src/main/kotlin/com/qianyan/application/usecase/commit"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/change",
+        "application/src/test/kotlin/com/qianyan/application/usecase/commit"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.change-layer"
+      ],
+      "acceptanceCriteria": [
+        "WorkingDraft/Change/Commit"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase1",
+      "statusBasis": "5b047b0+测试。"
+    },
+    {
+      "id": "phase.v31.2",
+      "name": "v3.1 Phase 2 — World Model",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "git log --oneline 85c4518",
+        "application/src/main/kotlin/com/qianyan/application/usecase/story/WorldModelReadUseCases.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)",
+        "storage/build/test-results/test/TEST-*.xml (2026-10-17T14:22:38Z; 166 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story",
+        "storage/src/main/sqldelight/com/qianyan/storage/db/StoryState.sq"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/story"
+      ],
+      "gaps": [],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.world-model"
+      ],
+      "acceptanceCriteria": [
+        "World Model 读侧/P2 保护"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase2",
+      "statusBasis": "85c4518+测试。"
+    },
+    {
+      "id": "phase.v31.3",
+      "name": "v3.1 Phase 3 — World Model Update",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "docs/planning/qianyan-phase3-closure-decision-record.md:178-185",
+        "git log --oneline 85c4518",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/story/worldmodelupdate"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/story/worldmodelupdate"
+      ],
+      "gaps": [
+        "四项后续工作挂起"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.world-model"
+      ],
+      "acceptanceCriteria": [
+        "候选事实链+四项裁决+Gate"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase3",
+      "statusBasis": "H.5 Gate 满足。"
+    },
+    {
+      "id": "phase.v31.4a",
+      "name": "v3.1 Phase 4A — Context Contract Freeze",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "ACCEPTED",
+      "confidence": "medium",
+      "evidence": [
+        "docs/planning/qianyan-phase4a-context-contract-freeze.md",
+        "docs/planning/qianyan-phase4a-architecture-audit.md",
+        "git log --oneline be1b755"
+      ],
+      "files": [
+        "docs/planning/qianyan-phase4a-context-contract-freeze.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "只冻结契约；AC-08/AC-30A/B 待实现验证"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.context-engine"
+      ],
+      "acceptanceCriteria": [
+        "D1-D4 契约冻结"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase4A",
+      "statusBasis": "文档冻结提交。"
+    },
+    {
+      "id": "phase.v31.4b1",
+      "name": "v3.1 Phase 4B.1 — ContextPack 统一入口",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "IN_PROGRESS",
+      "confidence": "strong",
+      "evidence": [
+        "git status --short",
+        "application/src/main/kotlin/com/qianyan/application/usecase/context/ContextSources.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)",
+        "core/model/build/test-results/test/TEST-*.xml (2026-10-17T14:43:34Z; 61 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/context",
+        "core/model/src/main/kotlin/com/qianyan/model/context"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/context",
+        "core/model/src/test/java/com/qianyan/model/context"
+      ],
+      "gaps": [
+        "A 真实 Pack 未解决；AC-30A/30B 证据不足；未提交"
+      ],
+      "blockedBy": [
+        "feature.inspector-task-context"
+      ],
+      "dependsOn": [
+        "phase.v31.4a"
+      ],
+      "acceptanceCriteria": [
+        "单一入口/payload/两阶段/J-3/J-4"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "worktree_uncommitted_acceptance_pending",
+        "docReference": "Phase 4B.1 report",
+        "actualState": "代码/测试在工作树；A/B 验收未通过",
+        "evidence": "git status --short (12 M + 8 ??)"
+      },
+      "previousId": null,
+      "phase": "v3.1 Phase4B.1",
+      "statusBasis": "工作树未提交，进行中。"
+    },
+    {
+      "id": "phase.v31.4c",
+      "name": "v3.1 Phase 4C — Acceptance Criteria",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "DECISION_REQUIRED",
+      "confidence": "strong",
+      "evidence": [
+        "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md:114-153"
+      ],
+      "files": [
+        "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "A 待决策；AC-30A/30B 未验收；4B.1 未通过"
+      ],
+      "blockedBy": [
+        "phase.v31.4b1"
+      ],
+      "dependsOn": [
+        "phase.v31.4b1"
+      ],
+      "acceptanceCriteria": [
+        "验收标准可执行化"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase4C",
+      "statusBasis": "草案明确不可验收项。"
+    },
+    {
+      "id": "phase.v31.5",
+      "name": "v3.1 Phase 5 — Novel Tool",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/tool",
+        "agent/tool/src/main/kotlin",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/tool"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/tool"
+      ],
+      "gaps": [
+        "自主 Tool 调用不是本阶段目标"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "architecture.tool-layer"
+      ],
+      "acceptanceCriteria": [
+        "Novel Tool 层接入"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase5",
+      "statusBasis": "Tool 层存在。"
+    },
+    {
+      "id": "phase.v31.6",
+      "name": "v3.1 Phase 6 — Novel Skill",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "agent/agents/src/main/kotlin",
+        "docs/planning/qianyan-dev-implementation-plan-v3.1.md:685-728",
+        "agent/*/build/test-results/test/TEST-*.xml (2026-10-17T14:20:17..24Z)"
+      ],
+      "files": [
+        "agent/agents/src/main/kotlin"
+      ],
+      "tests": [
+        "agent/agents/src/test"
+      ],
+      "gaps": [
+        "核心 Skill 执行绑定不完整"
+      ],
+      "blockedBy": [
+        "architecture.skill-registry"
+      ],
+      "dependsOn": [
+        "phase.v31.5"
+      ],
+      "acceptanceCriteria": [
+        "长篇续写/人物一致性 Skill"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase6",
+      "statusBasis": "Registry 存在；绑定有限。"
+    },
+    {
+      "id": "phase.v31.7",
+      "name": "v3.1 Phase 7 — NL + Novel Agent",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent/NovelAgent.kt",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/agent"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/agent"
+      ],
+      "gaps": [
+        "自主决策点/Context 快照缺口"
+      ],
+      "blockedBy": [
+        "architecture.novel-agent"
+      ],
+      "dependsOn": [
+        "phase.v31.6"
+      ],
+      "acceptanceCriteria": [
+        "自然语言任务到 Agent"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase7",
+      "statusBasis": "NovelAgent 存在；A 未闭合。"
+    },
+    {
+      "id": "phase.v31.8",
+      "name": "v3.1 Phase 8 — Complete Vertical Slice",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "test/e2e/src/test",
+        "test/e2e/build/test-results/test/TEST-*.xml (2026-10-17T14:20:24Z; 1 test)",
+        "application/src/test/kotlin/com/qianyan/application/usecase/chapter/Chapter12E2ETest.kt"
+      ],
+      "files": [
+        "test/e2e/src/test"
+      ],
+      "tests": [
+        "test/e2e/src/test",
+        "application/src/test/kotlin/com/qianyan/application/usecase/chapter/Chapter12E2ETest.kt"
+      ],
+      "gaps": [
+        "E2E 证据少；Completion Gate 未记录"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "phase.v31.7"
+      ],
+      "acceptanceCriteria": [
+        "完整写作闭环验收"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase8",
+      "statusBasis": "E2E 覆盖不足。"
+    },
+    {
+      "id": "phase.v31.9",
+      "name": "v3.1 Phase 9 — DSH Runtime Adapter",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "UNKNOWN",
+      "confidence": "weak",
+      "evidence": [
+        "runtime/src",
+        "runtime/api/build/test-results and runtime/dsh/build/test-results (2026-10-06; not Gradle subprojects)",
+        "README.md:170-175"
+      ],
+      "files": [
+        "runtime/src"
+      ],
+      "tests": [
+        "runtime/src/test"
+      ],
+      "gaps": [
+        "DSH 不在 settings；陈旧 XML；无产品动机"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "phase.v31.8"
+      ],
+      "acceptanceCriteria": [
+        "Runtime 可替换"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase9",
+      "statusBasis": "无法确认。"
+    },
+    {
+      "id": "phase.v31.10",
+      "name": "v3.1 Phase 10 — Product UI",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "PARTIAL",
+      "confidence": "medium",
+      "evidence": [
+        "app/desktop/src/jvmMain",
+        "app/android/src/main",
+        "app/desktop/build/test-results/jvmTest/TEST-*.xml (2026-10-17T14:23:08Z; 27 tests)",
+        "app/android/build/test-results/testDebugUnitTest/TEST-*.xml (2026-10-17T14:20:43Z; 57 tests)"
+      ],
+      "files": [
+        "app/desktop/src/jvmMain",
+        "app/android/src/main"
+      ],
+      "tests": [
+        "app/desktop/src/jvmTest",
+        "app/android/src/test"
+      ],
+      "gaps": [
+        "信息架构未裁决；部分写路径未接线"
+      ],
+      "blockedBy": [
+        "product.information-architecture"
+      ],
+      "dependsOn": [
+        "phase.v31.9"
+      ],
+      "acceptanceCriteria": [
+        "Product Experience Layer"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "v3.1 Phase10",
+      "statusBasis": "两端 UI 存在；验收不完整。"
+    },
+    {
+      "id": "phase.legacy.p4-p13",
+      "name": "Legacy P4-P13 — 单章闭环/LCL",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "ACCEPTED",
+      "confidence": "strong",
+      "evidence": [
+        "README.md:62-147",
+        "docs/status/qianyan-project-status.md:1-20",
+        "application/build/test-results/test/TEST-*.xml (2026-10-17T14:21:05Z; 959 tests; 0 failures/errors)"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase",
+        "storage/src/main/sqldelight/com/qianyan/storage/db"
+      ],
+      "tests": [
+        "application/src/test",
+        "storage/src/test"
+      ],
+      "gaps": [
+        "部分 UI 写路径未接线；Document/roadmap 口径滞后"
+      ],
+      "blockedBy": [
+        "phase.current"
+      ],
+      "dependsOn": [
+        "phase.v31.0"
+      ],
+      "acceptanceCriteria": [
+        "TXT/Android/写作/LCL 旧闭环"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P4-P13",
+      "statusBasis": "README/status+大量测试。"
+    },
+    {
+      "id": "phase.legacy.p14-p20",
+      "name": "Legacy P14-P20 — Idea/Author/Productization",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "IMPLEMENTED_PENDING_ACCEPTANCE",
+      "confidence": "medium",
+      "evidence": [
+        "README.md:140-143",
+        "application/src/main/kotlin/com/qianyan/application/usecase/foundation",
+        "application/src/main/kotlin/com/qianyan/application/usecase/author",
+        "app/desktop/src/jvmMain"
+      ],
+      "files": [
+        "application/src/main/kotlin/com/qianyan/application/usecase/foundation",
+        "application/src/main/kotlin/com/qianyan/application/usecase/author"
+      ],
+      "tests": [
+        "application/src/test/kotlin/com/qianyan/application/usecase/foundation",
+        "application/src/test/kotlin/com/qianyan/application/usecase/author"
+      ],
+      "gaps": [
+        "README 标注 PLANNED，代码已存在；UI 写路径未完整"
+      ],
+      "blockedBy": [
+        "phase.legacy.p4-p13"
+      ],
+      "dependsOn": [
+        "phase.legacy.p4-p13"
+      ],
+      "acceptanceCriteria": [
+        "Idea/Foundation/Author/Productization"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_says_planned_code_implemented",
+        "docReference": "README.md:140-143",
+        "actualState": "foundation/author 后端与测试存在",
+        "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/foundation"
+      },
+      "previousId": null,
+      "phase": "P14-P20",
+      "statusBasis": "文档滞后于代码。"
+    },
+    {
+      "id": "phase.legacy.p21",
+      "name": "Legacy P21 — Long-form Auto Creation",
+      "parentId": "phase",
+      "type": "phase",
+      "status": "NOT_STARTED",
+      "confidence": "strong",
+      "evidence": [
+        "README.md:143-146"
+      ],
+      "files": [],
+      "tests": [],
+      "gaps": [
+        "规划存在，无实现证据"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "phase.legacy.p14-p20"
+      ],
+      "acceptanceCriteria": [
+        "长篇自动创作"
+      ],
+      "deadCode": false,
+      "conflict": null,
+      "previousId": null,
+      "phase": "P21",
+      "statusBasis": "README 标注未来。"
+    },
+    {
+      "id": "phase.current",
+      "name": "当前阶段口径（冲突登记）",
+      "parentId": "phase",
+      "type": "issue",
+      "status": "DECISION_REQUIRED",
+      "confidence": "strong",
+      "evidence": [
+        "README.md:147",
+        "git log --oneline -3",
+        "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md:153"
+      ],
+      "files": [
+        "README.md",
+        "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md"
+      ],
+      "tests": [],
+      "gaps": [
+        "README 仍写 Current Phase=P13；实际工作树在 v3.1 Phase 4B.1/4C"
+      ],
+      "blockedBy": [],
+      "dependsOn": [
+        "phase.v31.4b1",
+        "phase.legacy.p4-p13"
+      ],
+      "acceptanceCriteria": [
+        "当前阶段唯一口径"
+      ],
+      "deadCode": false,
+      "conflict": {
+        "type": "doc_says_current_phase_p13_code_worktree_phase4b1",
+        "docReference": "README.md:147",
+        "actualState": "工作树实现 Phase 4B.1 ContextPack，并有 Phase 4C 草案",
+        "evidence": "git log --oneline -3; docs/planning/qianyan-phase4c-acceptance-criteria-draft.md"
+      },
+      "previousId": null,
+      "phase": null,
+      "statusBasis": "两套路线并存。"
+    }
+  ],
+  "conflicts": [
+    {
+      "nodeId": "product.information-architecture",
+      "type": "doc_says_undetermined_code_has_shell",
+      "docReference": "README.md:29-34 / direction §1.5",
+      "actualState": "Desktop 已实现三栏 shell",
+      "evidence": "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/Main.kt:220-230"
+    },
+    {
+      "nodeId": "architecture.author-intelligence",
+      "type": "doc_says_planned_code_implemented",
+      "docReference": "README.md:141-142",
+      "actualState": "author/decision 模块与测试已存在",
+      "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/author"
+    },
+    {
+      "nodeId": "feature.foreshadow",
+      "type": "doc_says_sealed_no_production_caller",
+      "docReference": "README.md:147 / status doc",
+      "actualState": "UseCase+测试存在；UI/生产调用链未确认",
+      "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/story/ForeshadowLifecycleUseCases.kt"
+    },
+    {
+      "nodeId": "feature.inspector-context",
+      "type": "doc_requires_task_snapshot_code_rebuilds",
+      "docReference": "addendum §J-6 / AC-35",
+      "actualState": "Inspector 每次 load 调用 ContextEngine.build 生成新 Pack",
+      "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/workspace/WorkspaceUseCases.kt:314-353"
+    },
+    {
+      "nodeId": "feature.inspector-task-context",
+      "type": "doc_says_required_code_not_implemented",
+      "docReference": "addendum §J-6.2 / AC-35",
+      "actualState": "无任务状态逻辑；ContextTab 只有通用 EmptyState",
+      "evidence": "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/workspace/ContextInspector.kt:195-225"
+    },
+    {
+      "nodeId": "feature.story-foundation",
+      "type": "doc_says_planned_code_implemented",
+      "docReference": "README.md:140",
+      "actualState": "foundation 模块/测试/UI 读取存在",
+      "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/foundation"
+    },
+    {
+      "nodeId": "feature.author-intelligence",
+      "type": "doc_says_planned_code_implemented",
+      "docReference": "README.md:142",
+      "actualState": "author/decision 后端与测试存在",
+      "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/author"
+    },
+    {
+      "nodeId": "feature.context-pack",
+      "type": "report_says_complete_audit_says_partial",
+      "docReference": "Phase 4B.1 Completion Report",
+      "actualState": "代码/测试存在，A/B 验收缺口未关闭",
+      "evidence": "docs/planning/qianyan-phase4c-acceptance-criteria-draft.md:129-146"
+    },
+    {
+      "nodeId": "phase.v31.4b1",
+      "type": "worktree_uncommitted_acceptance_pending",
+      "docReference": "Phase 4B.1 report",
+      "actualState": "代码/测试在工作树；A/B 验收未通过",
+      "evidence": "git status --short (12 M + 8 ??)"
+    },
+    {
+      "nodeId": "phase.legacy.p14-p20",
+      "type": "doc_says_planned_code_implemented",
+      "docReference": "README.md:140-143",
+      "actualState": "foundation/author 后端与测试存在",
+      "evidence": "application/src/main/kotlin/com/qianyan/application/usecase/foundation"
+    },
+    {
+      "nodeId": "phase.current",
+      "type": "doc_says_current_phase_p13_code_worktree_phase4b1",
+      "docReference": "README.md:147",
+      "actualState": "工作树实现 Phase 4B.1 ContextPack，并有 Phase 4C 草案",
+      "evidence": "git log --oneline -3; docs/planning/qianyan-phase4c-acceptance-criteria-draft.md"
+    }
+  ],
+  "unknowns": [
+    {
+      "nodeId": "architecture.dsh-runtime",
+      "name": "DSH Runtime",
+      "reason": "runtime/api、runtime/dsh 不在 settings；无当前生产调用链；产品动机不明"
+    },
+    {
+      "nodeId": "phase.v31.9",
+      "name": "v3.1 Phase 9 — DSH Runtime Adapter",
+      "reason": "DSH 不在 settings；陈旧 XML；无产品动机"
+    }
+  ],
+  "requiresUserAuthorization": [
+    "运行完整 ./gradlew test --continue --rerun-tasks 刷新测试 XML（本轮禁止构建/测试）",
+    "裁决 Phase 4B.1 A：Inspector 占位还是真实 ContextPack 子阶段",
+    "裁决 Phase 4B.1 B：J-1.1/J-2.1 是否生效；AC-30A A/B 数据前提",
+    "统一 README Current Phase 与 v3.1 Phase 4B.1 口径",
+    "确认 runtime/api、runtime/dsh 是否仍属项目范围"
+  ]
+}
