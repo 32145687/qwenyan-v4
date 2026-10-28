@@ -42,6 +42,7 @@ import com.qianyan.app.desktop.ui.CreationMessageRole
 import com.qianyan.app.desktop.ui.DesktopAppState
 import com.qianyan.app.desktop.ui.HLine
 import com.qianyan.app.desktop.ui.Workspace
+import com.qianyan.app.desktop.ui.convergenceOutcomeLabel
 import com.qianyan.app.desktop.ui.importTxtFromPicker
 import com.qianyan.app.desktop.ui.consumeClicks
 import com.qianyan.app.desktop.ui.shortcutLabel
@@ -219,6 +220,7 @@ private fun AgentResultCard(state: DesktopAppState) {
     val candidateLost = failureCode == NovelAgentErrorCodes.ARTIFACT_NOT_FOUND
     val approvedNotCommitted = failureCode == NovelAgentErrorCodes.CANDIDATE_APPROVED_NOT_COMMITTED
     val approvalState = result.approvalState
+    val commitId = result.commitId
     // 任务卡展示所属章节，避免用户在跨章节操作后误判。
     val taskChapterLabel = state.lastAgentRequest
         ?.activeChapterId
@@ -228,7 +230,7 @@ private fun AgentResultCard(state: DesktopAppState) {
                 ?.label
                 ?.takeIf { it.isNotBlank() }
         }
-    val visible = candidateLost || approvedNotCommitted ||
+    val visible = candidateLost || approvedNotCommitted || commitId != null ||
         approvalState == NovelAgentApprovalState.BRIDGED || approvalState == NovelAgentApprovalState.UNBRIDGED
     if (!visible) return
 
@@ -244,6 +246,8 @@ private fun AgentResultCard(state: DesktopAppState) {
             when {
                 candidateLost -> "候选已失效（可能因进程重启）：请重新发起任务。"
                 approvedNotCommitted -> "正式 Gate 已批准，但尚未提交完成；请在「正文」页重试批准收敛。"
+                commitId != null ->
+                    "已提交 Canonical（commit=${commitId.value}）；可执行只读收敛检查。"
                 approvalState == NovelAgentApprovalState.BRIDGED ->
                     "已进入正式审批：请在「正文」页对该章节的待确认提案执行批准或拒绝。"
                 else -> "未进入正式审批：${result.failure?.detail ?: "候选已保留"}。"
@@ -265,6 +269,9 @@ private fun AgentResultCard(state: DesktopAppState) {
                 approvedNotCommitted -> ActionButton("刷新任务状态", ActionLevel.SECONDARY, true) {
                     state.refreshAgentCandidate()
                 }
+                commitId != null -> ActionButton("收敛检查", ActionLevel.SECONDARY, !state.busy) {
+                    state.launchConvergenceReview()
+                }
                 approvalState == NovelAgentApprovalState.UNBRIDGED -> {
                     ActionButton("重试接入审批", ActionLevel.SECONDARY, true) { state.retryAgentBridge() }
                     ActionButton("丢弃候选", ActionLevel.TEXT, true) { state.discardAgentCandidate() }
@@ -276,6 +283,21 @@ private fun AgentResultCard(state: DesktopAppState) {
                 ) { openTaskChapter(state) }
             }
         }
+        state.lastConvergenceReview
+            ?.takeIf { it.sourceCommitId == commitId }
+            ?.let { review ->
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "收敛评审 · round ${review.round} · ${convergenceOutcomeLabel(review.outcome)}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.text2,
+                )
+                Text(
+                    "ERROR ${review.errorCount} / WARNING ${review.warningCount} · ${review.summary}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text,
+                )
+            }
         if (approvalState != NovelAgentApprovalState.NOT_REQUIRED && !candidateLost) {
             Spacer(Modifier.height(8.dp))
             Text(

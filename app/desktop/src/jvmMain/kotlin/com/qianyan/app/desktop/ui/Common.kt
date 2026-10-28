@@ -57,6 +57,7 @@ import com.qianyan.app.desktop.ui.theme.QianyanShapes
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.app.desktop.ui.theme.QianyanThemeMode
 import com.qianyan.app.desktop.ui.workspace.WorkspaceController
+import com.qianyan.application.usecase.agent.ConvergenceOutcome
 import com.qianyan.model.core.Novel
 import com.qianyan.model.NovelId
 import com.qianyan.model.VocabularyCandidateId
@@ -173,6 +174,9 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
      * 只作为 UI 协调上下文；正式审批事实仍以 ChapterWorkflow 投影为准。
      */
     var lastAgentRequest by mutableStateOf<com.qianyan.model.novelagent.NovelAgentRequest?>(null)
+
+    /** D-35 · 最近一次显式收敛评审结果（只读第二轮；不参与正式审批事实）。 */
+    var lastConvergenceReview by mutableStateOf<com.qianyan.application.usecase.agent.ConvergenceReviewResult?>(null)
 
     /** 设置（**弹窗**：模态浮层，不替换主工作区页面，关闭后页面与 Selection 不变）。 */
     var settingsOpen by mutableStateOf(false)
@@ -340,6 +344,7 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             activeChapterId = chapterId,
         )
         creationMessages = creationMessages + CreationMessage(CreationMessageRole.USER, intent)
+        lastConvergenceReview = null
         busy = true
         scope.launch {
             try {
@@ -383,6 +388,48 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
         val artifactId = lastAgentResult?.artifactId ?: return
         runAgentFollowUp {
             container.novelAgent.reject(request, artifactId, reason = "用户丢弃候选（非正式拒绝）")
+        }
+    }
+
+    /**
+     * D-35 · 显式收敛评审：仅当最近结果已有正式 Commit 时，启动一次只读 CharacterConsistency 第二轮。
+     * 不自动触发、不循环；结果只展示摘要，不产生 WorkingDraft / Artifact / Commit。
+     */
+    fun launchConvergenceReview() {
+        if (busy) return
+        val result = lastAgentResult ?: return
+        val commitId = result.commitId ?: return
+        val artifactId = result.artifactId ?: return
+        val request = lastAgentRequest ?: return
+        val chapterId = request.activeChapterId ?: return
+        val novel = novel ?: return
+        if (novel.projectId != request.projectId) {
+            toast("任务所属作品与当前作品不一致，无法收敛检查")
+            return
+        }
+        busy = true
+        scope.launch {
+            try {
+                val review = withContext(Dispatchers.IO) {
+                    container.convergenceReview.review(
+                        novelId = novel.novelId,
+                        variantId = request.activeVariantId,
+                        chapterId = chapterId,
+                        artifactId = artifactId,
+                    )
+                }
+                lastConvergenceReview = review
+                val summary = "outcome=${review.outcome.name}; error=${review.errorCount}; " +
+                    "warning=${review.warningCount}; ${review.summary}"
+                toast("收敛检查完成（commit=${commitId.value}）：$summary")
+            } catch (e: Exception) {
+                val message = "收敛检查失败：${e.message ?: e.javaClass.simpleName}"
+                creationMessages = creationMessages + CreationMessage(CreationMessageRole.ERROR, message)
+                toast(message)
+            } finally {
+                busy = false
+                refreshKey++
+            }
         }
     }
 
@@ -519,6 +566,7 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
         creationDraft = ""
         lastAgentResult = null
         lastAgentRequest = null
+        lastConvergenceReview = null
         status = StatusInfo()
     }
 }
@@ -1199,6 +1247,14 @@ fun preview(text: String, limit: Int = 60): String {
  * 真实数据里 Chapter.title 常自带「第 1 章 ·」前缀（导入与建章时的写法），
  * 而列表已有独立序号列、稿纸也有独立章节行 ⇒ 展示时去掉重复前缀。不匹配则原样返回。
  */
+/** T-8-E · 收敛结果四态文案：失败态单独成句，不复用"一致"措辞。 */
+fun convergenceOutcomeLabel(outcome: ConvergenceOutcome): String = when (outcome) {
+    ConvergenceOutcome.CONSISTENT -> "人物一致（无问题）"
+    ConvergenceOutcome.ISSUES_FOUND -> "发现人物一致性问题"
+    ConvergenceOutcome.INSUFFICIENT_EVIDENCE -> "证据不足，无法完成检查"
+    ConvergenceOutcome.REVIEW_FAILED -> "复审失败，未完成检查"
+}
+
 fun chapterTitleOnly(title: String): String {
     val trimmed = title.trim()
     val stripped = trimmed.replaceFirst(Regex("^第\\s*[0-9一二三四五六七八九十百零]+\\s*章\\s*[·・.、:：—\\-–]*\\s*"), "")

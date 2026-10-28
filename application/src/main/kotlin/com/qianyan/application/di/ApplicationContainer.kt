@@ -22,6 +22,7 @@ import com.qianyan.application.usecase.draft.WorkingDraftValidator
 import com.qianyan.application.usecase.canonical.CanonicalReadUseCases
 import com.qianyan.application.usecase.change.ChangeUseCases
 import com.qianyan.application.usecase.commit.CommitUseCases
+import com.qianyan.application.usecase.agent.ConvergenceReviewUseCase
 import com.qianyan.application.usecase.agent.NovelAgent
 import com.qianyan.application.usecase.index.ProjectIndexUseCases
 import com.qianyan.application.usecase.genre.GenreTaxonomyUseCases
@@ -428,6 +429,15 @@ class ApplicationContainer(
         contextPackStore = contextPackStore,
         errorMapper = errorMapper,
     )
+
+    /** D-35 · 显式收敛评审轮：仅对已 Commit 的 Artifact 启动一次只读 CharacterConsistency 第二轮。 */
+    val convergenceReview: ConvergenceReviewUseCase
+        get() = ConvergenceReviewUseCase(
+            projects = projects,
+            novelAgent = novelAgent,
+            commits = commits,
+            errorMapper = errorMapper,
+        )
 
     /**
      * I12 · Project Index（项目内容的**派生**索引：可定位 / 可搜索 / 可重建；第 12 阶段）。
