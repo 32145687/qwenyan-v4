@@ -11,6 +11,7 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.writing.DraftParser
 import com.qianyan.application.usecase.writing.DraftStructure
 import com.qianyan.application.usecase.writing.WritingException
+import com.qianyan.application.usecase.writing.planning.VocabularyLite
 import com.qianyan.model.AgentId
 import com.qianyan.model.agent.AgentContract
 import com.qianyan.model.spec.ValidationResult
@@ -48,7 +49,11 @@ class RevisionAgent(
      * 依据 [currentDraft] + [critique] 执行一次 Revision（同步，无网络除非装配方注入真实 Provider）。
      * 返回新 draftId、status=REVISED 的 [Draft]；失败抛类型化 [ApplicationException]。
      */
-    fun revise(currentDraft: Draft, critique: ValidationResult): Draft {
+    fun revise(
+        currentDraft: Draft,
+        critique: ValidationResult,
+        vocabulary: List<VocabularyLite> = emptyList(),
+    ): Draft {
         val structure = DraftStructure(
             draftId = java.util.UUID.randomUUID().toString(),
             novelId = currentDraft.novelId,
@@ -60,7 +65,7 @@ class RevisionAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(REVISION_AGENT, renderInput(currentDraft.draftId.value, currentDraft.content, critique))
+            val result = runtime.run(REVISION_AGENT, renderInput(currentDraft.draftId.value, currentDraft.content, critique, vocabulary))
             val raw = result.answer
                 ?: throw RevisionException.InvalidOutput("revision returned no answer")
             val parsed = parseRevisionDraft(raw, structure)
@@ -100,6 +105,7 @@ class RevisionAgent(
         content: String,
         critique: ValidationResult,
         novelId: com.qianyan.model.NovelId,
+        vocabulary: List<VocabularyLite> = emptyList(),
     ): String {
         val scaffold = DraftStructure(
             draftId = java.util.UUID.randomUUID().toString(),
@@ -112,7 +118,7 @@ class RevisionAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(REVISION_AGENT, renderInput(workingRef, content, critique))
+            val result = runtime.run(REVISION_AGENT, renderInput(workingRef, content, critique, vocabulary))
             val raw = result.answer
                 ?: throw RevisionException.InvalidOutput("revision returned no answer")
             parseRevisionDraft(raw, scaffold).content
@@ -143,7 +149,12 @@ class RevisionAgent(
         }
 
     /** 构造供 Revision LLM 使用的输入文本（原正文 + 评审意见 + 修订指令）。 */
-    private fun renderInput(sourceRef: String, content: String, critique: ValidationResult): String = buildString {
+    private fun renderInput(
+        sourceRef: String,
+        content: String,
+        critique: ValidationResult,
+        vocabulary: List<VocabularyLite>,
+    ): String = buildString {
         appendLine("【原草稿】$sourceRef")
         if (content.isNotBlank()) {
             appendLine(content.take(REVISION_INPUT_CONTENT_LIMIT))
@@ -160,10 +171,30 @@ class RevisionAgent(
             }
         }
 
+        if (vocabulary.isNotEmpty()) {
+            appendLine()
+            appendVocabularyPrompt(vocabulary)
+        }
+
         appendLine()
-        appendLine("请依据上述评审意见对【原草稿】进行修订，按 JSON 输出新正文：" +
-            "{\"content\":\"修订后的完整正文\"}")
+        if (vocabulary.isEmpty()) {
+            appendLine("请依据上述评审意见对【原草稿】进行修订，按 JSON 输出新正文：" +
+                "{\"content\":\"修订后的完整正文\"}")
+        } else {
+            appendLine("请依据上述评审意见对【原草稿】进行修订：优先使用规范词；不得机械替换作者原句。" +
+                "按 JSON 输出新正文：{\"content\":\"修订后的完整正文\"}")
+        }
     }.trimEnd()
+
+    private fun StringBuilder.appendVocabularyPrompt(vocabulary: List<VocabularyLite>) {
+        appendLine("【词库规范】")
+        vocabulary.take(VOCABULARY_PROMPT_LIMIT).forEach { entry ->
+            val aliases = entry.aliases.filter { it.isNotBlank() && it != entry.canonical }
+            val aliasText = if (aliases.isEmpty()) "" else "（别名：${aliases.joinToString("、")}）"
+            val replacementText = entry.replacement?.takeIf { it.isNotBlank() }?.let { " -> $it" }.orEmpty()
+            appendLine("- ${entry.canonical}$aliasText$replacementText")
+        }
+    }
 
     private val runtime: AgentRuntime = AgentRuntime(
         gateway = gateway,
@@ -181,5 +212,8 @@ class RevisionAgent(
 
         /** 修订输入原正文截断阈值（修订聚焦意见所指范围，不整章重排）。 */
         const val REVISION_INPUT_CONTENT_LIMIT: Int = 4000
+
+        /** D-38：词库 prompt 最多 50 条。 */
+        const val VOCABULARY_PROMPT_LIMIT: Int = 50
     }
 }

@@ -1,5 +1,6 @@
 package com.qianyan.application.usecase.agent
 
+import com.qianyan.model.log.AgentLogStatus
 import com.qianyan.model.novelagent.NovelAgentApprovalState
 import com.qianyan.model.novelagent.NovelAgentOutcome
 import com.qianyan.model.novelagent.NovelAgentPostRevisionFailureCodes
@@ -79,13 +80,21 @@ class PostRevisionReviewTest {
     @Test
     fun `v1 pass ends with exactly one critique and no post revision fields`() {
         val s = Scripted(listOf(PASS_JSON), revisionContent)
-        run(s) { _, _, result ->
+        run(s) { f, _, result ->
             assertEquals(NovelAgentOutcome.COMPLETED, result.outcome)
             assertEquals(0, assertNotNull(result.analysis).errorCount)
             assertNull(result.postRevisionAnalysis)
             assertNull(result.postRevisionCheckFailure)
             assertEquals(1, s.criticCalls, "无续步时只允许初次 critique")
             assertEquals(0, s.revisionCalls, "无续步时不得 Revision")
+
+            val sessionId = assertNotNull(result.sessionId)
+            assertTrue(
+                f.app.activities.listBySession(sessionId).none {
+                    it.kind == "REVIEW" && it.summary?.contains("复评") == true
+                },
+                "无续步时不得出现复评 Activity",
+            )
         }
     }
 
@@ -118,6 +127,22 @@ class PostRevisionReviewTest {
                 "复评后仍须进入正式人工 Gate",
             )
             assertEquals(HumanGateStatus.PENDING, f.app.workflowRepository.getGate(gateId)?.status)
+
+            val sessionId = assertNotNull(result.sessionId)
+            val postReview = assertNotNull(
+                f.app.activities.listBySession(sessionId).firstOrNull {
+                    it.kind == "REVIEW" && it.summary?.contains("复评") == true
+                },
+                "Activity 轨迹必须包含复评记录",
+            )
+            assertEquals(AgentLogStatus.COMPLETED, postReview.status, "复评成功必须完成态")
+            assertTrue(
+                result.activityIds.contains(postReview.activityId),
+                "Result 必须包含复评 Activity",
+            )
+            assertTrue(postReview.summary?.contains("passed=true") == true, postReview.summary)
+            assertTrue(postReview.summary?.contains("ERROR=0") == true, postReview.summary)
+            assertTrue(postReview.summary?.contains("issues=0") == true, postReview.summary)
         }
     }
 
@@ -168,6 +193,24 @@ class PostRevisionReviewTest {
                 "复评失败仍须进入人工 Gate",
             )
             assertEquals(HumanGateStatus.PENDING, f.app.workflowRepository.getGate(gateId)?.status)
+
+            val sessionId = assertNotNull(result.sessionId)
+            val failed = assertNotNull(
+                f.app.activities.listBySession(sessionId).firstOrNull {
+                    it.kind == "REVIEW" &&
+                        it.status == AgentLogStatus.FAILED &&
+                        it.summary?.contains("复评") == true
+                },
+                "复评失败必须在 Activity 轨迹留下失败记录",
+            )
+            assertTrue(
+                result.activityIds.contains(failed.activityId),
+                "Result 必须包含失败的复评 Activity",
+            )
+            assertTrue(
+                (failed.error ?: "").contains("复评失败：${NovelAgentPostRevisionFailureCodes.INVALID_OUTPUT}"),
+                "失败记录必须写稳定 code：summary=${failed.summary}, error=${failed.error}",
+            )
         }
     }
 

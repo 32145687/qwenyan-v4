@@ -324,7 +324,7 @@ class VocabularySource(private val entries: VocabularyRepository) : ContextSourc
 private val VocabularyEntryOrder = compareBy<VocabularyEntry>({ it.canonical }, { it.entryId.value })
 
 /** V2-①：NOVEL 基座 + VARIANT 同 canonical 覆盖；两集合均只取 APPROVED。 */
-private fun mergedApprovedEntries(
+internal fun mergedApprovedEntries(
     novelEntries: List<VocabularyEntry>,
     variantEntries: List<VocabularyEntry>,
 ): List<VocabularyEntry> {

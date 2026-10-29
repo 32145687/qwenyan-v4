@@ -5,8 +5,10 @@ import com.qianyan.application.error.ApplicationException
 import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.author.AuthorContextProjection
+import com.qianyan.application.usecase.context.mergedApprovedEntries
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
 import com.qianyan.model.NovelId
+import com.qianyan.model.VariantId
 import com.qianyan.model.context.ContextItem
 import com.qianyan.model.context.ContextPack
 import com.qianyan.model.context.ContextPayload
@@ -44,6 +46,33 @@ class PlanningContextAssembly(
     private val authorContextProjection: AuthorContextProjection,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
+
+    /**
+     * T-O38 · D-38：只读的 APPROVED 词库投影（Critic / Revision 共用）。
+     *
+     * 复用 ContextSources 的唯一合并规则：NOVEL 基座、VARIANT 同 canonical 覆盖、只 APPROVED、
+     * 按 canonical 确定性排序；不写库、不调用 LLM。
+     */
+    fun approvedVocabulary(novelId: NovelId, variantId: VariantId?): List<VocabularyLite> = guard {
+        val novelEntries = vocabularyRepository.findEntriesByNovel(novelId)
+        val entries = if (variantId == null) {
+            mergedApprovedEntries(novelEntries, emptyList())
+        } else {
+            val variant = novelRepository.getVariant(variantId)
+                ?: throw ApplicationException(
+                    ApplicationError.EntityNotFound("Variant 不存在: ${variantId.value}"),
+                )
+            if (variant.novelId != novelId) {
+                throw ApplicationException(
+                    ApplicationError.VariantMismatch(
+                        "Variant ${variantId.value} 不属于 Novel ${novelId.value}",
+                    ),
+                )
+            }
+            mergedApprovedEntries(novelEntries, vocabularyRepository.findEntriesByVariant(variantId))
+        }
+        entries.map { VocabularyLite(canonical = it.canonical, aliases = it.aliases, replacement = it.replacement) }
+    }
 
     /**
      * Phase 4B.1 正式入口：消费**同一个** `ContextPack`（由 `NovelAgent` 构建一次）。

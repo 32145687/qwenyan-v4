@@ -172,7 +172,8 @@ class DecisionPointAnalysisFollowUpTest {
             assertEquals(2, execute.size, "即使复评仍为 ERROR，也只能有 2 个 EXECUTE")
             assertTrue(execute[1].summary?.contains("续步") == true, "第二个 EXECUTE 必须是续步")
             assertTrue(execute[1].summary?.contains(CoreSkills.REWRITE_REVISION.skillId.value) == true)
-            assertTrue(activities.size <= 7, "Activity 数量必须有上限；实际=${activities.map { it.kind }}")
+            // T-O44：续步后新增一条 REVIEW「复评」Activity，上界由 7 调整为 8。
+            assertTrue(activities.size <= 8, "Activity 数量必须有上限；实际=${activities.map { it.kind }}")
             assertEquals(2, records.count { "StoryCriticAgent" in systemOf(it) }, "不得出现第三轮评审")
             assertEquals(1, records.count { "StoryRevisionAgent" in systemOf(it) }, "不得出现第二次 Revision")
         } finally {

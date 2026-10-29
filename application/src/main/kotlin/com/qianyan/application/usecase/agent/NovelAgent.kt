@@ -32,6 +32,7 @@ import com.qianyan.application.usecase.writing.planning.PlannerAgent
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.application.usecase.writing.planning.ResolvedContinuation
+import com.qianyan.application.usecase.writing.planning.VocabularyLite
 import com.qianyan.application.usecase.writing.revision.RevisionAgent
 import com.qianyan.model.ActivityId
 import com.qianyan.model.AgentId
@@ -298,7 +299,8 @@ class NovelAgent internal constructor(
                         )
                     }
                     // T-43：对修订稿再评审一次（复用同一 critic 实例）；失败不升级为任务失败，但显式标记。
-                    reviewRevisedContent((outcome as SkillOutcome.Draft).content, state)
+                    // T-O44：复评本身进入 Activity 轨迹；Activity 写入是 best-effort，不改变任务结局。
+                    reviewRevisedContent((outcome as SkillOutcome.Draft).content, sessionId, state)
                 }
 
                 is SkillOutcome.CharacterConsistency -> {
@@ -1136,9 +1138,11 @@ class NovelAgent internal constructor(
             ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "改写需要章节已有 Canonical 正文：${chapter.chapterId.value}")
         val current = reader.draft(baseDraftId)
             ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "Canonical Draft 不存在: ${baseDraftId.value}")
+        val vocabulary = planningContexts.approvedVocabulary(chapter.novelId, chapter.variantId)
+        state.reviewVocabulary = vocabulary
         // T-43：analysis 续步时复用初次 critique（同一基线），避免重复评审；其他入口仍按既有路径。
-        val critique = critiqueOverride ?: critic.critique(current)
-        val revised = rewriter.revise(current, critique)
+        val critique = critiqueOverride ?: critic.critique(current, vocabulary)
+        val revised = rewriter.revise(current, critique, vocabulary)
         return SkillOutcome.Draft(content = revised.content, baseDraftId = baseDraftId, chapterId = chapter.chapterId)
     }
 
@@ -1170,7 +1174,9 @@ class NovelAgent internal constructor(
             ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "分析需要章节已有 Canonical 正文：${chapter.chapterId.value}")
         val current = reader.draft(baseDraftId)
             ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "Canonical Draft 不存在: ${baseDraftId.value}")
-        val critique = critic.critique(current)
+        val vocabulary = planningContexts.approvedVocabulary(chapter.novelId, chapter.variantId)
+        state.reviewVocabulary = vocabulary
+        val critique = critic.critique(current, vocabulary)
         return SkillOutcome.Analysis(
             passed = critique.passed,
             issueCount = critique.issues.size,
@@ -1185,21 +1191,42 @@ class NovelAgent internal constructor(
      * 有界：本方法只被调用一次；复评即使仍 ERROR 也只记录结果，不触发第二轮 Revision。
      * 复评失败（非法输出 / 调用失败）不升级为任务失败：修订稿仍进入 REVIEW/Gate；
      * 但必须写入 [NovelAgentResult.postRevisionCheckFailure]，禁止静默。
+     *
+     * T-O44：复评的 Activity 记录是 best-effort——start/complete/fail 任一失败都不得改变任务结局。
      */
-    private fun reviewRevisedContent(content: String, state: RunState) {
+    private fun reviewRevisedContent(content: String, sessionId: AgentSessionId, state: RunState) {
+        val activityId = runCatching {
+            activities.start(sessionId, OrchestrationPhase.REVIEW.name, "复评修订稿").activityId
+        }.getOrNull()
+        if (activityId != null) state.activityIds += activityId
         try {
-            val critique = critic.critiqueContent(content)
+            val critique = critic.critiqueContent(content, vocabulary = state.reviewVocabulary)
+            val errorCount = critique.issues.count { it.severity == IssueSeverity.ERROR }
             state.postRevisionAnalysis = NovelAgentAnalysisSummary(
                 passed = critique.passed,
                 issueCount = critique.issues.size,
-                errorCount = critique.issues.count { it.severity == IssueSeverity.ERROR },
+                errorCount = errorCount,
             )
             state.postRevisionCheckFailure = null
+            if (activityId != null) {
+                runCatching {
+                    activities.complete(
+                        activityId,
+                        "复评完成：passed=${critique.passed} / ERROR=$errorCount / issues=${critique.issues.size}",
+                    )
+                }
+            }
         } catch (e: ApplicationException) {
             state.postRevisionAnalysis = null
             state.postRevisionCheckFailure = when (e.error) {
                 is ApplicationError.InvalidCritiqueOutput -> NovelAgentPostRevisionFailureCodes.INVALID_OUTPUT
                 else -> NovelAgentPostRevisionFailureCodes.CALL_FAILED
+            }
+            if (activityId != null) {
+                runCatching {
+                    // Activity.fail 的文本落在 error 字段；不新增/不改 Activity 模型。
+                    activities.fail(activityId, "复评失败：${state.postRevisionCheckFailure}")
+                }
             }
         }
     }
@@ -1558,6 +1585,7 @@ class NovelAgent internal constructor(
         var planChapterId: ChapterId? = null
         var characterConsistency: CharacterConsistencyResult? = null
         var analysis: NovelAgentAnalysisSummary? = null
+        var reviewVocabulary: List<VocabularyLite> = emptyList()
         var postRevisionAnalysis: NovelAgentAnalysisSummary? = null
         var postRevisionCheckFailure: String? = null
         var followUpSkillId: SkillId? = null
