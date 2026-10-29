@@ -41,6 +41,10 @@ import com.qianyan.model.workflow.WorkflowHumanGateId
 import com.qianyan.model.workflow.WorkflowId
 import com.qianyan.model.workflow.WorkflowKind
 import com.qianyan.model.workflow.WorkflowStatus
+import com.qianyan.model.workflow.WorkflowStep
+import com.qianyan.model.workflow.WorkflowStepId
+import com.qianyan.model.workflow.WorkflowStepPhase
+import com.qianyan.model.workflow.WorkflowStepStatus
 import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftFormat
 import com.qianyan.model.writing.DraftStatus
@@ -217,8 +221,12 @@ internal fun countRows(handle: QianyanDbHandle, table: String): Long =
 
 /**
  * 经**既有** I2 Human Gate 造一个已批准的提交凭据（I14 不参与提交，只读取 I10 历史）。
+ *
+ * D8：Gate 绑定 WorkflowStep；该 Workflow 同时带匹配 [WorkspaceWorld.artifactId] 的 WRITING step。
  */
 internal fun approvedGate(f: WorkspaceFixture, w: WorkspaceWorld, gateId: String = "gate-i14-approved"): CommitApproval {
+    val artifact = f.app.changes.get(w.artifactId)
+    val target = artifact.change.target
     val workflowId = WorkflowId("wf-i14-$gateId")
     f.app.workflows.createWorkflow(
         Workflow(
@@ -226,14 +234,41 @@ internal fun approvedGate(f: WorkspaceFixture, w: WorkspaceWorld, gateId: String
             novelId = w.novelId,
             kind = WorkflowKind.WRITE_NOVEL,
             status = WorkflowStatus.RUNNING,
+            activeChapterId = target.chapterId,
             createdAt = WORKSPACE_FIXED_INSTANT,
             updatedAt = WORKSPACE_FIXED_INSTANT,
         ),
     )
+    f.app.workflows.createStep(
+        WorkflowStep(
+            stepId = WorkflowStepId("step-$workflowId-working"),
+            workflowId = workflowId,
+            chapterId = target.chapterId,
+            phase = WorkflowStepPhase.WRITING,
+            logicalStepKey = "$workflowId:${target.chapterId.value}:WRITING",
+            status = WorkflowStepStatus.COMPLETED,
+            resultReference = com.qianyan.application.usecase.writing.WritingSnapshot.WORKING_REF_PREFIX +
+                artifact.workingDraftId.value,
+            createdAt = WORKSPACE_FIXED_INSTANT,
+            completedAt = WORKSPACE_FIXED_INSTANT,
+        ),
+    )
+    val confirmStep = WorkflowStep(
+        stepId = WorkflowStepId("step-$workflowId-confirmation"),
+        workflowId = workflowId,
+        chapterId = target.chapterId,
+        phase = WorkflowStepPhase.CONFIRMATION,
+        logicalStepKey = "$workflowId:${target.chapterId.value}:CONFIRMATION",
+        status = WorkflowStepStatus.COMPLETED,
+        createdAt = WORKSPACE_FIXED_INSTANT,
+        completedAt = WORKSPACE_FIXED_INSTANT,
+    )
+    f.app.workflows.createStep(confirmStep)
     f.app.workflows.createGate(
         WorkflowHumanGate(
             gateId = WorkflowHumanGateId(gateId),
             workflowId = workflowId,
+            stepId = confirmStep.stepId,
             gateKey = "i14:$gateId",
             status = HumanGateStatus.RESOLVED,
             decision = HumanDecision.APPROVED,
@@ -242,5 +277,5 @@ internal fun approvedGate(f: WorkspaceFixture, w: WorkspaceWorld, gateId: String
             resolvedBy = "user",
         ),
     )
-    return CommitApproval(WorkflowHumanGateId(gateId), allowUnboundGate = true)
+    return CommitApproval(WorkflowHumanGateId(gateId))
 }

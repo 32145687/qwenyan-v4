@@ -636,9 +636,9 @@ class CommitUseCases(
      *
      * D8 冻结语义：
      *  - **Gate 复用检查（getByGate）对一切 Gate 生效**，绝不因缺 `stepId` 被跳过；
-     *  - **缺少 WorkflowStep 绑定的 Gate 不得用于正式 Commit**：默认 `GATE_TARGET_MISMATCH` 拒绝；
-     *    仅当调用方经 [CommitApproval.allowUnboundGate] **显式**声明兼容（仅限测试 / 历史兼容场景）时放行，
-     *    且放行前仍须通过复用检查——生产校验要求不降低。
+     *  - **缺少 WorkflowStep 绑定的 Gate 一律不得用于正式 Commit**：`GATE_TARGET_MISMATCH` 拒绝，
+     *    不存在任何运行时豁免；
+     *    且拒绝前仍先执行复用检查——生产校验要求不降低。
      */
     private fun requireApprovalBinding(approval: CommitApproval, artifact: ChangeArtifact) {
         val gate = guard { workflows.getGate(approval.gateId) }
@@ -646,7 +646,7 @@ class CommitUseCases(
                 CommitErrorCodes.HUMAN_APPROVAL_REQUIRED,
                 "批准 Gate 不存在: ${approval.gateId.value}",
             )
-        // Gate 复用检查：**先于**任何兼容分支（D8：不因缺 stepId 被跳过）。
+        // Gate 复用检查：**先于**任何绑定分支（D8：不因缺 stepId 被跳过）。
         val alreadyCommitted = guard { history.getByGate(approval.gateId) }
         if (alreadyCommitted != null && alreadyCommitted.artifactId != artifact.artifactId) {
             throw gateMismatch(
@@ -655,18 +655,13 @@ class CommitUseCases(
                 "该 Gate 已用于提交另一个 Artifact（${alreadyCommitted.artifactId?.value}）",
             )
         }
-        // D8：无 Step 绑定 ⇒ 不得用于正式 Commit（生产默认拒绝；显式兼容豁免仅限非生产场景）。
+        // D8：无 Step 绑定 ⇒ 无条件拒绝，不得用于正式 Commit。
         val step = gate.stepId?.let { guard { workflows.getStep(it) } }
-        if (step == null) {
-            if (!approval.allowUnboundGate) {
-                throw gateMismatch(
-                    approval,
-                    artifact,
-                    "Gate 缺少 WorkflowStep 绑定，不得用于正式 Commit（P0-3B D8）",
-                )
-            }
-            return
-        }
+            ?: throw gateMismatch(
+                approval,
+                artifact,
+                "Gate 缺少 WorkflowStep 绑定，不得用于正式 Commit（P0-3B D8）",
+            )
         val target = artifact.change.target
         if (gate.workflowId == null || step.workflowId != gate.workflowId) {
             throw gateMismatch(approval, artifact, "Gate 与 Step 的 Workflow 绑定不一致")

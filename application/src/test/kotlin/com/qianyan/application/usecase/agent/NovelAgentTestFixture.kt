@@ -22,6 +22,11 @@ import com.qianyan.model.workflow.WorkflowHumanGateId
 import com.qianyan.model.workflow.WorkflowId
 import com.qianyan.model.workflow.WorkflowKind
 import com.qianyan.model.workflow.WorkflowStatus
+import com.qianyan.model.workflow.WorkflowStep
+import com.qianyan.model.workflow.WorkflowStepId
+import com.qianyan.model.workflow.WorkflowStepPhase
+import com.qianyan.model.workflow.WorkflowStepStatus
+import com.qianyan.model.workingdraft.WorkingDraftId
 import com.qianyan.model.writing.Draft
 import com.qianyan.model.writing.DraftFormat
 import com.qianyan.model.writing.DraftStatus
@@ -135,10 +140,15 @@ internal fun request(
     preferredSkillId = preferredSkillId,
 )
 
-/** 既有 Human Gate 的批准凭据（复用 I2 既有记录形状；**不新建 Gate 体系**）。 */
+/**
+ * 既有 Human Gate 的批准凭据（复用 I2 既有记录形状；**不新建 Gate 体系**）。
+ *
+ * D8：Gate 必须绑定 CONFIRMATION step；Workflow 同时带匹配 [workingDraftId] 的 WRITING step。
+ */
 internal fun approvedCommitGate(
     f: NovelAgentFixture,
     w: NovelWorld,
+    workingDraftId: WorkingDraftId,
     gateId: String = "gate-i11-approved",
     status: HumanGateStatus = HumanGateStatus.RESOLVED,
     decision: HumanDecision = HumanDecision.APPROVED,
@@ -150,14 +160,41 @@ internal fun approvedCommitGate(
             novelId = w.novelId,
             kind = WorkflowKind.WRITE_NOVEL,
             status = WorkflowStatus.RUNNING,
+            activeChapterId = w.chapterId,
             createdAt = FIXED_INSTANT,
             updatedAt = FIXED_INSTANT,
         ),
     )
+    f.app.workflows.createStep(
+        WorkflowStep(
+            stepId = WorkflowStepId("step-$workflowId-working"),
+            workflowId = workflowId,
+            chapterId = w.chapterId,
+            phase = WorkflowStepPhase.WRITING,
+            logicalStepKey = "$workflowId:${w.chapterId.value}:WRITING",
+            status = WorkflowStepStatus.COMPLETED,
+            resultReference = com.qianyan.application.usecase.writing.WritingSnapshot.WORKING_REF_PREFIX +
+                workingDraftId.value,
+            createdAt = FIXED_INSTANT,
+            completedAt = FIXED_INSTANT,
+        ),
+    )
+    val confirmStep = WorkflowStep(
+        stepId = WorkflowStepId("step-$workflowId-confirmation"),
+        workflowId = workflowId,
+        chapterId = w.chapterId,
+        phase = WorkflowStepPhase.CONFIRMATION,
+        logicalStepKey = "$workflowId:${w.chapterId.value}:CONFIRMATION",
+        status = WorkflowStepStatus.COMPLETED,
+        createdAt = FIXED_INSTANT,
+        completedAt = FIXED_INSTANT,
+    )
+    f.app.workflows.createStep(confirmStep)
     f.app.workflows.createGate(
         WorkflowHumanGate(
             gateId = WorkflowHumanGateId(gateId),
             workflowId = workflowId,
+            stepId = confirmStep.stepId,
             gateKey = "i11:$gateId",
             status = status,
             decision = decision,
@@ -166,7 +203,7 @@ internal fun approvedCommitGate(
             resolvedBy = if (status == HumanGateStatus.RESOLVED) "user" else null,
         ),
     )
-    return CommitApproval(WorkflowHumanGateId(gateId), allowUnboundGate = true)
+    return CommitApproval(WorkflowHumanGateId(gateId))
 }
 
 /** 用自定义 SkillRegistry 装配 NovelAgent（用于 disabled Skill / 无匹配 / allowedTools 边界测试）。 */

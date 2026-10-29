@@ -34,6 +34,7 @@ import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -128,16 +129,15 @@ class CommitGateBindingTest {
     /* ---------------- P0-3B D8：无 stepId Gate ---------------- */
 
     @Test
-    fun `gate without a step cannot be used for production commit by default`() {
+    fun `gate without a step cannot be used for production commit`() {
         val f = commitFixture()
         try {
             val w = commitWorld(f)
-            // 夹具创建的是一个无 stepId 的已批准 Gate（兼容凭据 allowUnboundGate=true，但本测试刻意不使用该开关）
-            val stepless = approvedGate(f, w, gateId = "gate-no-step-d8")
+            val stepless = steplessApprovedGate(f, w, gateId = "gate-no-step-d8")
             val artifact = artifactFor(f, w, "无 step 候选正文")
 
             val error = assertFailsWith<ApplicationException> {
-                f.app.commits.commit(w.projectId, artifact.artifactId, CommitApproval(stepless.gateId))
+                f.app.commits.commit(w.projectId, artifact.artifactId, stepless)
             }
             assertTrue(error.message.orEmpty().contains(CommitErrorCodes.GATE_TARGET_MISMATCH), error.message.orEmpty())
             assertTrue(f.app.commits.history(w.projectId).isEmpty())
@@ -147,16 +147,17 @@ class CommitGateBindingTest {
     }
 
     @Test
-    fun `explicit unbound compatibility still enforces gate reuse`() {
+    fun `bound gate cannot commit a second artifact`() {
         val f = commitFixture()
         try {
             val w = commitWorld(f)
-            val approval = approvedGate(f, w, gateId = "gate-no-step-reuse")
-            val first = f.app.commits.commit(w.projectId, artifactFor(f, w, "第一份候选").artifactId, approval)
-            val second = artifactFor(f, w, "第二份候选", baseDraftId = first.resultingDraftId)
+            val firstArtifact = artifactFor(f, w, "第一份候选")
+            val approval = approvedGate(f, w, gateId = "gate-bound-reuse")
+            val first = f.app.commits.commit(w.projectId, firstArtifact.artifactId, approval)
+            val secondArtifact = artifactFor(f, w, "第二份候选", baseDraftId = first.resultingDraftId)
 
             val error = assertFailsWith<ApplicationException> {
-                f.app.commits.commit(w.projectId, second.artifactId, approval)
+                f.app.commits.commit(w.projectId, secondArtifact.artifactId, approval)
             }
             assertTrue(error.message.orEmpty().contains(CommitErrorCodes.GATE_TARGET_MISMATCH), error.message.orEmpty())
             assertEquals(1, f.app.commits.history(w.projectId).size, "同一 Gate 不得提交第二个 Artifact")
@@ -253,7 +254,7 @@ class CommitGateBindingTest {
     }
 
     @Test
-    fun `production sources never opt into unbound gate compatibility`() {
+    fun `production sources have no unbound gate compatibility surface`() {
         val roots = listOf(
             File("src/main/kotlin"),
             File("../core/model/src/main/kotlin"),
@@ -262,7 +263,8 @@ class CommitGateBindingTest {
         ).filter { it.exists() }
         assertTrue(roots.isNotEmpty(), "必须能定位生产源码目录")
 
-        val namedFlag = Regex("""allowUnboundGate\s*=\s*true""")
+        val forbidden = "allow" + "UnboundGate"
+        val namedFlag = Regex(Regex.escape(forbidden))
         val positionalFlag = Regex("""CommitApproval\([^)]*,\s*true\s*\)""")
         val offenders = roots.flatMap { root ->
             root.walkTopDown()
@@ -270,19 +272,16 @@ class CommitGateBindingTest {
                 .flatMap { file ->
                     val code = file.readText()
                     buildList {
-                        if (namedFlag.containsMatchIn(code)) add("${file.path}: allowUnboundGate=true")
+                        if (namedFlag.containsMatchIn(code)) add("${file.path}: unbound gate flag")
                         if (positionalFlag.containsMatchIn(code)) add("${file.path}: positional unbound gate")
                     }.asSequence()
                 }
                 .toList()
         }
-        assertEquals(emptyList(), offenders, "生产代码不得启用无 Step Gate 兼容开关（D8）")
+        assertEquals(emptyList(), offenders, "生产代码不得保留无 Step Gate 兼容面（D8）")
 
         val model = File("../core/model/src/main/kotlin/com/qianyan/model/commit/CommitModels.kt").readText()
-        assertTrue(
-            "allowUnboundGate: Boolean = false" in model,
-            "CommitApproval 的兼容开关默认值必须为 false",
-        )
+        assertFalse(forbidden in model, "CommitApproval 不得再包含兼容开关")
     }
 
     /** 把既有生产 Gate 标记为已批准（不执行提交），用于绑定校验的负向测试。 */

@@ -347,7 +347,12 @@ class NovelAgentRunTest {
         val afterReject = f.app.novelAgent.resume(
             request(w, "继续写第一章", sessionId = sessionId),
             artifactId,
-            approvedCommitGate(f, w, gateId = "gate-i11-after-reject"),
+            approvedCommitGate(
+                f,
+                w,
+                workingDraftId = assertNotNull(waiting.workingDraftId),
+                gateId = "gate-i11-after-reject",
+            ),
         )
         assertEquals(NovelAgentOutcome.CANCELLED, afterReject.outcome)
         assertEquals(NovelAgentErrorCodes.SESSION_CANCELLED, afterReject.failure?.code)
@@ -382,9 +387,8 @@ class NovelAgentRunTest {
     fun `stale artifact cannot be committed after canonical changed`() {
         val f = novelAgentFixture()
         val w = seedNovelWorld(f)
-        val approval = approvedCommitGate(f, w)
-
         val waiting = f.app.novelAgent.run(request(w, "继续写第一章"))
+        val approval = approvedCommitGate(f, w, workingDraftId = assertNotNull(waiting.workingDraftId))
         // Artifact 就绪后 Canonical 被其他操作修改 → 禁止静默覆盖
         f.app.writerUseCases.saveContent(w.canonicalDraftId, "第一章旧正文（他人改写）。")
 
@@ -434,8 +438,8 @@ class NovelAgentRunTest {
     fun `resume rejects artifact of another project`() {
         val f = novelAgentFixture()
         val w = seedNovelWorld(f)
-        val approval = approvedCommitGate(f, w)
         val waiting = f.app.novelAgent.run(request(w, "继续写第一章"))
+        val approval = approvedCommitGate(f, w, workingDraftId = assertNotNull(waiting.workingDraftId))
 
         val otherProject = f.app.projects.createProject(title = "书B")
         val otherRequest = request(w, "继续写第一章", sessionId = waiting.sessionId)

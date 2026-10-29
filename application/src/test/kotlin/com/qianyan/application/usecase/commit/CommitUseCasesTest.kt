@@ -99,7 +99,7 @@ class CommitUseCasesTest {
     fun `commit writes first canonical draft when chapter has no base draft`() {
         val f = commitFixture()
         val w = commitWorld(f)
-        val approval = approvedGate(f, w)
+        val approval = approvedGate(f, w, chapterId = w.chapter1)
         val artifact = artifactFor(f, w, "B 第一章初稿", baseDraftId = null, chapterId = w.chapter1)
 
         val result = f.app.commits.commit(w.projectId, artifact.artifactId, approval)

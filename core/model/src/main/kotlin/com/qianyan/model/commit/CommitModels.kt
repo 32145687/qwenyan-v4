@@ -184,13 +184,6 @@ data class CommitHistoryEntry(
 @Serializable
 data class CommitApproval(
     val gateId: WorkflowHumanGateId,
-    /**
-     * P0-3B D8 · 显式兼容开关（**仅限测试 / 历史兼容场景**）：
-     * 无 WorkflowStep 绑定的 Gate 一律不得用于正式 Commit；置 true 表示调用方明确知晓并
-     * 接受"无 Step 绑定 Gate"的兼容语义（生产装配路径恒为 false，不得置 true）。
-     * Gate 复用检查（同 Gate 不得提交不同 Artifact）不受本开关影响，始终执行。
-     */
-    val allowUnboundGate: Boolean = false,
 )
 
 /**
