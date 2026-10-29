@@ -121,8 +121,10 @@ import com.qianyan.model.workspace.WorkspaceSelection
  * 顶栏只保留当前作品、项目切换、命令面板与设置；不显示品牌文字标识。
  */
 fun main() = application {
-    val graph = DesktopGraph.create()
-    val state = DesktopAppState(graph)
+    // 必须 remember：根作用域会因 state.novel 变化而重组合，未 remember 会在每次重组合时
+    // 重建 DesktopGraph（新 DB 连接）与 DesktopAppState（novel 归零），表现为「打开作品无效」。
+    val graph = remember { DesktopGraph.create() }
+    val state = remember { DesktopAppState(graph) }
     // 原生标题栏不显示品牌，只显示当前作品；无作品时显示中性空态。
     // 保留系统窗口按钮与缩放，避免 undecorated 窗口失去原生 resize / 最小化能力。
     val emptyWindowIcon = remember { BitmapPainter(ImageBitmap(1, 1)) }

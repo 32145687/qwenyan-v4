@@ -579,8 +579,13 @@ fun openNovel(state: DesktopAppState, novelId: NovelId) {
     }
     state.io(
         then = { novel ->
-            state.applyNovelSwitch(novel)
-            novel?.let { state.toast("已打开《${it.title}》") }
+            // 读取失败必须显式告知：不得静默 applyNovelSwitch(null) 让用户以为点击无效。
+            if (novel == null) {
+                state.toast("打开作品失败：作品不存在或已被删除")
+            } else {
+                state.applyNovelSwitch(novel)
+                state.toast("已打开《${novel.title}》")
+            }
         },
     ) {
         state.container.projects.openProject(novelId)
