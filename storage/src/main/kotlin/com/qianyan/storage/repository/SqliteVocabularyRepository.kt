@@ -31,8 +31,8 @@ class SqliteVocabularyRepository(private val db: QianyanDb) : VocabularyReposito
         )
     }
 
-    override fun findEntriesByVariant(variantId: VariantId): List<VocabularyEntry> =
-        db.vocabularyQueries.selectEntriesByVariant(variantId.value)
+    override fun findEntriesByVariant(novelId: NovelId, variantId: VariantId): List<VocabularyEntry> =
+        db.vocabularyQueries.selectEntriesByVariant(variantId.value, novelId.value)
             .executeAsList().map { StorageMappers.dbVocabularyEntry(it) }
 
     override fun findEntriesByNovel(novelId: NovelId): List<VocabularyEntry> =

@@ -24,8 +24,8 @@ interface VocabularyRepository {
     /** 保存词条（scopeLevel / variantId 原样持久化）。 */
     fun saveEntry(entry: VocabularyEntry)
 
-    /** 查询某 Variant 的词条。 */
-    fun findEntriesByVariant(variantId: VariantId): List<VocabularyEntry>
+    /** 查询某 Novel 下某 Variant 的词条；Variant 不属于该 Novel 时不返回（跨作品隔离）。 */
+    fun findEntriesByVariant(novelId: NovelId, variantId: VariantId): List<VocabularyEntry>
 
     /** 查询某 Novel（scope=NOVEL）的词条。 */
     fun findEntriesByNovel(novelId: NovelId): List<VocabularyEntry>

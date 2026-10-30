@@ -310,7 +310,7 @@ class VocabularySource(private val entries: VocabularyRepository) : ContextSourc
         val scoped = if (scope.activeVariantId != null) {
             mergedApprovedEntries(
                 novelEntries = entries.findEntriesByNovel(scope.novelId),
-                variantEntries = entries.findEntriesByVariant(scope.activeVariantId),
+                variantEntries = entries.findEntriesByVariant(scope.novelId, scope.activeVariantId),
             )
         } else {
             entries.findEntriesByNovel(scope.novelId)

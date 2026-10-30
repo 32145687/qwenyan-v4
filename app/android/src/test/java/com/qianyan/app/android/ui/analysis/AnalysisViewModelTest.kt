@@ -159,7 +159,7 @@ class AnalysisViewModelTest {
             candidates.filter { it.novelId == novelId }
 
         override fun saveEntry(entry: VocabularyEntry) = TODO()
-        override fun findEntriesByVariant(variantId: VariantId): List<VocabularyEntry> = TODO()
+        override fun findEntriesByVariant(novelId: NovelId, variantId: VariantId): List<VocabularyEntry> = TODO()
         override fun findEntriesByNovel(novelId: NovelId): List<VocabularyEntry> = TODO()
         override fun saveRule(rule: VocabularyRule) = TODO()
     }

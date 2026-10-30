@@ -69,7 +69,7 @@ class PlanningContextAssembly(
                     ),
                 )
             }
-            mergedApprovedEntries(novelEntries, vocabularyRepository.findEntriesByVariant(variantId))
+            mergedApprovedEntries(novelEntries, vocabularyRepository.findEntriesByVariant(novelId, variantId))
         }
         entries.map { VocabularyLite(canonical = it.canonical, aliases = it.aliases, replacement = it.replacement) }
     }
@@ -242,7 +242,7 @@ class PlanningContextAssembly(
         // V2-①：正式 VocabularySource 已合并 NOVEL 基座；本 legacy 无生产调用方，
         // 保留二选一旧语义以避免改动死代码（见 NoPackAssemblyGuardTest）。
         val vocabulary = if (variantId != null) {
-            guard { vocabularyRepository.findEntriesByVariant(variantId) }
+            guard { vocabularyRepository.findEntriesByVariant(novel.novelId, variantId) }
         } else {
             guard { vocabularyRepository.findEntriesByNovel(novel.novelId) }
         }

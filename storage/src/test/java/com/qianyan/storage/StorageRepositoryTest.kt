@@ -393,17 +393,31 @@ class StorageRepositoryTest {
         assertNotNull(repo.getNovel(NovelId("mig-novel")))
     }
 
-    /* 附加：Vocabulary 最小持久化 + 按 scope 查询 */
+    /* 附加：Vocabulary 最小持久化 + 按 scope 查询（T-O39：Variant 读取校验 Novel 归属） */
     @Test
     fun `vocabulary saves and queries by scope`() {
         val h = handle()
+        val novels = SqliteNovelRepository(h.db)
+        val novel = makeNovel("vocab-novel")
+        novels.createOriginal(novel)
+        novels.createVariant(makeVariant("var-voc", novel.novelId))
+
         val v = SqliteVocabularyRepository(h.db)
         val vocabId = VocabularyId(randomId("vocab"))
-        v.saveVocabulary(Vocabulary(vocabularyId = vocabId, scopeLevel = VocabularyScopeLevel.VARIANT, variantId = VariantId("var-voc"), name = "词库"))
+        v.saveVocabulary(
+            Vocabulary(
+                vocabularyId = vocabId,
+                novelId = novel.novelId,
+                scopeLevel = VocabularyScopeLevel.VARIANT,
+                variantId = VariantId("var-voc"),
+                name = "词库",
+            ),
+        )
         v.saveEntry(
             VocabularyEntry(
                 entryId = VocabularyEntryId(randomId("entry")),
                 vocabularyId = vocabId,
+                novelId = novel.novelId,
                 variantId = VariantId("var-voc"),
                 scopeLevel = VocabularyScopeLevel.VARIANT,
                 canonical = "灵石",
@@ -413,11 +427,55 @@ class StorageRepositoryTest {
         )
         val byScope = v.findVocabularyByScope(VocabularyScopeLevel.VARIANT)
         assertTrue(byScope.any { it.vocabularyId == vocabId })
-        val entries = v.findEntriesByVariant(VariantId("var-voc"))
+        val entries = v.findEntriesByVariant(novel.novelId, VariantId("var-voc"))
         assertEquals(1, entries.size)
         assertEquals("灵石", entries[0].canonical)
         assertEquals(listOf("灵晶", "石"), entries[0].aliases)
         assertEquals("星石", entries[0].replacement)
+    }
+
+    /**
+     * T-O39：按 Variant 读取词条必须同时校验该 Variant 属于指定 Novel。
+     * 跨作品（另一 Novel + 同一 VariantId）不得读到词条；不得以 null novelId 绕过（签名为非空）。
+     */
+    @Test
+    fun `variant vocabulary reads are isolated by novel ownership`() {
+        val h = handle()
+        val novels = SqliteNovelRepository(h.db)
+        val novelA = makeNovel("vocab-owner-a")
+        val novelB = makeNovel("vocab-owner-b")
+        novels.createOriginal(novelA)
+        novels.createOriginal(novelB)
+        novels.createVariant(makeVariant("var-of-a", novelA.novelId))
+
+        val v = SqliteVocabularyRepository(h.db)
+        val vocabId = VocabularyId(randomId("vocab-a"))
+        v.saveVocabulary(
+            Vocabulary(
+                vocabularyId = vocabId,
+                novelId = novelA.novelId,
+                variantId = VariantId("var-of-a"),
+                scopeLevel = VocabularyScopeLevel.VARIANT,
+                name = "A 的词库",
+            ),
+        )
+        v.saveEntry(
+            VocabularyEntry(
+                entryId = VocabularyEntryId(randomId("entry-a")),
+                vocabularyId = vocabId,
+                novelId = novelA.novelId,
+                variantId = VariantId("var-of-a"),
+                scopeLevel = VocabularyScopeLevel.VARIANT,
+                canonical = "灵石",
+            ),
+        )
+
+        val sameNovel = v.findEntriesByVariant(novelA.novelId, VariantId("var-of-a"))
+        assertEquals(1, sameNovel.size, "同 Novel 的 Variant 应命中")
+        assertEquals("灵石", sameNovel.single().canonical)
+
+        val crossNovel = v.findEntriesByVariant(novelB.novelId, VariantId("var-of-a"))
+        assertTrue(crossNovel.isEmpty(), "跨作品读取必须返回空：Variant var-of-a 不属于 Novel B")
     }
 
     /* 附加：Memory 最小持久化 */

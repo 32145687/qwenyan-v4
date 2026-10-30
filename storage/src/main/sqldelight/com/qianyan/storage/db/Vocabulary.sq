@@ -10,7 +10,9 @@ INSERT INTO VocabularyEntry(entry_id, vocabulary_id, novel_id, variant_id, scope
 VALUES (:entry_id, :vocabulary_id, :novel_id, :variant_id, :scope_level, :canonical, :aliases, :type, :replacement, :status);
 
 selectEntriesByVariant:
-SELECT * FROM VocabularyEntry WHERE (variant_id IS :variant_id);
+SELECT e.* FROM VocabularyEntry e
+JOIN NovelVariant v ON e.variant_id = v.variant_id
+WHERE e.variant_id = :variant_id AND v.novel_id = :novel_id;
 
 selectEntriesByNovel:
 SELECT * FROM VocabularyEntry WHERE variant_id IS NULL AND novel_id IS :novel_id;
