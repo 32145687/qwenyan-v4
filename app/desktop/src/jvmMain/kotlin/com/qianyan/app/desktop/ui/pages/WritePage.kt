@@ -56,6 +56,7 @@ import com.qianyan.app.desktop.ui.theme.QianyanShapes
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.app.desktop.ui.theme.qianyanProseStyle
 import com.qianyan.app.desktop.ui.wordCount
+import com.qianyan.app.desktop.ui.write.CANDIDATE_LOST_MESSAGE
 import com.qianyan.app.desktop.ui.write.RewriteDialog
 import com.qianyan.app.desktop.ui.write.WriterController
 import com.qianyan.app.desktop.ui.write.WriterUiState
@@ -389,10 +390,15 @@ private fun ChapterBar(
             )
 
             if (ui.waitingForUser) {
-                ActionButton("通过确认", ActionLevel.PRIMARY, ui.canApprove, onApprove)
-                Spacer(Modifier.width(8.dp))
-                // 拒绝只结束当前 Gate；Canonical 不变，旧 Gate 不复用。
-                ActionButton("拒绝", ActionLevel.TEXT, ui.canReject, onReject)
+                if (ui.candidateLost) {
+                    // 候选已失效：批准没有对象；拒绝只结束当前 Gate、不依赖候选，仍可用。
+                    ActionButton("拒绝失效提案", ActionLevel.SECONDARY, ui.canReject, onReject)
+                } else {
+                    ActionButton("通过确认", ActionLevel.PRIMARY, ui.canApprove, onApprove)
+                    Spacer(Modifier.width(8.dp))
+                    // 拒绝只结束当前 Gate；Canonical 不变，旧 Gate 不复用。
+                    ActionButton("拒绝", ActionLevel.TEXT, ui.canReject, onReject)
+                }
             } else {
                 ActionButton("保存", ActionLevel.SECONDARY, ui.canSave, onSave)
                 Spacer(Modifier.width(8.dp))
@@ -417,6 +423,10 @@ private fun ChapterBar(
                     MenuEntry("历史") { setMenuOpen(false); state.nav = Workspace.HISTORY }
                     MenuEntry("导出当前章节为 TXT…") { setMenuOpen(false); onExport() }
                     MenuEntry("定稿确认") { setMenuOpen(false); onConfirmFinal() }
+                    // 只有 Gate 已关闭时才引导去 Agent 重新发起；PENDING Gate 未关闭时会被 Gate 阻塞。
+                    if (!ui.waitingForUser) {
+                        MenuEntry("去 Agent 重新发起") { setMenuOpen(false); state.nav = Workspace.CREATE }
+                    }
                     MenuPending("自动保存 · 已开启", "停止输入 1.2 秒后写入当前 Draft（待审候选不会自动保存）")
                     MenuSeparator()
                     // 未接入的收尾动作：写明接入点，不放假按钮
@@ -432,6 +442,14 @@ private fun ChapterBar(
                 Text("无法完成操作", style = MaterialTheme.typography.labelSmall, color = palette.del)
                 Spacer(Modifier.width(10.dp))
                 Text(ui.error ?: "", style = MaterialTheme.typography.bodySmall, color = palette.text2, maxLines = 2)
+            }
+        } else if (ui.candidateLost) {
+            Row(Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp)) {
+                Text(
+                    CANDIDATE_LOST_MESSAGE,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text2,
+                )
             }
         } else if (ui.waitingForUser) {
             Row(Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp)) {

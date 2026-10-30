@@ -63,6 +63,7 @@ import com.qianyan.model.NovelId
 import com.qianyan.model.VocabularyCandidateId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -126,6 +127,9 @@ data class StatusInfo(
 class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
 
     val scope = CoroutineScope(Dispatchers.Main)
+
+    /** 当前 toast 的自动清除任务：同一时刻只允许一个，旧任务不得清掉新消息。 */
+    private var toastJob: Job? = null
 
     /** Workspace（当前对象 + Inspector 三 Tab 的 UI 会话态）。 */
     val workspace = WorkspaceController(this)
@@ -253,8 +257,10 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     }
 
     fun toast(msg: String) {
+        // 取消上一次的清除任务：连续触发同一文案时，旧计时器不得把新 toast 提前清掉。
+        toastJob?.cancel()
         toast = msg
-        scope.launch {
+        toastJob = scope.launch {
             kotlinx.coroutines.delay(3200)
             if (toast == msg) toast = null
         }

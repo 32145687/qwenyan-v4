@@ -92,9 +92,18 @@ data class WriterUiState(
     /** 待审期间不再发起新的改写（必须先批准或拒绝当前候选）。 */
     val canRewrite: Boolean get() = isLoaded && draftId != null && !busy && !waitingForUser
 
-    /** HITL：仅当 Workflow 确实停在人工门时可用（不绕过、不自动批准）。 */
-    val canApprove: Boolean get() = isLoaded && waitingForUser && !busy
+    /**
+     * 候选已失效：Workflow 仍停在人工门，但待审工作产物不存在（WorkingDraft 只存在进程内存，
+     * 重启后必然丢失）。此时批准没有决议对象；拒绝只结束当前 Gate、不依赖候选，仍可用。
+     */
+    val candidateLost: Boolean get() = isLoaded && waitingForUser && pendingProposal == null
 
-    /** HITL：拒绝当前待决候选（幂等；Canonical 不变）。 */
+    /** HITL：仅当 Workflow 确实停在人工门**且候选仍在**时可用（不绕过、不自动批准）。 */
+    val canApprove: Boolean get() = isLoaded && waitingForUser && pendingProposal != null && !busy
+
+    /** HITL：拒绝当前待决 Gate（幂等；Canonical 不变）；不依赖候选产物，失效候选也可关闭 Gate。 */
     val canReject: Boolean get() = isLoaded && waitingForUser && !busy
 }
+
+/** 候选工作产物丢失（典型：进程重启）时的唯一用户文案（正文页 / 控制器错误提示共用）。 */
+internal const val CANDIDATE_LOST_MESSAGE: String = "候选已失效（可能因进程重启）：请重新发起任务。"

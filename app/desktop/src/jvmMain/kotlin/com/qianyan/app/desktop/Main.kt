@@ -65,6 +65,7 @@ import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.zIndex
 import com.qianyan.app.desktop.di.DesktopGraph
 import com.qianyan.app.desktop.ui.ActionButton
 import com.qianyan.app.desktop.ui.ActionLevel
@@ -298,22 +299,6 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
             StatusBar(state)
         }
 
-        /* ---------------- 浮层：Toast ---------------- */
-        state.toast?.let { msg ->
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-                Text(
-                    msg,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.text,
-                    modifier = Modifier.padding(bottom = 40.dp)
-                        .clip(RoundedCornerShape(QianyanShapes.r3))
-                        .background(palette.raised)
-                        .consumeClicks()
-                        .padding(horizontal = 12.dp, vertical = 7.dp),
-                )
-            }
-        }
-
         /* ---------------- 浮层：命令面板 ---------------- */
         if (state.paletteOpen) CommandPalette(state)
 
@@ -340,6 +325,22 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
         /* ---------------- 浮层：Provider 设置 ---------------- */
         if (state.providerSettingsOpen) {
             ProviderSettingsDialog(state.graph) { state.providerSettingsOpen = false }
+        }
+
+        /* ---------------- 浮层：Toast（最终前景，压在所有浮层之上） ---------------- */
+        state.toast?.let { msg ->
+            Box(Modifier.fillMaxSize().zIndex(1f), contentAlignment = Alignment.BottomCenter) {
+                Text(
+                    msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text,
+                    modifier = Modifier.padding(bottom = 40.dp)
+                        .clip(RoundedCornerShape(QianyanShapes.r3))
+                        .background(palette.raised)
+                        .consumeClicks()
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                )
+            }
         }
     }
 }
