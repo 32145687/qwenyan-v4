@@ -1,10 +1,21 @@
 package com.qianyan.application.usecase.vocabulary
 
+import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
+import com.qianyan.model.BaseNovelId
 import com.qianyan.model.NovelId
+import com.qianyan.model.ProjectId
+import com.qianyan.model.ProjectSource
+import com.qianyan.model.ProjectStatus
+import com.qianyan.model.VariantId
+import com.qianyan.model.VariantScope
 import com.qianyan.model.VocabularyCandidateId
 import com.qianyan.model.VocabularyEntryId
 import com.qianyan.model.VocabularyId
+import com.qianyan.model.core.Novel
+import com.qianyan.model.core.NovelVariant
+import com.qianyan.model.core.VariantStatus
+import com.qianyan.model.vocabulary.Vocabulary
 import com.qianyan.model.vocabulary.VocabularyCandidate
 import com.qianyan.model.vocabulary.VocabularyCandidateSource
 import com.qianyan.model.vocabulary.VocabularyCandidateStatus
@@ -13,6 +24,8 @@ import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.model.vocabulary.VocabularyEntryType
 import com.qianyan.model.vocabulary.VocabularyScopeLevel
 import com.qianyan.storage.db.QianyanDbFactory
+import com.qianyan.storage.repository.NovelRepository
+import com.qianyan.storage.repository.SqliteNovelRepository
 import com.qianyan.storage.repository.SqliteVocabularyRepository
 import com.qianyan.storage.repository.VocabularyRepository
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
@@ -20,6 +33,7 @@ import kotlinx.datetime.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -34,13 +48,17 @@ class VocabularyConfirmationTest {
     private val novelId = NovelId("n1")
     private val vocabularyId = VocabularyId("novel-vocab-n1")
 
+    /** T-O39b：saveEntry 的 variant 归属校验需要真实 NovelRepository。 */
+    private lateinit var novels: NovelRepository
+
     private fun setup(): Pair<VocabularyUseCases, VocabularyRepository> {
         val db = QianyanDbFactory.open(JdbcSqliteDriver.IN_MEMORY).db
         val repo = SqliteVocabularyRepository(db)
-        val uc = VocabularyUseCases(repo, com.qianyan.application.error.ErrorMapper)
+        novels = SqliteNovelRepository(db)
+        val uc = VocabularyUseCases(repo, novels, com.qianyan.application.error.ErrorMapper)
         // FK：先建词库容器，候选/词条才能落库
         repo.saveVocabulary(
-            com.qianyan.model.vocabulary.Vocabulary(
+            Vocabulary(
                 vocabularyId = vocabularyId,
                 novelId = novelId,
                 scopeLevel = VocabularyScopeLevel.NOVEL,
@@ -49,6 +67,30 @@ class VocabularyConfirmationTest {
         )
         return uc to repo
     }
+
+    private fun novel(id: String) = Novel(
+        novelId = NovelId(id),
+        projectId = ProjectId("proj-$id"),
+        title = "作品 $id",
+        source = ProjectSource.ORIGINAL_NOVEL,
+        genre = emptyList(),
+        synopsis = "",
+        scope = VariantScope.ORIGINAL,
+        status = ProjectStatus.DRAFT,
+        createdAt = now,
+        updatedAt = now,
+    )
+
+    private fun variant(id: String, owner: NovelId) = NovelVariant(
+        variantId = VariantId(id),
+        novelId = owner,
+        baseNovelId = BaseNovelId(owner.value),
+        projectId = ProjectId("proj-${owner.value}"),
+        name = "改线",
+        status = VariantStatus.DRAFT,
+        createdAt = now,
+        updatedAt = now,
+    )
 
     private fun candidate(id: String, canonical: String): VocabularyCandidate = VocabularyCandidate(
         candidateId = VocabularyCandidateId(id),
@@ -178,4 +220,115 @@ class VocabularyConfirmationTest {
         assertEquals(setOf("灵石", "丹田"), entries.map { it.canonical }.toSet())
         assertNotEquals(entries[0].entryId, entries[1].entryId, "不同候选生成不同词条")
     }
+
+    // ================= T-O39b · VARIANT 词条写入归属校验 =================
+
+    @Test
+    fun `variant entry saves when variant belongs to novel`() {
+        val (uc, repo) = setup()
+        val owner = NovelId("entry-owner")
+        novels.createOriginal(novel(owner.value))
+        novels.createVariant(variant("var-owner", owner))
+        val vocabId = VocabularyId("var-vocab")
+        repo.saveVocabulary(
+            Vocabulary(vocabId, owner, VariantId("var-owner"), VocabularyScopeLevel.VARIANT, "VARIANT词库"),
+        )
+
+        uc.saveEntry(entry("variant-ok", vocabId, owner, VariantId("var-owner")))
+
+        val entries = repo.findEntriesByVariant(owner, VariantId("var-owner"))
+        assertEquals(1, entries.size)
+        assertEquals("灵石", entries.single().canonical)
+    }
+
+    @Test
+    fun `cross novel variant entry is rejected without persisting`() {
+        val (uc, repo) = setup()
+        val owner = NovelId("owner-a")
+        val other = NovelId("owner-b")
+        novels.createOriginal(novel(owner.value))
+        novels.createOriginal(novel(other.value))
+        novels.createVariant(variant("var-a", owner))
+        val vocabId = VocabularyId("var-vocab-cross")
+        repo.saveVocabulary(
+            Vocabulary(vocabId, other, VariantId("var-a"), VocabularyScopeLevel.VARIANT, "VARIANT词库"),
+        )
+
+        val ex = assertFailsWith<ApplicationException> {
+            uc.saveEntry(entry("cross-1", vocabId, other, VariantId("var-a")))
+        }
+
+        assertIs<ApplicationError.VariantMismatch>(ex.error)
+        assertTrue(repo.findEntriesByVariant(owner, VariantId("var-a")).isEmpty(), "跨作品写入不得落库")
+        assertTrue(repo.findEntriesByVariant(other, VariantId("var-a")).isEmpty())
+    }
+
+    @Test
+    fun `variant entry with missing variant is rejected`() {
+        val (uc, _) = setup()
+
+        val ex = assertFailsWith<ApplicationException> {
+            uc.saveEntry(entry("missing-var", vocabularyId, novelId, VariantId("var-missing")))
+        }
+
+        assertIs<ApplicationError.EntityNotFound>(ex.error)
+    }
+
+    @Test
+    fun `variant entry without novelId is rejected`() {
+        val (uc, _) = setup()
+
+        val ex = assertFailsWith<ApplicationException> {
+            uc.saveEntry(entry("no-novel", vocabularyId, null, VariantId("var-any")))
+        }
+
+        assertIs<ApplicationError.InvalidOperation>(ex.error)
+    }
+
+    @Test
+    fun `confirm candidate with cross novel suggested entry is rejected`() {
+        val (uc, repo) = setup()
+        val owner = NovelId("confirm-owner")
+        val other = NovelId("confirm-other")
+        novels.createOriginal(novel(owner.value))
+        novels.createOriginal(novel(other.value))
+        novels.createVariant(variant("var-confirm", owner))
+
+        val base = candidate("c-cross", "灵石")
+        repo.saveCandidate(
+            base.copy(
+                suggested = base.suggested.copy(
+                    novelId = other,
+                    variantId = VariantId("var-confirm"),
+                    scopeLevel = VocabularyScopeLevel.VARIANT,
+                ),
+            ),
+        )
+
+        val ex = assertFailsWith<ApplicationException> {
+            uc.confirmCandidate(VocabularyCandidateId("c-cross"), novelId)
+        }
+
+        assertIs<ApplicationError.VariantMismatch>(ex.error)
+        assertEquals(
+            VocabularyCandidateStatus.PENDING,
+            repo.findCandidatesByNovel(novelId).first { it.candidateId.value == "c-cross" }.status,
+            "校验失败不得推进候选状态",
+        )
+        assertTrue(repo.findEntriesByVariant(owner, VariantId("var-confirm")).isEmpty(), "跨作品候选不得写入正式词条")
+    }
+
+    private fun entry(
+        id: String,
+        vocabId: VocabularyId,
+        owner: NovelId?,
+        variantId: VariantId?,
+    ) = VocabularyEntry(
+        entryId = VocabularyEntryId(id),
+        vocabularyId = vocabId,
+        novelId = owner,
+        variantId = variantId,
+        scopeLevel = if (variantId == null) VocabularyScopeLevel.NOVEL else VocabularyScopeLevel.VARIANT,
+        canonical = "灵石",
+    )
 }

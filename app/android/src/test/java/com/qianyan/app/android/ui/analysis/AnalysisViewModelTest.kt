@@ -198,7 +198,7 @@ class AnalysisViewModelTest {
         // 先导入一条 TXT：生成 Original Novel + 绑定 document（Analysis 前置数据）。
         val out = txts.importTxtAsOriginal(TxtSource(validText.toByteArray(), "novel.txt"), title = "测试小说")
         val novel = novelRepo.getNovel(out.novelId) ?: error("导入应创建 Novel")
-        val vocabularies = VocabularyUseCases(vocabRepo, ErrorMapper)
+        val vocabularies = VocabularyUseCases(vocabRepo, novelRepo, ErrorMapper)
         val analysis = AnalysisUseCases(txtRepo, vocabRepo, AnalysisInputBuilder, gateway, ErrorMapper)
         return AnalysisViewModel(analysis, vocabularies, txts, novel, dispatcher)
     }

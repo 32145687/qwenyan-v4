@@ -13,6 +13,7 @@ import com.qianyan.model.vocabulary.VocabularyCandidateStatus
 import com.qianyan.model.vocabulary.VocabularyEntry
 import com.qianyan.model.vocabulary.VocabularyEntryStatus
 import com.qianyan.model.vocabulary.VocabularyScopeLevel
+import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.VocabularyRepository
 
 /**
@@ -26,14 +27,25 @@ import com.qianyan.storage.repository.VocabularyRepository
  */
 class VocabularyUseCases(
     private val repo: VocabularyRepository,
+    private val novelRepository: NovelRepository,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
     /** SaveVocabulary：保存一个词库容器。 */
     fun saveVocabulary(vocabulary: Vocabulary): Unit = guard { repo.saveVocabulary(vocabulary) }
 
-    /** SaveVocabularyEntry：保存一条词条（连同其作用域信息）。 */
-    fun saveEntry(entry: VocabularyEntry): Unit = guard { repo.saveEntry(entry) }
+    /**
+     * SaveVocabularyEntry：保存一条词条（连同其作用域信息）。
+     *
+     * 应用层守卫（O-39b）：VARIANT 词条必须携带 novelId，且 Variant 属于该 Novel；
+     * NOVEL/GLOBAL 词条（variantId=null）保持原行为。
+     * 注：storage 的 [VocabularyRepository.saveEntry] 仍是底层写原语；Schema 未加
+     * `(novel_id, variant_id)` 外键，直接调用仓储仍可绕过本守卫（写侧 FK 残留）。
+     */
+    fun saveEntry(entry: VocabularyEntry): Unit = guard {
+        requireVariantOwnership(entry)
+        repo.saveEntry(entry)
+    }
 
     /** QueryVocabulary：按作用域层级查询词库。 */
     fun query(scopeLevel: VocabularyScopeLevel): List<Vocabulary> = guard { repo.findVocabularyByScope(scopeLevel) }
@@ -80,7 +92,8 @@ class VocabularyUseCases(
         val duplicate = guard { repo.findEntriesByNovel(novelId) }
             .any { it.vocabularyId == entry.vocabularyId && it.canonical == entry.canonical }
         if (!duplicate) {
-            guard { repo.saveEntry(entry) }
+            // 统一走本类 saveEntry：confirm 写入同样受 variant 归属校验，不得绕过。
+            saveEntry(entry)
         }
         val approved = candidate.copy(status = VocabularyCandidateStatus.APPROVED)
         guard { repo.updateCandidateStatus(candidateId, VocabularyCandidateStatus.APPROVED) }
@@ -127,6 +140,22 @@ class VocabularyUseCases(
     }
 
     // ================= internal =================
+
+    /** VARIANT 词条的归属守卫：novelId 必填，Variant 必须存在且属于该 Novel。 */
+    private fun requireVariantOwnership(entry: VocabularyEntry) {
+        val variantId = entry.variantId ?: return
+        val novelId = entry.novelId
+            ?: throw ApplicationException(
+                ApplicationError.InvalidOperation("VARIANT 词条必须带 novelId: ${entry.entryId.value}"),
+            )
+        val variant = novelRepository.getVariant(variantId)
+            ?: throw ApplicationException(ApplicationError.EntityNotFound("Variant 不存在: ${variantId.value}"))
+        if (variant.novelId != novelId) {
+            throw ApplicationException(
+                ApplicationError.VariantMismatch("Variant ${variantId.value} 不属于 Novel ${novelId.value}"),
+            )
+        }
+    }
 
     private fun requireCandidate(candidateId: VocabularyCandidateId, novelId: NovelId): VocabularyCandidate =
         guard { repo.findCandidatesByNovel(novelId) }

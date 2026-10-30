@@ -515,7 +515,7 @@ class ApplicationContainer(
     /** P14-A Genre Taxonomy（受控目录 + 确定性校验；Confirmed-Genre 写入见 BLOCKER 说明）。 */
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
     val overrides: OverrideUseCases get() = OverrideUseCases(novelRepository, errorMapper)
-    val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, errorMapper)
+    val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, novelRepository, errorMapper)
     val memories: MemoryUseCases get() = MemoryUseCases(memoryRepository, errorMapper)
     /**
      * P5 演进 + Phase 1 follow-up F1 闭环装配：导入成功后立即初始化 Canonical（分阶段、独立事务；

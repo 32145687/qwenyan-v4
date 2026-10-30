@@ -163,17 +163,32 @@ class ApplicationIntegrationTest {
         assertTrue(app.vocabularies.query(VocabularyScopeLevel.VARIANT).none { it.vocabularyId == vocabId })
     }
 
-    /* 5b. Vocabulary 词条保存 */
+    /* 5b. Vocabulary 词条保存（T-O39b：VARIANT 词条需真实 Variant + novelId） */
     @Test
     fun `vocabulary entry save`() {
         val app = container()
+        val novelId = app.novels.createOriginal(title = "词库归属作品")
+        val variantId = VariantId("var-v")
+        app.novels.createVariant(
+            context = VariantContext(baseNovelId = BaseNovelId(novelId.value), variantId = variantId),
+            name = "改线",
+            variantId = variantId,
+        )
         val vocabId = com.qianyan.model.VocabularyId("vocab-2")
-        app.vocabularies.saveVocabulary(Vocabulary(vocabularyId = vocabId, scopeLevel = VocabularyScopeLevel.VARIANT))
+        app.vocabularies.saveVocabulary(
+            Vocabulary(
+                vocabularyId = vocabId,
+                novelId = novelId,
+                variantId = variantId,
+                scopeLevel = VocabularyScopeLevel.VARIANT,
+            ),
+        )
         app.vocabularies.saveEntry(
             VocabularyEntry(
                 entryId = com.qianyan.model.VocabularyEntryId("entry-1"),
                 vocabularyId = vocabId,
-                variantId = VariantId("var-v"),
+                novelId = novelId,
+                variantId = variantId,
                 scopeLevel = VocabularyScopeLevel.VARIANT,
                 canonical = "灵石",
                 replacement = "星石",
