@@ -263,6 +263,8 @@ class DesktopWriterTest {
         assertFalse(second.waitingForUser, "重复批准必须幂等：不得重新进入等待人工确认，也不得新建闸门")
 
         // ③ 继续推进：不得再次命中同一个 gate，也不得再产生新的待确认闸门
+        // T-O48：决议成功后有 500ms 生成防抖窗口；等待窗口结束再推进（防抖不是永久禁用）。
+        Thread.sleep(600)
         controller.continueWriting()
         val afterAdvance = c.workflowFacade.getChapterProgress(chapterId)
         assertFalse(afterAdvance.waitingForUser, "批准后再推进不得重新停在同一人工门")

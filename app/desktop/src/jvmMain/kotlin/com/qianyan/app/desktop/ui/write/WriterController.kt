@@ -46,9 +46,15 @@ class WriterController(
     private val variantId: VariantId? = null,
     /** 正文页开启：编辑停顿后自动保存到现有 Draft（测试默认关闭）。 */
     private val autoSave: Boolean = false,
+    /** 单调时钟（毫秒），用于 Gate 决议防抖；测试可注入。 */
+    private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
 ) {
 
     private var autoSaveJob: kotlinx.coroutines.Job? = null
+
+    /** 决议防抖截止时间：阻止同一双击的第二击穿透到生成类动作。 */
+    private var decisionCooldownUntil = 0L
+    private var decisionCooldownJob: kotlinx.coroutines.Job? = null
 
     private val chapterId: ChapterId get() = chapter.chapterId
 
@@ -151,7 +157,10 @@ class WriterController(
                 withContext(ioDispatcher) { workflow.approve(chapterId) }
                 readContext()
             }
-                .onSuccess { loaded -> _uiState.update { it.applyContext(loaded).copy(isApproving = false) } }
+                .onSuccess { loaded ->
+                    startDecisionCooldown()
+                    _uiState.update { it.applyContext(loaded).copy(isApproving = false) }
+                }
                 .onFailure { e -> _uiState.update { it.copy(isApproving = false, error = messageFor(e)) } }
         }
     }
@@ -168,13 +177,20 @@ class WriterController(
                 withContext(ioDispatcher) { workflow.reject(chapterId) }
                 readContext()
             }
-                .onSuccess { loaded -> _uiState.update { it.applyContext(loaded).copy(isRejecting = false) } }
+                .onSuccess { loaded ->
+                    startDecisionCooldown()
+                    _uiState.update { it.applyContext(loaded).copy(isRejecting = false) }
+                }
                 .onFailure { e -> _uiState.update { it.copy(isRejecting = false, error = messageFor(e)) } }
         }
     }
 
     /** 执行一次 AI 操作：先置过程态（UI 本地提示，非业务状态机），完成后以真实投影覆盖。 */
     private fun generate(transient: WriterTaskStatus, block: () -> Unit) {
+        // 同一双击的第二击可能落在刚切换出的「继续写 / 让 Qianyan 修改」上：
+        // 决议防抖窗口内直接忽略，不触达 gateway / 不 advance。
+        if (decisionCooldownActive()) return
+        if (_uiState.value.decisionLocked) _uiState.update { it.copy(decisionLocked = false) }
         if (!_uiState.value.canGenerate) return
         _uiState.update { it.copy(isGenerating = true, error = null, taskStatus = transient) }
         scope.launch {
@@ -188,6 +204,20 @@ class WriterController(
                 .onFailure { e -> _uiState.update { it.copy(isGenerating = false, error = messageFor(e)) } }
         }
     }
+
+    /** Gate 决议成功后的防抖：锁生成类动作 500ms，到点自动解锁（不涉及保存 / 审批链）。 */
+    private fun startDecisionCooldown() {
+        decisionCooldownUntil = nowMillis() + DECISION_COOLDOWN_MS
+        decisionCooldownJob?.cancel()
+        _uiState.update { it.copy(decisionLocked = true) }
+        decisionCooldownJob = scope.launch {
+            kotlinx.coroutines.delay(DECISION_COOLDOWN_MS)
+            decisionCooldownUntil = 0L
+            _uiState.update { it.copy(decisionLocked = false) }
+        }
+    }
+
+    private fun decisionCooldownActive(): Boolean = nowMillis() < decisionCooldownUntil
 
     /** 用户层上下文（Draft + 阶段）+ Workflow 进度（人工门 / 修订计数）；只读、不推进状态。 */
     private fun readContext(): LoadedContext {
@@ -217,6 +247,11 @@ class WriterController(
         val waitingForUser: Boolean,
         val revisionCount: Int,
     )
+
+    private companion object {
+        /** 与双击间隔（通常 <150ms）相比留足余量；只防穿透，不做业务节流。 */
+        const val DECISION_COOLDOWN_MS = 500L
+    }
 }
 
 /** [ApplicationError] → 用户可读文案（不泄露底层细节）。 */

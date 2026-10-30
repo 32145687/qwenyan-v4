@@ -71,6 +71,11 @@ data class WriterUiState(
     val isGenerating: Boolean = false,
     val isApproving: Boolean = false,
     val isRejecting: Boolean = false,
+    /**
+     * Gate 决议成功后的短时防抖锁：阻止同一次双击的第二击穿透到「继续写 / 让 Qianyan 修改」。
+     * 只锁生成类动作，不影响保存 / 只读。
+     */
+    val decisionLocked: Boolean = false,
 ) {
     val hasDraft: Boolean get() = draftId != null
 
@@ -87,10 +92,11 @@ data class WriterUiState(
      */
     val canSave: Boolean get() = isLoaded && draftId != null && !busy && !waitingForUser
 
-    val canGenerate: Boolean get() = isLoaded && !busy
+    /** 决议防抖窗口内禁用生成类动作；保存不受影响。 */
+    val canGenerate: Boolean get() = isLoaded && !busy && !decisionLocked
 
-    /** 待审期间不再发起新的改写（必须先批准或拒绝当前候选）。 */
-    val canRewrite: Boolean get() = isLoaded && draftId != null && !busy && !waitingForUser
+    /** 待审期间不再发起新的改写（必须先批准或拒绝当前候选）；决议防抖窗口内同样禁用。 */
+    val canRewrite: Boolean get() = isLoaded && draftId != null && !busy && !waitingForUser && !decisionLocked
 
     /**
      * 候选已失效：Workflow 仍停在人工门，但待审工作产物不存在（WorkingDraft 只存在进程内存，
