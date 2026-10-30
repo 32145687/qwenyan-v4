@@ -1,6 +1,6 @@
 # Qianyan 任务树（Living Task Tree）
 
-> 唯一任务状态源。最后更新：2026-10-27。
+> 唯一任务状态源。最后更新：2026-10-31。
 > 本文件由规划层维护；执行层只读，不得修改。
 > 状态词：`DONE` / `PENDING_GUI` / `PARTIAL` / `BLOCKED` / `NOT_STARTED` / `DEFERRED` / `PAUSED`。
 > `DONE` = 实现 + 自动化验收 + 适用时真实生产 caller；GUI / 端到端未验另标 `PENDING_GUI`。
@@ -9,11 +9,11 @@
 
 ## 0. 当前焦点
 
-- 当前单元：**无进行中单元**；下一步待选：**G5 提交 T-43 本批 + push** / T-7-2 GUI 验收
-- 阻塞：无；Phase 7 仅剩 T-7-2（PENDING_GUI）
-- 已完成：Phase 4/5/6/8 DONE（8=GATE_PASS）；远端 `cfff011` + 本地 2 未推；T-43（D-37）已实施待提交；词库线；T-7-1/T-7-3/T-42；T-8 全系；W1；G1–G4
-- 并行决策：T-7-2（GUI，暂停）、O-37/38/39（需产品契约）、O-44（低优先）
-- 仓库快照：HEAD `5237033`，领先 2（未 push）；工作区 **5 项**（T-43：3 M + 1 ??，另加本文件 M）
+- 当前单元：**T-G12 任务树文档批**；之后 T-O48 手工 G8
+- 阻塞：T-O48 真实双击未验证（需桌面解锁）；O-37 需新契约（Rule 执行语义 + 创建/读取路径）；提交/推送需用户逐条授权
+- 已完成：Phase 4/5/6/8 DONE（8=GATE_PASS）；T-O39b DONE（T-G11 `c80e2e8`）；T-O48 代码/测试（T-G9 `a56b04b`）；T-43（D-37）、T-O44、T-D8、T-O38、T-O45、T-O47、T-O39（读侧）、T-G6/T-G7/T-G8/T-G10/T-G11/T-G9、T-LEGACY、G5、T-PUSH-2/T-PUSH-3；词库线；T-7-1/T-7-3/T-42；T-8 全系；W1；G1–G5；**5 个原始提交已 push（7af66c5 = 远端）**
+- 并行决策：T-O48（PARTIAL，待手动 G8）、T-O39b（DONE，Schema FK 残留）、T-7-2（PARTIAL）、O-37（需契约）、O-39b（Schema FK）
+- 仓库快照：HEAD `a56b04b`，`origin/feature/novel-ide` = `7af66c5`，ahead **2**；工作区 **1 项**（本文件 M）；fallback `D:/qwenyan-v4/qianyan-v4-recovery-clone`（d9aa385 + 36 项）；恢复包 `C:/Users/ZhuanZ1/Documents/qianyan-original-20261030/`
 
 ## 1. 阶段总览
 
@@ -83,14 +83,19 @@
 | O-32 | `latestCanonicalDraftId` 命名与实际语义 | **DONE（改判，2026-10-28）** | 复核 R3：**"Agent Context = Canonical 前文 + 当前章 Draft"** ⇒ 当前章生成基线取 latest draft **符合 R3**，不是违规。真实问题是**函数名**（`latestCanonicalDraftId` 实际返回 draft）与**前章正文**：`generateNewContent` 调 `planningContexts.assemble(writingRequest, contextPack)` 未传 `continuationReference`，故 NovelAgent 多章续写**不带前章 Canonical**。前者改名即可（非缺陷），后者登记 O-42（本 17 段场景是"同一章"，不受影响） |
 | O-42 | NL 跨章续写缺前章 Canonical | **DONE（2026-10-28，T-42）** | `NovelAgent.resolveContinuation`（:1066-1112）：`listByNovel(novelId, chapter.variantId)` 取紧邻前章 → `canonicalRead.committedDraft` → 仅 CONFIRMED 才构造 reference → 复用 `ContinuationResolver` → `assemble(..., reference, resolved)`。**NL 侧降级不硬拒**：`NO_PREVIOUS_CHAPTER` / `NO_CANONICAL` / `CARRIER_NOT_CONFIRMED` / `CONTINUATION_UNRESOLVED` 写入新增三字段（`continuationIncluded` / `continuationSourceChapterId` / `continuationAbsentReason`），工作流链的硬拒契约未改（V-6 回归 7/7 + 13/13）。5 个新测试 V1–V5 |
 | O-43 | 续步后无"对修订稿复评" | **DONE（2026-10-28，T-43）** | 复评已落地：续步产出 Draft 后 `critic.critiqueContent(修订稿)` 一次，结果写入 `postRevisionAnalysis`；复评失败写 `postRevisionCheckFailure`（INVALID_OUTPUT / CALL_FAILED）且任务继续。配合 D-37，raw critique 恒为 2（初次 + 复评） |
-| O-44 | 复评未进 Activity | **OPEN（低优先）** | `reviewRevisedContent` 不在 `step()` 内，故 Activity 轨迹不显示复评；目前只能从 `postRevisionAnalysis` / `postRevisionCheckFailure` 观察。若日后要求"每次 LLM 调用都可审计"，需为其分配 Activity 或等价审计记录 |
+| O-44 | 复评未进 Activity | **DONE（2026-10-29，T-O44）** | `reviewRevisedContent` 已新增 `REVIEW` Activity（start/complete/fail），并追加到 `state.activityIds`；`NovelAgentResult.activityIds` 含复评记录。成功 summary 记 passed/ERROR/issues，失败 error 记 `INVALID_OUTPUT`/`CALL_FAILED`；Activity 写入 best-effort，不改变任务结局。V1/V2/V4 + `DecisionPointAnalysisFollowUpTest` 4/4，application 1156/0 |
+| O-45 | 作品切换器行点击静默失败 | **DONE（2026-10-29，T-O45）** | 根因：`main()` 根作用域未 remember `DesktopGraph`/`DesktopAppState`；打开作品写 `state.novel` 触发根重组合，重建新 state（novel=null），业务成功但 UI 重置。修复：两处 `remember` + `openNovel` null 显式 toast。新增 `DesktopNovelSwitchTest` 3 条；desktop 52/0；手工双作品切换、新建/导入/主区新建均正常。 |
+| O-46 | Toast 全局不渲染 | **DONE（2026-10-30，T-O46）** | 原症状无法复现（探针三路径均可见）；已加固 toastJob 取消旧计时器 + toast 层最终前景 zIndex。T-7-2-FALLBACK G1 实测：发送后 1s 内 toast 正常、输入保留、无任务卡；O-46 关闭。 |
+| O-47 | 重启后失效候选仍显示可批准 | **DONE（2026-10-30，T-O47）** | `candidateLost=true` 时禁用批准、保留“拒绝失效提案”（reject 不依赖 artifact）；拒绝后 Gate=REJECTED、Canonical/commits 不变，普通编辑态恢复后才出现“去 Agent 重新发起”。`RestoreFailure` 显式文案。`DesktopWriterCandidateLostTest` 6/0、desktop **60/0**；手工 ch3 stale Gate 拒绝 + ch4 正常 Gate 批准均通过。 |
+| O-48 | 双击“拒绝”穿透到“继续写” | **PARTIAL（2026-10-30，T-O48）** | 已加 500ms 决议防抖：approve/reject 成功后 `decisionLocked=true`，`generate`/`canGenerate`/`canRewrite` 窗口内拦截；按钮禁用。测试 63/0（+3）。**手工双击拒绝未验证**：桌面被 LogonUI/输入法 CoreWindow 占据，fallback 拒绝输入；G8 仍待真实窗口。 |
 | O-33 | Desktop 无 continueToNextChapter 接线 | **OPEN（UI 恢复时）** | 2A 续篇唯一生产 caller 是 Android `ChapterWritingViewModel.kt:87`（Android 暂停）；Desktop `WritePage.kt` 的"下一章"仅导航、`continueWriting` 是同章推进（非续篇）。UI 线恢复时补 |
 | O-34 | 空 Pack 的错误语义 | **OPEN** | D-33a：空 Pack 允许进入 EXECUTE（D-25），但 Writing/Plan 缺 payload 现映射为 `EXECUTION_FAILED`——把"缺输入"说成"执行失败"，语义不准。应改为可区分的类型化缺失输入错误；改与不改待裁，T-7-1 不测为期望行为 |
 | O-35 | ActionPolicy Denied/Allowed 不可达 | **DEFERRED** | D-33d：`COMMIT_CANONICAL` 在 `ActionPolicyUseCases` 恒 `NeedsHuman`，NovelAgent GATE 的 `Denied→ACTION_DENIED` / `Allowed→COMMIT` 当前不可达；且该类是 final（`ActionPolicyUseCases.kt:44`），测试替换需改结构。不为不可达分支改结构，暂不测 |
 | O-36 | R3/R4 失败路径缺可注入缝隙 | **OPEN** | `WorkingDraftUseCases` / `ChangeUseCases` 均为具体类（非接口/非 open），无法在测试中注入创建失败 / `prepare` 失败，故 R3（`WORKING_DRAFT_FAILED`）与 R4（`ARTIFACT_FAILED`）无行为测试。改结构只为测试不划算；将来若要覆盖，优先用 DB 层故障注入而非改类 |
 | O-37 | `VocabularyRule` 执行语义 | **OPEN（V3-A 外）** | D-34/V3-A：Rule 有模型、无生产消费者，且"确定性替换"的执行位置（Writer 后处理？Revision？写回？）、`deterministicOnly` 语义均未定义。先有契约再实现，不用现状反推 |
-| O-38 | Critic/Revision 别名漂移检查 | **OPEN（V3-A 外）** | 当前 `CritiqueAgent` / `RevisionAgent` 不接收 vocabulary；别名漂移检查属新能力，需独立契约（判定标准、severity、是否自动修正） |
-| O-39 | `VocabularyEntry.variant_id` 无外键/归属校验 | **OPEN（残余完整性风险）** | `NovelVariant.variant_id` 是主键（`Schema.sq:22-34`）故合法数据下唯一；但 `VocabularyEntry.variant_id` 无 FK（`Schema.sq:56-68`），`findEntriesByVariant` 只按 variant_id 过滤（不带 novelId）。若未来错误写入跨作品 variant_id，会读到他人词条。当前无 VARIANT 生产写入路径，无实际泄漏样本；schema 级保证需另立单元（FK 或写入归属校验） |
+| O-38 | Critic/Revision 别名漂移检查 | **DONE（2026-10-29，T-O38/D-38）** | 已裁 D-38：只取 APPROVED 词条；Critic 对正文别名做确定性扫描，命中记 WARNING（不升级 ERROR、不改 passed、不自动修正）；Revision prompt 要求优先 canonical、不机械替换；NovelAgent 分析/改写/复评三处接线；空词库行为不变。共享投影 `PlanningContextAssembly.approvedVocabulary` 复用 `mergedApprovedEntries`。`VocabularyAliasDriftTest` 7/0，application 1163/0，storage 166/0 |
+| O-39 | `VocabularyEntry.variant_id` 无外键/归属校验 | **PARTIAL（2026-10-30；读侧 DONE，写侧应用层守卫 DONE，Schema FK 残留）** | 读侧：`findEntriesByVariant(novelId, variantId)` JOIN `NovelVariant`，跨作品 variant 不返回；存储 167/0、application 1163/0。写侧应用层守卫已由 T-O39b 补齐；仍无 Schema FK，底层 repo.saveEntry 可绕过，见 O-39b。 |
+| O-39b | `VocabularyEntry` 写侧归属/FK | **PARTIAL（2026-10-30，T-O39b 应用层 DONE）** | 应用层：`saveEntry` 校验 novelId 必填 / variant 存在 / 归属一致，`confirmCandidate` 走同一入口；5 条测试，application 1168/0、storage 167/0。仍无 Schema FK，底层 `repo.saveEntry` 可绕过；Schema 级 FK 另立 O-39b-FK。 |
 | O-40 | 第二次 NovelAgent 的产品语义 | **RESOLVED（D-35）** | 用户裁决：**显式"收敛评审轮"** —— Commit 后由用户显式触发，第二轮只读，用新 Context 对已提交正文做一致性与偏离检查，输出 findings/suggestions，**不写正文、不自动进 Gate**，轮次上限 1 |
 | O-03 | 2C Skill 契约收口 | **DONE** | T-2C-1/2/3 实施 + T-2C-4 核验，全量 1575/0 + 桌面 46/0；缺口转 O-30/O-31 |
 | O-04 | 词库别名收敛 / VocabularyRule / Critic 漂移 | **NOT_STARTED** | prompt 只渲染 canonical + replacement，aliases 被丢弃；Rule 无消费者；无 Critic 检查 |
@@ -109,7 +114,7 @@
 | O-17 | 词库 V1–V3 契约裁决 | **OPEN** | 三套模型未统一；详见 `project-vocabulary-contract-drift` |
 | O-18 | 工作树 W1 | **OPEN** | 四个工作树冻结在 2026-10-20；未归档、未清理 |
 | O-19 | 提交冻结 G1 | **OPEN** | 130 项未提交；DONE 不在任何 commit 里 |
-| O-20 | P0-3B D8 / D9 | **PARTIAL** | D8 `allowUnboundGate` 兼容开关仍在；D9 Agent 层清理故障注入缺 |
+| O-20 | P0-3B D8 / D9 | **D8 DONE（2026-10-29，T-D8）；D9 PARTIAL** | D8 已移除 `allowUnboundGate` 兼容面：`CommitApproval` 仅 `gateId`，无 stepId Gate 无条件 `GATE_TARGET_MISMATCH`；62 处测试经 bound 夹具迁移。D9 仍缺 Agent 层清理故障注入 |
 | O-21 | 词库候选 Desktop 写路径 | **PARTIAL** | 后端 confirm/reject/edit 有；Desktop 创建/部分写路径未接线 |
 | O-22 | ContextPack 功能行收口 | **PARTIAL** | Phase 4 Gate DONE；`feature.context-pack` 台账仍 IN_PROGRESS（AC-03/AC-15） |
 | O-23 | 非 CONFIRMED Canonical carrier 的续篇 | **DEFERRED** | 作者手改/revert 产生的 FINAL/WRITTEN carrier 会被 CONFIRMED 守卫拒绝；L0=A 已知限制，未放宽 |
@@ -174,7 +179,54 @@
   新增 10 个测试（DecisionModelTest +3：DNA-only / core-only / DNA-only LONG；`DecisionPointBehaviorTest` +6：A4 已提交幂等不重复 Commit、A5a/b/c refresh 三状态、A6 reject 已提交不新增 Commit/Cancel、A7 passed=false 仍 COMPLETED 且 summary 可见计数；E2E +1：A8 PASS 空 findings）。规划层复核断言均为行为级（含 CommitHistory 条数、Canonical 内容、session 状态、summary 文本）。application 1117/0（+10）、root 1586/0（含 Android 120）、desktop 47/0（未改动、沿用）。A9 未写（见 O-36）。
 - [x] `T-7-1-B` 依赖裁决项 — **DONE（登记，无需测试）**：G1 Denied/Allowed → O-35（不可达/final class）；C4 空 Pack → O-34（错误语义缺口，不测为期望）；D8 `PREFERENCE` → 已勘误（代码无此枚举）。
 - [x] `T-7-1-C` 防御/不可达分支 — **DONE（记录不测）**：S7/C5/E6/R2 为防御分支，当前不可达；不为不可达路径造 mock 内部状态的测试。
-- [ ] `T-7-2` P0-3B GUI G1–G8 真实验收
+- [ ] `T-7-2` P0-3B GUI G1–G8 真实验收 — **PARTIAL（2026-10-30；G1–G7 PASS；G8 FAIL：双击拒绝穿透到继续写）**
+  **2026-10-30 12:56 最终复跑**：MCP 启动 14/14×2；应用 PID 85148 从 e3b581f 重启；第一次“新建作品”无响应，第二次点击时 MCP ECONNRESET → 0/14。未创建作品（novels=9）、G1–G8 全 NOT RUN；DB 与启动基线一致。规划层同一时刻 MCP 14/14。
+  证据：HEAD `b703ea0`；O-45 回归 PASS（1808/长夜行舟反复切换）；G2 任务卡/BRIDGE；G3 候选/Diff/审批按钮；G4 第二候选 UNBRIDGED、1 Gate；G5 retry→拒绝 A→B BRIDGED；G7 双击 1 Commit、拒绝另一候选 Canonical 不变、历史 1。
+  G1 FAIL：拒绝行为正确但 toast 不渲染（O-46）。G6 PARTIAL：重启后候选内容消失仍显示可批准，点击通用“操作失败”，无失效文案（O-47）。G8 部分：双击批准/重复拒绝已过；“丢弃 UNBRIDGED/切页刷新”因 MCP 第二次消失未执行。
+  环境事件：应用被外部关闭一次（exit 0）；MCP 消失 2 次（一次恢复、一次停止）；桌面有并行人工操作。未改代码/DB/任务树/记忆，未 commit/push。
+  历史阻塞：Session 7 曾被 `LogonUI.exe` 锁定；18:08/18:?? 两次 computer-use 会话级失效。**2026-10-29 19:27 新会话 MCP 稳定（14/14）×2，但目标作品 `T-7-2 GUI 20261029-1808` 点击切换器行无任何效果；G1–G8 无法开始，转 O-45。**
+  历史证据：Provider=MOCK；3 个重复测试作品 `T-7-2 GUI 20261029-0055`（重复创建待核实）；证据目录 `D:/qwenyan-v4/backup/t-7-2-20261029-0049/`。恢复后需先在最终 HEAD 重启应用，再重跑 G1–G8。
+  **2026-10-29 18:08 重试**：桌面无 `LogonUI`；旧窗口置前台成功；旧 PID 59736 关闭；新应用 PID 75980 从 HEAD `95c0f30` 启动；Provider=MOCK。窗口标题 `未打开作品` 是设计内动态标题（无作品时），不是 gate 失败。一次“新建作品”后 computer-use MCP 返回 `ECONNRESET`、工具列表消失，记为**工具阻塞**，G1–G8 全 NOT RUN；未继续点击/伪造结果。
+  **18:?? 二次工具 gate**：重试时 `mcp_list` computer-use 0/14，无法 `list_windows`/`activate_window`，再次 HARD STOP；应用 PID 75980 仍 `Responding=True`，未做任何 UI 操作。
+  **18:?? 三次稳定性 gate**：执行会话连续两次 `mcp_list` 0/14；规划层同一时刻 `mcp_list` **14/14**，`get_window_state(no screenshot)` 可读。判定为**执行会话级 MCP 连接失效**，不是应用/工具全局故障；需重开执行会话或重启 Qoder 重新挂载 plugin，随后重试。capture-lite 协议保留。
+  **19:27 新会话复测**：MCP 稳定 14/14×2；9 部作品，`T-7-2 GUI 20261029-1808` 恰 1 个，DB/ProjectState 正常；所有作品行点击后弹层关闭但标题不变、无 toast；同弹层“新建作品…”/头部/主区按钮/输入/取消均正常；精确坐标 + 重启后复现。**G1–G8 未开始；转 O-45。**
+- [x] `T-O45` 修复作品切换器行点击静默失败 — **DONE（2026-10-29，b703ea0）**
+  根因：`main()` 根作用域未 `remember` `DesktopGraph`/`DesktopAppState`；打开作品写 `state.novel` 触发根重组合，重建新 state（novel=null）。修复 `Main.kt:123-127` 两处 remember；`Common.kt:575-592` null 显式 toast。
+  验证：`DesktopNovelSwitchTest` 3/0；desktop **52/0**；手工切换 1808/长夜行舟、新建/导入/主区新建均正常。允许文件外无改动；临时日志已删除。提交后恢复 T-7-2 G1–G8。
+- [x] `T-O46` 修复 toast 全局不渲染 — **DONE（2026-10-30，G1 PASS）**
+  探针三路径均可见（原症状未复现）；加固 toastJob 取消旧计时器 + toast 层最终前景 zIndex。`DesktopToastTest` 2/0；T-7-2-FALLBACK G1 发送后 1s 内 toast 正常、输入保留、无任务卡。
+- [x] `T-O47` 修复重启后失效候选 UI — **DONE（2026-10-30）**
+  `candidateLost = isLoaded && waitingForUser && pendingProposal == null`；`canApprove` 要求候选存在，`canReject` 不依赖候选；失效时显示“拒绝失效提案”+ 文案，Gate 关闭后才出现“去 Agent 重新发起”。`RestoreFailure` 映射为候选失效文案。
+  实测：`DesktopWriterCandidateLostTest` 6/0、desktop **60/0**；手工 ch3 stale Gate：无通过确认、拒绝成功（Gate REJECTED、commits 不变），ch4 正常 Gate 通过确认新增 1 Commit；证据 `t-o47-20261030-1017`。
+- [ ] `T-O48` 修复双击拒绝穿透到继续写 — **PARTIAL（2026-10-30；代码/测试完成，手工 G8 待解锁）**
+  已实现：`WriterController` 500ms 决议防抖（`decisionCooldownUntil` + `decisionCooldownJob`，可注入时钟）；approve/reject 成功后 `decisionLocked=true`；`generate` 窗口内直接 return；`canGenerate`/`canRewrite` 加入锁；WritePage 按钮自动禁用。未改 Workflow/Commit/D8。
+  测试：desktop **63/0**（+3：UI 锁、拒绝后立即继续被拦 + 501ms 恢复、批准同样冷却）；`DesktopWriterTest` 在 continue 前加 600ms 等待，断言未改。
+  **待办**：解锁后真实双击拒绝：仅一次 REJECTED、无新 PENDING Gate；500ms 后继续写正常；再双击批准 1 Commit。通过后 T-G9 提交。
+- [x] `T-O39` variant 词条读取归属校验（O-39 读侧）— **DONE（2026-10-30）**
+  `findEntriesByVariant(novelId, variantId)` + SQL JOIN `NovelVariant`；ContextSources/PlanningContextAssembly/Android fake 同步；storage 测试真实 Novel+Variant，跨作品读取返回空。
+  实测：storage **167/0**、application **1163/0**；android/desktop 编译通过；写侧 FK/写入校验残留记 O-39b。
+- [x] `T-O39b` variant 词条写入归属校验 — **DONE（2026-10-30，应用层）**
+  `VocabularyUseCases` 注入 `NovelRepository`；`saveEntry` 先 `requireVariantOwnership`（novelId 必填→InvalidOperation；variant 不存在→EntityNotFound；归属不符→VariantMismatch）；`confirmCandidate` 正式写入改走本类 `saveEntry`；DI `VocabularyUseCases(vocabularyRepository, novelRepository, errorMapper)`。
+  测试：合法 variant 成功、跨作品拒绝不落库、缺失 variant、novelId=null、confirmCandidate 跨作品 5 条；application **1168/0**、storage **167/0**；android/desktop 编译通过。**残余**：无 Schema FK，底层 `repo.saveEntry` 仍可绕过，记 O-39b-FK。
+- [x] `T-O44` 将续步后复评纳入 Activity（O-44）— **DONE（2026-10-29）**
+  目标：`reviewRevisedContent` 增加一条 `OrchestrationPhase.REVIEW` Activity（start/complete/fail），成功记 `passed/ERROR/issues` 计数，失败记 `INVALID_OUTPUT`/`CALL_FAILED`；仍不改 critique=2、revision=1、WAITING_HUMAN 与 Gate 语义。
+  实测：`NovelAgent.kt:1194` best-effort start/complete/fail；`:1196` `state.activityIds += activityId`；V2/V4 断言 `result.activityIds.contains(...)`；V1 无复评；`DecisionPointAnalysisFollowUpTest` 4/4，application **1156/0**，XML 15:32 晚于源码 15:31；Activity 总数 8，critique/revision 次数不变。
+- [x] `T-D8` 移除 `allowUnboundGate`，强制 Gate 绑定 stepId — **DONE（2026-10-29）**
+  `CommitApproval` 只剩 `gateId`；`requireApprovalBinding` 在 `step == null` 时无条件 `GATE_TARGET_MISMATCH`，复用检查仍在最前；无运行时豁免。
+  62 处 `approvedGate`/`approvedCommitGate` 通过 bound 夹具迁移（WORKING + CONFIRMATION step）；新增 `steplessApprovedGate` 仅用于负向测试；原兼容复用测试替换为 bound gate 复用不变量。
+  实测：代码 `grep allowUnboundGate` = 0；application **1156/0**、desktop **49/0**；XML 15:55/15:56 晚于源码 15:40–15:47；`CommitGateBindingTest` 仍 8 条，未删负向断言。
+- [x] `T-O38` Critic/Revision 别名漂移检查（O-38）— **DONE（2026-10-29，D-38）**
+  `PlanningContextAssembly.approvedVocabulary` 复用 `ContextSources.mergedApprovedEntries`（NOVEL→VARIANT 覆盖、仅 APPROVED）；Critic 追加 `【词库规范】` 并按别名确定性追加 WARNING（最多 20，不改 passed）；Revision prompt 加入同一词库与 canonical 优先指令；NovelAgent 分析/改写/复评三处接线，空词库零变化。
+  实测：`VocabularyAliasDriftTest` **7/0**；application **1163/0**（1156+7）、storage **166/0**；XML 17:52/17:50 晚于源码 17:44–17:51；未新增 Agent/Rule/表/UI。
+- [x] `T-G6` 提交 T-O44/T-O38 + T-D8 两批 — **DONE（2026-10-29）**
+  `6ce9a00`(8, +453/−22, O-44+O-38) → `95c0f30`(8, +242/−51, D8)。HEAD `95c0f30`；staged 空；工作区仅任务树 M；两批 staged 集合/数量、`--check`、敏感扫描 0、commit 后 staged 空均通过。
+  clean-code 全量：root **1632/0/0/0** + desktop **49/0/0/0** = **1681/0/0/0**；XML 18:02–18:04 晚于源码；未 push、未 tag。
+- [x] `T-G7` 提交 T-O45 修复 — **DONE（2026-10-29）**
+  `b703ea0`(3, +118/−4)：`Main.kt` remember graph/state、`Common.kt` null toast、新增 `DesktopNovelSwitchTest`。staged 集合 3、`--check` 0、敏感扫描仅类型名、commit 后 staged 空；desktop **52/0**；HEAD `b703ea0`，领先 3，未 push。
+- [x] `T-G8` 提交 T-O46 + T-O47 UI 修复 — **DONE（2026-10-30）**
+  `e3b581f`(7, +485/−25)：toast job/zIndex、candidateLost/拒绝失效提案、2 个新测试。staged 7、`--check` 0、敏感扫描仅类型名、staged 空；desktop **60/0**；HEAD `e3b581f`，领先 4，未 push。
+- [x] `T-G10` 提交 T-O39 读侧归属校验 — **DONE（2026-10-30）**
+  `7af66c5`(7, +72/−12)：repository 双参 + SQL JOIN + callers + storage 测试。staged 7、`--check` 0、敏感扫描 0；storage **167/0**、application **1163/0**；HEAD `7af66c5`，领先 5，未 push。
 - [x] `T-8-0` 17 段现状只读重审 — **DONE（2026-10-28）**
   按当前代码重判：✓ 1/2/3/6/8/9/10/14；△ 4/5/7/11/12/13/15/17；✗ 16。**5 个真实断点**：5→7（ContextPack 有 DRAFT 内容，但 `PlanningContext` 无当前稿字段，Writer 只看到 `rawText=userIntent`）；6→7（`get_latest_draft` 只取 draftId，正文不进 Context）；10→11（桥接条件性，需显式重试）；14→15（WM Event/CharacterState 不进下一 PlanningContext，WRITING 未允许 `get_world_context`）；15→16（无第二次 Agent 编排）；16→17（无 Proposal 回流契约）。已连接：7→8→9→10→11→12→13→14。
 - [x] `T-8-A` **5→7 胶水（P0 正确性）** — **DONE（2026-10-28）**
@@ -241,9 +293,18 @@
   三条路径次数：无续步 = 1 critique / 0 revision；续步 = 2 / 1；复评失败 = 2 / 1 且任务继续。
   新增 `PostRevisionReviewTest` 4/4；既有 `DecisionPointAnalysisFollowUpTest` 4/4（仅两条说明文字改为"复评"，计数不变）。
   application **1156/0**（+4）、聚合 root **1625/0**、desktop 49/0（合计 1674）。
+- [x] `T-G5` 提交 T-43 本批（5 文件）— **DONE（2026-10-29）**
+  2 批：`2124635`(4，复评 + 模型字段 + 测试；+259/−7) → `d9aa385`(1，任务树；+20/−5)。HEAD **`d9aa385`**、porcelain 0、staged 空、`origin...HEAD = 0 4`。
+  clean-tree `--rerun-tasks`：root **1625/0** + desktop **49/0** = **1674/0/0/0**；XML 00:17:03–00:19:08，晚于 commit 00:15:30/00:16:23 与源码 mtime。
+  `:app:android` 120 = `testDebugUnitTest` 60 + `testReleaseUnitTest` 60（两变体，均 0 fail）；只算 settings 模块，未引用 `runtime/api` / `runtime:dsh`。
+  远端 live 复核：规划层审计时 `ls-remote` 成功 = **`cfff011`**（执行层报告为两次 Connection reset），本轮未 push、tag 0。
 - [x] `T-PUSH` 推送 18 个本地 commit — **DONE（2026-10-28）**
   推送输出 `5b047b0..cfff011  feature/novel-ide -> feature/novel-ide`（fast-forward，非 force）；第 1 次网络失败、第 2 次成功。**远端 live = cfff011**（执行层 ls-remote 独立确认；规划层本轮 ls-remote 因网络未复核，但本地 tracking ref 已被成功 push 更新为 cfff011 + `rev-list origin...HEAD = 0 0`）。未 force / 未打 tag（前后均为 0）/ 未改配置；任务树 M 未被夹带（推送后仍是未提交 M）。
-- [ ] `T-LEGACY` `commitApprovedDraft`：删除或补齐 Gate 绑定
+- [x] `T-PUSH-2` 推送 G4/G5 四个本地 commit — **DONE（2026-10-29）**
+  命令 `git push origin feature/novel-ide`，**第 1 次即成功**：`cfff011..d9aa385`（fast-forward，非 force）。推送后 HEAD `d9aa385`、`origin/feature/novel-ide = d9aa385`、`0 0`、tag 0；工作区仍仅任务树 M（未夹带）。
+  规划层复核：本地 `git ls-remote` 两次网络失败（Empty reply / 连接超时），改用 **GitHub API** 独立确认 `feature/novel-ide` head = `d9aa385`、该 commit 仅 1 文件 +20/−5、远端 tag 列表为空。
+- [x] `T-LEGACY` `commitApprovedDraft`：删除或补齐 Gate 绑定 — **DONE（2026-10-29，已删除）**
+  `CommitUseCases` 中已无 `commitApprovedDraft`；`LegacyDraftWriteBoundaryTest:144` 断言不得恢复；AI 提交只能走正式 `commit(...)`。本单元仅收口任务树，未改代码。
 
 ## 5. 更新日志
 
@@ -292,3 +353,36 @@
 | 2026-10-28 | **O-42 收口**：T-42 → DONE、O-42 → DONE；NL 跨章续写接入前章 Canonical（降级不静默，工作流硬拒未改）；application 1152/0（+5）、标准聚合 root **1621/0**、desktop 49/0 | 规划层实测：`NovelAgent.kt:1066-1112` 按四种原因降级；`:1502-1504` 三字段写入 Result、`NovelAgentModels.kt:188-192`；5 个新测试 V1–V5；V-6 回归 7/7 + 13/13。**数字口径提醒**：执行层"1703"把 `runtime/api`(5) 与 `runtime/dsh`(28) 也加进来了——这两个模块**不在 `./gradlew test` 聚合**，标准口径应为 root **1621** + desktop 49；后续报告统一用标准聚合，非聚合模块单列 |
 | 2026-10-28 | **G4 收口**：T-G4 → DONE；两批 `af4b0bd`(6) / `5237033`(1)；HEAD `5237033`、porcelain 0、领先 2；clean-tree 全量 **1621/0** + 桌面 **49/0**（1670） | 规划层实测：两批 `--numstat` 6+1 = 7；porcelain=0、staged=0、`0 2`；标准聚合逐模块求和 1621 + 49 = 1670。**口径更正**：`settings.gradle.kts` 只有 `:agent:runtime` 与 `:runtime`，**不存在 `runtime/api` / `runtime:dsh`**——此前"1703"混入 10-06 遗留 XML，此后不得引用非聚合模块的旧 XML |
 | 2026-10-28 | **T-43 收口**：O-43 → DONE；新增 D-37（analysis 续步的 Revision 复用初次 critique）与 O-44（复评未进 Activity，低优先）；application 1156/0（+4）、聚合 root **1625/0**、desktop 49/0（1674） | 规划层实测：`reviewRevisedContent`（:1189-1205）用 `critic.critiqueContent`；`critiqueOverride` 贯通 `executeSkill`(:968) → `reviseExistingContent`(:1132,:1140)，仅 analysis 续步生效；Result 字段 :197/:199、RunState :1561/1562。**设计变更需记住**：该改法去掉了对同一基线的重复 critique（原为 2 次），否则复评会变成 3 次、违反我 brief 里"≤2"的硬界——这是我 brief 措辞欠精确导致的必要取舍，已由 D-37 固化 |
+| 2026-10-29 | **G5 收口**：T-G5 → DONE；两批 `2124635`(4) / `d9aa385`(1)；HEAD `d9aa385`、porcelain 0、领先 4；clean-tree **1674/0/0/0**（root 1625 + desktop 49）；远端 live 复核成功 = `cfff011` | 规划层独立复核：`5237033..HEAD` 恰 2 commit、均单父（无 amend/merge）、tag 0；`--numstat` 4+1=5 文件、+259/−7 与 +20/−5；逐模块求和 1674（`app:android` 120 = 60 debug + 60 release，application 1156；不含 `runtime/api`/`runtime:dsh`）；XML 00:17:03–00:19:08 晚于 commit 00:15:30/00:16:23 与源码；`git ls-remote` 本轮成功，返回 `cfff011`，证明远端未变且本轮未 push |
+| 2026-10-29 | **T-PUSH-2 完成**：G4/G5 四个 commit 已推送，`cfff011..d9aa385`（第 1 次成功）；HEAD `d9aa385`、`0 0`、tag 0；任务树 M 未夹带 | 规划层复核：本地 `ls-remote` 两次网络失败，改用 GitHub API 独立确认 `feature/novel-ide` head = `d9aa385`；commit 仅任务树 1 文件 +20/−5；远端 tag 空；工作区仍仅任务树 M（规划层 T-G5/T-PUSH-2 记录，待文档批） |
+| 2026-10-29 | **T-7-2 HARD STOP（环境阻塞）**：GUI 验收停在 G1 前置；Session 7 被 `LogonUI.exe` 锁定，`CopyFromScreen` invalid handle，13:23 后点击无效；T-7-2 → BLOCKED（环境），不是 UI FAIL | 规划层复核：HEAD `d9aa385`、`0 0`；工作区仅任务树 M；证据目录 `D:/qwenyan-v4/backup/t-7-2-20261029-0049/` 存在（00:50–13:20 截图）；Provider=MOCK 已确认；3 个重复测试作品待解锁后核实。**恢复条件**：用户解锁并保持前台，回复“已解锁” |
+| 2026-10-29 | **T-7-2-RESUME 再次 HARD STOP**：`LogonUI` PID 64620 仍在 Session 7；Qoder/java 均在 Session 7；`activate_window` 仍失败（`foregroundHwnd=263396` ≠ 千言 `591072`）；G1–G8 全 NOT RUN | 规划层复核：`Get-Process LogonUI` 显示 Session 7；Qoder 67960 / java 59736 均 Session 7；HEAD `d9aa385`、`0 0`、工作区仅任务树 M；未点击、未截图、未改数据。**仍待用户本机解锁** |
+| 2026-10-29 | **T-O44 立项并进入执行**：GUI 继续 BLOCKED，转入唯一 ready 的非 GUI 项 O-44（复评纳入 Activity）；T-7-2 保持 BLOCKED，不并行 | 任务树选择依据：O-37/O-38 需新契约，O-39 需 Schema，D8 为 62 处测试迁移；O-44 已由 T-43 锁定 `reviewRevisedContent`，允许文件仅 `NovelAgent.kt` + `PostRevisionReviewTest.kt`。HEAD `d9aa385`、`0 0`、工作区仅任务树 M |
+| 2026-10-29 | **T-O44 审查 → PARTIAL**：Activity 已落库且 V1/V2/V4、application 1156/0 全绿；但 `state.activityIds` 未追加该 REVIEW id，`NovelAgentResult.activityIds` 缺记录，需一行挂接后再 DONE | 规划层实测：`NovelAgent.kt:1194` start/complete/fail 与 best-effort 均符合；V2/V4 通过 `listBySession` 断言；application XML 1156/0、15:26 晚于源码 15:25；缺口：`step()` 在 `:1486` 会追加 `state.activityIds`，复评分支未追加；`grep` 显示 `NovelAgentResult.activityIds` 是唯一 run 级相位清单，故记 PARTIAL |
+| 2026-10-29 | **T-O44 收口**：O-44 → DONE；复评 Activity 已挂接 `state.activityIds`；V1/V2/V4 + DecisionPoint 4/4；application 1156/0；Activity 总数 8，critique/revision 未变 | 规划层实测：`NovelAgent.kt:1196` 紧随 start 追加；V2/V4 均断言 `result.activityIds.contains(...)`；XML 15:32 晚于源码 15:31；`git diff` 仅 2 生产/测试文件，任务树 M 为规划层自身；未 commit/push |
+| 2026-10-29 | **T-D8 收口**：O-20 的 D8 → DONE；`allowUnboundGate` 从契约/实现/测试夹具移除；无 stepId Gate 无条件拒绝；代码 grep 0；application 1156/0、desktop 49/0 | 规划层实测：`CommitModels.kt` 仅剩 `gateId`；`CommitUseCases.kt` step==null 直接 `GATE_TARGET_MISMATCH`，复用检查仍在最前；`CommitGateBindingTest` 8/8（stepless 负向 + bound 复用替换）；62 处调用经 bound 夹具；XML 15:55/15:56 晚于源码 15:40–15:47；未 commit/push |
+| 2026-10-29 | **T-O38 收口**：O-38 → DONE（D-38）；Critic 别名 WARNING + Revision canonical 偏好；空词库不变；VocabularyAliasDriftTest 7/0；application 1163/0、storage 166/0 | 规划层实测：`approvedVocabulary` 复用唯一合并函数；Critic WARNING 不改 passed、不自动替换；Revision prompt 有/无词库两分支；NovelAgent 三处接线；XML 17:52/17:50 晚于源码 17:44–17:51；未改 Agent/Rule/表/UI；未 commit/push |
+| 2026-10-29 | **T-LEGACY 收口**：`commitApprovedDraft` 已删除，无生产入口；任务树登记 DONE（无代码改动） | 规划层实测：`grep commitApprovedDraft` 仅 `LegacyDraftWriteBoundaryTest:144` 的禁止恢复断言；`CommitUseCases` 无该函数；application 1163/0 |
+| 2026-10-29 | **T-G6 收口**：两批本地提交 `6ce9a00`(8)/`95c0f30`(8)；HEAD `95c0f30`、staged 空、仅任务树 M；clean-code **1681/0**（root 1632 + desktop 49）；未 push | 规划层复核：`--numstat` 8+8 文件、+453/−22 与 +242/−51；staged 空；`0 2`（相对 d9aa385）；XML 18:02–18:04 晚于源码；任务树按授权未提交；T-7-2 转 READY（桌面已解锁） |
+| 2026-10-29 | **T-7-2 18:08 重试 HARD STOP（工具阻塞）**：桌面/HEAD/Provider gate 通过，应用从 `95c0f30` 重启；一次新建后 computer-use MCP `ECONNRESET`，G1–G8 全 NOT RUN | 规划层复核：`LogonUI` 已消失；旧 PID 59736 已关闭；新 PID 75980 窗口存在；`mcp_list` 审计时已恢复、窗口截图可读；`未打开作品` 是动态标题非缺陷；重复创建数量仍未确认，不判 UI 失败 |
+| 2026-10-29 | **T-7-2 二次工具 gate HARD STOP**：重试时 `mcp_list` computer-use 0/14；应用 PID 75980 仍运行；未做 UI 操作 | 规划层复核：审计时 `mcp_list` 恢复 14/14；`get_window_state(include_screenshot=false)` 可读空态；判定为 MCP 间歇性崩溃，不是应用缺陷；改走 capture-lite（少截图、PrintWindow 取证） |
+| 2026-10-29 | **T-7-2 三次稳定性 gate HARD STOP**：执行会话连续两次 0/14；规划层同一时刻 14/14；判定为**会话级 MCP 连接失效**，非应用/工具全局故障 | 规划层实测：`mcp_list(keyword=computer-use)` 14 工具；`get_window_state(no screenshot)` 成功；应用 PID 75980 空态可读。恢复方式：重开执行会话或重启 Qoder 重新挂载 plugin；不得继续用同一会话重试 |
+| 2026-10-29 | **新 P0 O-45**：MCP 已稳定，但作品切换器 9 行点击均无效果；目标作品数据正常；“新建作品…”等对照正常；G1–G8 被阻塞 | 规划层判定：不是 MCP/数据/坐标；根因在 `ProjectSwitcher` 行点击 → `openNovel` 链路或 Compose 命中。新增 T-O45 修复单元；T-7-2 保持 BLOCKED |
+| 2026-10-29 | **T-O45 收口**：O-45 → DONE；根因为 main 根作用域未 remember graph/state，写 state.novel 触发重组合重建 state；修复两处 remember + null toast；desktop 52/0 | 规划层实测：`Main.kt` remember；`Common.kt` null toast；`DesktopNovelSwitchTest` 3/0；XML 12:31；手工双作品切换/新建/导入正常；修复未提交（T-G7 待授权）；T-7-2 转 READY |
+| 2026-10-29 | **T-G7 收口**：提交 `b703ea0`(3, +118/−4)；HEAD `b703ea0`、staged 空、仅任务树 M；desktop **52/0**；领先 3，未 push | 规划层复核：`--numstat` Main 4/2、Common 7/2、新测试 107/0；`CommitApproved` 未涉及；敏感扫描仅 `FileProviderCredentialStore` 类型名；T-7-2 可在 HEAD `b703ea0` 重启后执行 |
+| 2026-10-29 | **T-7-2 首次真实 GUI → PARTIAL**：O-45 回归 PASS；G2–G5/G7 PASS；G1 FAIL（toast 不渲染，O-46）；G6 PARTIAL（失效候选仍可批准、通用错误，O-47）；G8 部分（丢弃/切页未跑，MCP 第二次消失） | 规划层实测：HEAD `b703ea0`、status 仅任务树 M、`0 3`；G2 BRIDGE/任务卡、G3 候选+Diff+按钮、G4 第二候选 UNBRIDGED/1 Gate、G5 retry→拒绝→BRIDGED、G7 双击 1 Commit+历史 1；G6 Gate PENDING/commits=0；未改代码/DB；新增 O-46/O-47 |
+| 2026-10-29 | **T-O46 审查 → PARTIAL（加固）**：原“toast 全局不渲染”在 HEAD `b703ea0` 无法复现；三条路径 state/常驻 Text/底部 toast 均显示。保留两项确定性加固 + 2 测试；desktop 54/0 | 规划层实测：`Common.kt` toastJob 取消旧计时器；`Main.kt` toast 层移到浮层之后 + zIndex；`DesktopToastTest` 2/0；手工三路径可见、点击穿透正常；G1 需在最终构建复测 |
+| 2026-10-30 | **T-O47 审查 → PARTIAL**：代码/测试完成（candidateLost、RestoreFailure 文案、6/0、desktop 60/0），但 `canReject` 被误加 `pendingProposal != null`，stale PENDING Gate 无法关闭；“去 Agent 重新发起”被 Gate 阻塞 | 规划层实测：`ChapterWorkflowFacade.reject` 不依赖 artifact，G7 已证明重启后可拒绝；`abandonRound` 只接受 RESOLVED+REJECTED，不适用于 PENDING；需改为“只禁批准、保留拒绝”，拒绝后再重新发起 |
+| 2026-10-30 | **T-O47-FIX 收口**：O-47 → DONE；只禁批准、保留“拒绝失效提案”；拒绝后普通编辑态才出现“去 Agent 重新发起”；desktop 60/0 | 规划层实测：`canReject = isLoaded && waitingForUser && !busy`；WritePage 失效态按钮/文案；手工 ch3 stale Gate 拒绝成功（REJECTED、commits=1 不变），ch4 正常 Gate 批准新增 1；证据 `t-o47-20261030-1017`；未提交（T-G8 待授权） |
+| 2026-10-30 | **T-G8 收口**：提交 `e3b581f`(7, +485/−25)；HEAD `e3b581f`、staged 空、仅任务树 M；desktop **60/0**；领先 4，未 push | 规划层复核：`--numstat` 7 文件；toast job/zIndex + candidateLost/拒绝失效提案 + 2 测试；staged 集合 7、`--check` 0、敏感扫描仅类型名；T-7-2 可在最终 HEAD 重启后完整复跑 |
+| 2026-10-30 | **T-7-2-FALLBACK 部分通过（HARD STOP G8）**：Switch 到 PowerShell 真实输入；G1–G7 PASS（含 O-46 G1 toast、O-47 G6 stale reject）；G8 双击拒绝穿透到“继续写”，新建第二 Gate 2688f236 → FAIL | 规划层实测：新建作品恰 1（9→10）；G2–G5/G7 证据与 DB 一致；G8 双击批准/丢弃/切页通过，唯重复拒绝 FAIL；HEAD `e3b581f`、status 仅任务树 M、`0 4`；新增 O-48/T-O48；未改代码/DB（除测试操作） |
+| 2026-10-30 | **T-O48 代码/测试完成 → PARTIAL**：500ms 决议防抖 + decisionLocked；双击第二击不再触达 gateway；desktop 63/0 | 规划层实测：`WriterController` nowMillis/cooldown、`generate` 早退、`canGenerate/canRewrite` 锁；测试 63/0；手工 G8 被 LogonUI/输入法 CoreWindow 阻塞，fallback 拒绝输入；待解锁复验 |
+| 2026-10-30 | **工作树记录 + 转 O-39**：T-O48 3 M + 1 ?? 快照保存；HEAD `e3b581f`、领先 4、任务树 M；桌面未解锁，T-O48 手工 G8 暂缓 | 快照 `D:/qwenyan-v4/backup/t-o48-worktree-20261030-160600/`（tracked.patch + 未跟踪测试 + status + SHA256 + MANIFEST）；未建议直接 apply。下一单元 O-39 读侧归属校验 |
+| 2026-10-30 | **T-O39 收口（读侧）**：O-39 → PARTIAL（read-side DONE）；新增 O-39b 写侧残留；storage 167/0、application 1163/0 | 规划层实测：`findEntriesByVariant(novelId, variantId)` + JOIN `NovelVariant`；ContextSources/PlanningContextAssembly/Android fake 同步；跨作品测试返回空；未提交（T-G10 待授权）；写侧 saveEntry 仍不校验 |
+| 2026-10-30 | **T-G10 收口**：提交 `7af66c5`(7, +72/−12)；HEAD `7af66c5`、staged 空、仅任务树 M；storage 167/0、application 1163/0；领先 5，未 push | 规划层复核：7 文件集合与 gate 一致；跨作品测试真实 NovelVariant；android/desktop 编译通过；T-O48 4 文件仍未提交，转 O-39b 写侧 |
+| 2026-10-30 | **T-7-2-FINAL 再次 HARD STOP（工具触发点）**：MCP 14/14 启动；应用从 e3b581f 重启；第一次“新建作品”无响应，第二次点击 ECONNRESET → 0/14；G1–G8 全 NOT RUN，未建作品 | 规划层复核：规划层同一时刻 14/14；应用 PID 85148 仍运行；novels=9/PENDING=1/commits=3 与启动基线一致；**触发点收敛为“新建作品弹窗动作”**，非应用缺陷；建议 PowerShell 真实输入 fallback 或换 Qoder 会话 |
+| 2026-10-30 | **T-O39b 收口**：O-39b 应用层 DONE；`saveEntry` 归属守卫 + `confirmCandidate` 统一入口 + DI；新增 5 条写入归属测试；application 1168/0、storage 167/0 | 规划层实测：`VocabularyUseCases.kt:30` 注入 NovelRepository、`:45-47` 先守卫后落库、`:96` confirmCandidate 走 saveEntry、`:145-158` 三类错误；`ApplicationContainer.kt:518`；测试行 227-319；无 Schema/.sqm 变更；底层 repo.saveEntry 仍可绕过，记 O-39b-FK |
+| 2026-10-30 | **主仓库目录丢失 → 原始历史恢复**：17:36–18:43 之间 `D:/qwenyan-v4/qianyan-v4` 目录级消失（delete-pending 幽灵）；执行层旧视图仍持有原始仓库（HEAD `7af66c5` + 5 提交 + 10 项）；已用 `git bundle --all` + worktree patch + untracked 导出并重建，原始 5 个 SHA 全部保留 | 规划层实测：bundle 27 refs/verify okay（`ffa4392d…`）、worktree patch 9 文件 +357/−27（`b16866fa…`）、untracked 测试 `e96ceef9…`；重建树 application **1168/0**、storage **167/0**、desktop **63/0**；真实路径已从 bundle 克隆为 `7af66c5` + 10 项（ahead 5，未 push）；fallback `D:/qwenyan-v4/qianyan-v4-recovery-clone`（`d9aa385` + 36 项）；恢复包 `C:/Users/ZhuanZ1/Documents/qianyan-original-20261030/`；未 reset/未 commit/未 push；`local.properties` 由 fallback 克隆原样复制（printf 反斜杠折叠问题，gitignore 内）；测试日志 `D:/qwenyan-v4/t-restore-tests.log`（仓库外） |
+| 2026-10-31 | **T-PUSH-3 收口**：fast-forward push `d9aa385..7af66c5`；远端 = `7af66c5`、ahead 0、tag 0；未 force/amend/rebase | 规划层实测：本地 HEAD `7af66c5`、status 10、staged 0、diff 9 files +358/−27；GitHub API 独立确认 `feature/novel-ide` head = `7af66c5`；5 个原始提交上云；工作区 10 项仍未提交（T-O48 4 + T-O39b 5 + 本文件 M）；任务树未随 push |
+| 2026-10-31 | **T-G11 收口**：提交 `c80e2e8`(5, +207/−10)；HEAD `c80e2e8`、ahead 1、staged 空；application 1168/0、storage 167/0 | 规划层复核：5 文件集合精确匹配；提交身份 `32145687 <a13435942003@163.com>` 与历史 6 提交一致；无任务树/T-O48 夹带；XML 00:15 晚于源码 23:50；远端仍 `7af66c5`（GitHub API 确认；live ls-remote 网络失败，未据此推断） |
+| 2026-10-31 | **T-G9 收口**：提交 `a56b04b`(4, +280/−5)；HEAD `a56b04b`、ahead 2、staged 空；desktop 63/0 | 规划层复核：4 文件集合精确匹配；无任务树/T-O39b 夹带；提交身份 `32145687 <a13435942003@163.com>`（repo-local 已配置）；XML 00:21 晚于源码 23:50；仅剩任务树 M；未 push；远端仍 `7af66c5`（GitHub API） |
