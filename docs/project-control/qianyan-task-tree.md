@@ -1,6 +1,6 @@
 # Qianyan 任务树（Living Task Tree）
 
-> 唯一任务状态源。最后更新：2026-10-31。
+> 唯一任务状态源。最后更新：2026-11-02。
 > 本文件由规划层维护；执行层只读，不得修改。
 > 状态词：`DONE` / `PENDING_GUI` / `PARTIAL` / `BLOCKED` / `NOT_STARTED` / `DEFERRED` / `PAUSED`。
 > `DONE` = 实现 + 自动化验收 + 适用时真实生产 caller；GUI / 端到端未验另标 `PENDING_GUI`。
@@ -9,11 +9,11 @@
 
 ## 0. 当前焦点
 
-- 当前单元：**T-G14 任务树对账（T-7-2 收口 + O-52 登记）**；推送由下一个 T-PUSH 单元执行
-- 阻塞：无（T-7-2 最终 G1–G8 已在 `3266c24` 全量 PASS）；O-37 需新契约（Rule 执行语义 + 创建/读取路径）；提交/推送需用户逐条授权
-- 已完成：Phase 4/5/6/8 DONE（8=GATE_PASS）；T-O39b DONE（T-G11 `c80e2e8`）；T-O48 DONE（T-G9 `a56b04b` + T-O48-G8 PASS）；T-G12 `37cbf16`；T-PUSH-4（远端 `37cbf16`）；T-43（D-37）、T-O44、T-D8、T-O38、T-O45、T-O47、T-O39（读侧）、T-G6/T-G7/T-G8/T-G10/T-G11/T-G9/T-G12、T-LEGACY、G5、T-PUSH-2/T-PUSH-3/T-PUSH-4；词库线；T-7-1/T-7-3/T-42；T-8 全系；W1；G1–G5；T-7-2-FINAL（`3266c24` 全量 PASS）；T-G13 `3266c24`；T-PUSH-5（远端 `3266c24`）；**9 个提交已 push（远端 3266c24）**
-- 并行决策：T-7-2（DONE，2026-10-31 T-7-2-FINAL）、T-O39b（DONE，Schema FK 残留）、O-37（需契约）、O-39b（Schema FK）、O-49/O-50/O-51（G8 观察项）、O-52（T-7-2-FINAL 观察项）
-- 仓库快照：本地 HEAD `3266c24`，`origin/feature/novel-ide` = `3266c24`，ahead **0**；工作区 **1 项**（本文件 M，T-G14 待提交）；G8 证据 `D:/qwenyan-v4/backup/t-o48-g8-20261031-0055/`；T-7-2-FINAL 证据 `D:/qwenyan-v4/backup/t-7-2-final-20261031-1330/`；fallback `D:/qwenyan-v4/qianyan-v4-recovery-clone`（d9aa385 + 36 项）；恢复包 `C:/Users/ZhuanZ1/Documents/qianyan-original-20261030/`
+- 当前单元：**T-DOC-SYNC 任务树对账（O-52 收口 + O-53 登记 + 快照修正）**；推送留待下一个 T-PUSH
+- 阻塞：无（O-52 已判定为缺陷并修复 `4ad645e`）；O-37 需新契约（Rule 执行语义 + 创建/读取路径）；提交/推送需用户逐条授权
+- 已完成：Phase 4/5/6/8 DONE（8=GATE_PASS）；T-O39b DONE（T-G11 `c80e2e8`）；T-O48 DONE（T-G9 `a56b04b` + T-O48-G8 PASS）；T-G12 `37cbf16`；T-PUSH-4（远端 `37cbf16`）；T-43（D-37）、T-O44、T-D8、T-O38、T-O45、T-O47、T-O39（读侧）、T-G6/T-G7/T-G8/T-G10/T-G11/T-G9/T-G12、T-LEGACY、G5、T-PUSH-2/T-PUSH-3/T-PUSH-4；词库线；T-7-1/T-7-3/T-42；T-8 全系；W1；G1–G5；T-7-2-FINAL（`3266c24` 全量 PASS）；T-G13 `3266c24`；T-PUSH-5（远端 `3266c24`）；T-G14 `742280c`；T-PUSH-6（远端 `742280c`）；**T-O52（判定缺陷）、T-O52-FIX（`4ad645e`）、T-G16（提交 12 文件 +518/−10）**；10 个提交已 push（远端 `742280c`），本地 1 个待推送
+- 并行决策：T-7-2（DONE，2026-10-31 T-7-2-FINAL）、T-O39b（DONE，Schema FK 残留）、O-37（需契约）、O-39b（Schema FK）、O-49（DONE，新路径已清空）、O-50/O-51（G8 观察项）、O-52（DONE，2026-11-02 T-O52-FIX）、O-53（OPEN，T-O52-FIX 附带观察）
+- 仓库快照：本地 HEAD `4ad645e`；`origin/feature/novel-ide` = `742280c`；ahead **1**；工作区**空**；O-52 判定证据 `D:/qwenyan-v4/backup/t-o52-20261101-0900/`；O-52 修复证据 `D:/qwenyan-v4/backup/t-o52-fix-20261102-0030/`；G8 证据 `D:/qwenyan-v4/backup/t-o48-g8-20261031-0055/`；T-7-2-FINAL 证据 `D:/qwenyan-v4/backup/t-7-2-final-20261031-1330/`；fallback `D:/qwenyan-v4/qianyan-v4-recovery-clone`（d9aa385 + 36 项）；恢复包 `C:/Users/ZhuanZ1/Documents/qianyan-original-20261030/`
 
 ## 1. 阶段总览
 
@@ -88,10 +88,11 @@
 | O-46 | Toast 全局不渲染 | **DONE（2026-10-30，T-O46）** | 原症状无法复现（探针三路径均可见）；已加固 toastJob 取消旧计时器 + toast 层最终前景 zIndex。T-7-2-FALLBACK G1 实测：发送后 1s 内 toast 正常、输入保留、无任务卡；O-46 关闭。 |
 | O-47 | 重启后失效候选仍显示可批准 | **DONE（2026-10-30，T-O47）** | `candidateLost=true` 时禁用批准、保留“拒绝失效提案”（reject 不依赖 artifact）；拒绝后 Gate=REJECTED、Canonical/commits 不变，普通编辑态恢复后才出现“去 Agent 重新发起”。`RestoreFailure` 显式文案。`DesktopWriterCandidateLostTest` 6/0、desktop **60/0**；手工 ch3 stale Gate 拒绝 + ch4 正常 Gate 批准均通过。 |
 | O-48 | 双击“拒绝”穿透到“继续写” | **DONE（2026-10-31，T-O48-G8 PASS）** | 500ms 决议防抖 + `decisionLocked`；`DesktopWriterDecisionCooldownTest` 3/0、desktop 63/0。G8：双击拒绝仅 1 REJECTED、无第二 PENDING、commits 不变；500ms 后继续写正常；双击批准 1 Commit。**观察**：本环境 UI 刷新 0.7–1.2s，120ms 第二击落在旧按钮，GUI 未真正触发穿透路径；cooldown 由单测覆盖。证据 `t-o48-g8-20261031-0055`。 |
-| O-49 | `Workflow.pending_gate_id` 决议后未清空 | **OPEN（2026-10-31，G8 观察）** | DB 只读核对：`c8299f70` COMPLETED 仍指向已 APPROVED 的 `2cacdbc5`；`0814084b` RUNNING 仍指向已 APPROVED 的 `b95bc90e`。字段在 Gate 决议后未清空/未推进；需复核是否影响后续流程/UI。未修。 |
+| O-49 | `Workflow.pending_gate_id` 决议后未清空 | **DONE（2026-11-02，随 O-52 收尾）** | 新路径已在收尾时清空：`convergeApprovedConfirmation` 完成 CONFIRMATION 步骤后写 `pendingGateId = null`，与 Step 完成 / KU 后继在同一次批准调用内落库。历史行（如 `c8299f70` / `0814084b`）按"历史只加指针不改写"**不回填**。 |
 | O-50 | 状态栏“待确认”计数语义 | **OPEN（2026-10-31，G8 观察）** | 状态栏“待确认 4”实际是 Change 记录数，不是 pending Gate 数（DB pendingGate=0）；文案/查询易误解。低优先，未修。 |
 | O-51 | Gate 决议后 UI 刷新 0.7–1.2s | **OPEN（2026-10-31，G8 观察）** | Gate 决议落库后界面切换延迟 0.7–1.2s；与 T-O48 双击时序相关（120ms 第二击落在旧按钮）。观察项，未改代码。 |
-| O-52 | 工作流推进依赖进程内存（T-7-2-FINAL 观察；请求编号 O-49 已被占用，顺延） | **OPEN（2026-10-31）** | 批准后 workflow 停在 `RUNNING`、CONFIRMATION 步骤 `PENDING`；强制重启后不恢复推进。复现：第一章 `590e6cb2`（跨两次强制重启仍 RUNNING）；同条件第二章 `6458943e` 正常 COMPLETED。待判定：不重启、仅批准一次并观察 30s 是否自然完成；可复现则立缺陷，不可复现降级为“强制重启副作用”。未修。 |
+| O-52 | 工作流推进依赖进程内存（T-7-2-FINAL 观察；请求编号 O-49 已被占用，顺延） | **DONE（2026-11-02，T-O52 / T-O52-FIX，`4ad645e`）** | 判定：不重启、零交互下批准后 120s 仍 `RUNNING` + `CONFIRMATION` `PENDING` ⇒ **缺陷**（复现 `8a6ed1c1`，novel `bb86b38b`）。**根因三条**：①`approve` 只收敛"决议 + 提交事实"，从不调用 `runForward`；②`pending_gate_id` 全库仅 `reopenRejectedRound` / `abandonRound` 两处清空，正常批准路径清不掉；③旧 `executeConfirmation` 的"已批准"分支依赖进程内存工作产物，跨重启必失败。**修法四条**：`executeConfirmation` 先判持久决议 → `convergeApprovedConfirmation`（完成 Step + 建 KNOWLEDGE_UPDATE 后继 + 清 `pendingGateId`）；`ChapterWorkflowFacade.approve` 同一次调用内 `runForward`，空 gate 走幂等 no-op；`WriterController.load` 仅在 `APPROVED` 时补偿。**验收**：`:application:test` **1171/0**、`:app:desktop:jvmTest` **65/0**；手工 3 轮 6–10s 全 `COMPLETED`、`pendingGateId=null`、每轮 Commit 恰 1；重启轮无重复。证据 `D:/qwenyan-v4/backup/t-o52-fix-20261102-0030/`。 |
+| O-53 | 强杀后「拒绝失效提案 → 继续写」停在 RUNNING 且无 Gate | **OPEN（2026-11-02，T-O52-FIX 附带观察）** | 场景：批准前/后强杀 → 重启 → 「拒绝失效提案」→ 「继续写」；`reopenRejectedRound` 建了新的 `CONFIRMATION` 轮次，但工作产物随进程丢失 ⇒ workflow 停在 `RUNNING` + `CONFIRMATION:PENDING` 且 `pending_gate_id=null`（UI 已提示"无法完成操作 候选已失效"）。与 O-52 同族（推进依赖内存产物），但触发路径不同（reopen 而非 approve），需单独收口。未修。证据同上（wf `542e4116`）。 |
 | O-33 | Desktop 无 continueToNextChapter 接线 | **OPEN（UI 恢复时）** | 2A 续篇唯一生产 caller 是 Android `ChapterWritingViewModel.kt:87`（Android 暂停）；Desktop `WritePage.kt` 的"下一章"仅导航、`continueWriting` 是同章推进（非续篇）。UI 线恢复时补 |
 | O-34 | 空 Pack 的错误语义 | **OPEN** | D-33a：空 Pack 允许进入 EXECUTE（D-25），但 Writing/Plan 缺 payload 现映射为 `EXECUTION_FAILED`——把"缺输入"说成"执行失败"，语义不准。应改为可区分的类型化缺失输入错误；改与不改待裁，T-7-1 不测为期望行为 |
 | O-35 | ActionPolicy Denied/Allowed 不可达 | **DEFERRED** | D-33d：`COMMIT_CANONICAL` 在 `ActionPolicyUseCases` 恒 `NeedsHuman`，NovelAgent GATE 的 `Denied→ACTION_DENIED` / `Allowed→COMMIT` 当前不可达；且该类是 final（`ActionPolicyUseCases.kt:44`），测试替换需改结构。不为不可达分支改结构，暂不测 |
@@ -114,10 +115,10 @@
 | O-13 | DSH Runtime Adapter | **DEFERRED** | R7 产品动机未裁 |
 | O-14 | Android | **PAUSED** | 产品策略暂停 |
 | O-15 | Story Foundation / Author Intelligence 写路径 | **PARTIAL** | 模型/部分写路径有；Desktop 多为接入点 |
-| O-16 | `commitApprovedDraft` 遗留入口 | **OPEN** | 无调用方/无测试，缺 Gate 绑定；待裁决删除或补齐 |
+| O-16 | `commitApprovedDraft` 遗留入口 | **DONE（2026-10-29，已删除）** | T-LEGACY 已移除该遗留入口；`LegacyDraftWriteBoundaryTest.kt:144` 断言 `CommitUseCases` 不含 `fun commitApprovedDraft`（AI 提交只走正式 `commit(...)`），生产源码零残留。 |
 | O-17 | 词库 V1–V3 契约裁决 | **OPEN** | 三套模型未统一；详见 `project-vocabulary-contract-drift` |
 | O-18 | 工作树 W1 | **OPEN** | 四个工作树冻结在 2026-10-20；未归档、未清理 |
-| O-19 | 提交冻结 G1 | **OPEN** | 130 项未提交；DONE 不在任何 commit 里 |
+| O-19 | 提交冻结 G1 | **DONE（2026-10-28，T-G1-C）** | 6 批 172 文件全部落本地（`c2c3681` / `0530e2b` / `77c5718` / `5466f98` / `0919b86` / `e3be34c`，文件数 4+141+5+7+8+7=172），工作树 clean、staged 空；链区间 `c2c3681..e3be34c`。 |
 | O-20 | P0-3B D8 / D9 | **D8 DONE（2026-10-29，T-D8）；D9 PARTIAL** | D8 已移除 `allowUnboundGate` 兼容面：`CommitApproval` 仅 `gateId`，无 stepId Gate 无条件 `GATE_TARGET_MISMATCH`；62 处测试经 bound 夹具迁移。D9 仍缺 Agent 层清理故障注入 |
 | O-21 | 词库候选 Desktop 写路径 | **PARTIAL** | 后端 confirm/reject/edit 有；Desktop 创建/部分写路径未接线 |
 | O-22 | ContextPack 功能行收口 | **PARTIAL** | Phase 4 Gate DONE；`feature.context-pack` 台账仍 IN_PROGRESS（AC-03/AC-15） |
@@ -399,3 +400,4 @@
 | 2026-10-31 | **T-PUSH-4 收口**：fast-forward push `7af66c5..37cbf16`；远端 = `37cbf16`、ahead 0、tag 0；未 force/amend/rebase | 规划层实测：本地 HEAD `37cbf16`、status clean、staged 0；GitHub API 独立确认 `feature/novel-ide` head = `37cbf16`；3 个提交上云（`c80e2e8`/`a56b04b`/`37cbf16`）；工作区 clean；未 commit/add/任务树变更 |
 | 2026-10-31 | **T-O48-G8 PASS**：A 双击拒绝（120ms）仅 1 REJECTED、无第二 PENDING、commits 不变；B 500ms 后继续写正常；C 双击批准 1 Commit；D 丢弃 N/A、切页/菜单回归 PASS；T-O48 → DONE、O-48 → DONE | 规划层实测：DB 只读（Node sqlite）确认 `9626e15e` REJECTED、`b95bc90e` APPROVED、commits=2；证据 `D:/qwenyan-v4/backup/t-o48-g8-20261031-0055/`；**观察**：本环境 UI 刷新 0.7–1.2s，120ms 第二击落在旧按钮，GUI 未真正触发穿透路径（cooldown 由单测覆盖）；DB 发现 `c8299f70`/`0814084b` 的 pending_gate_id 仍指向已决议 Gate（O-49）；状态栏“待确认”计数语义（O-50）；UI 刷新延迟（O-51）。测试小说非完全隔离，DB 含历史/重试 Gate（`2cacdbc5`/`e9a37e3f`/`33911fcc`），A/C 指定 Gate 证据独立。**T-7-2 最终 G1–G8 仍待跑** |
 | 2026-10-31 | **T-7-2-FINAL PASS**：G1–G8 全量通过（HEAD `3266c24`）；T-7-2 → DONE、Phase 7 → DONE；新增 O-52 | 规划层实测：应用从 `3266c24` 重建启动（PID 19188→17548→16232）；作品 `T-7-2-FINAL 20261031`；DB 只读结束态 gates 7（pending 0）、commits 4；证据 `D:/qwenyan-v4/backup/t-7-2-final-20261031-1330/`；观察 O-52（`590e6cb2` 批准后跨强制重启仍 RUNNING，同条件 `6458943e` 正常 COMPLETED）、O-50/O-51 沿用；远端 `3266c24`（T-PUSH-5 fast-forward）；未改代码/未 push 本提交 |
+| 2026-11-02 | O-52 判定为缺陷并修复（`4ad645e`）；O-49 收口；新增 O-53；快照刷新 | T-O52 / T-O52-FIX / T-G16 报告 |
