@@ -111,7 +111,7 @@
 | O-09 | 阅读位置写入的 L3 验收 | **PARTIAL** | 按 UI 记录已接；功能台账仍 PARTIAL，未按 L3 验收 |
 | O-10 | GUI G1–G8 | **PENDING_GUI** | 未执行真实点击/输入；不得标记 PASS |
 | O-11 | Phase 7 决策点行为测试 | **DONE（2026-10-28，T-7-3）** | D-36 真实结果驱动已落地：同一 Task（同一 `userIntent="分析第一章"`）下，critic PASS → COMPLETED 无产物；critic ERROR → 同一 session 内自动续步一次 `rewrite-revision` → WorkingDraft + Artifact + pending Gate + WAITING_HUMAN。V1/V2 用**同一请求只换 critic Result** 对照，满足 §20-12 的 X→A / Y→B。附带记录：续步调用**不经过 `purposes` 选择**（由 Agent 决定触发，仅受 SkillExecutionGuard 约束），这是 D-36 的既定设计，不是漏洞 |
-| O-12 | Phase 8 17 段完整纵切 | **NOT_STARTED** | 无自然语言 → Canonical 的完整 E2E |
+| O-12 | Phase 8 17 段完整纵切 | **DONE（2026-10-28，T-8-2R）** | `Phase8FullLoopE2ETest` 即 NL→Canonical 完整纵切：`userIntent` 原样入参（:74/:184）、Planner/Writer prompt 携带 `rawText`（:253-255）、首轮 `WAITING_HUMAN` + `BRIDGED`（:263-264）、approve 后 `CommitHistory` 恰 +1（:321-323）、Canonical 的 `resultingDraftId` 与正文和提交事实一致（:329-332）。**限定**：脚本化 LLM；真实 LLM 不在 Phase 8 证明范围。 |
 | O-13 | DSH Runtime Adapter | **DEFERRED** | R7 产品动机未裁 |
 | O-14 | Android | **PAUSED** | 产品策略暂停 |
 | O-15 | Story Foundation / Author Intelligence 写路径 | **PARTIAL** | 模型/部分写路径有；Desktop 多为接入点 |
@@ -401,3 +401,5 @@
 | 2026-10-31 | **T-O48-G8 PASS**：A 双击拒绝（120ms）仅 1 REJECTED、无第二 PENDING、commits 不变；B 500ms 后继续写正常；C 双击批准 1 Commit；D 丢弃 N/A、切页/菜单回归 PASS；T-O48 → DONE、O-48 → DONE | 规划层实测：DB 只读（Node sqlite）确认 `9626e15e` REJECTED、`b95bc90e` APPROVED、commits=2；证据 `D:/qwenyan-v4/backup/t-o48-g8-20261031-0055/`；**观察**：本环境 UI 刷新 0.7–1.2s，120ms 第二击落在旧按钮，GUI 未真正触发穿透路径（cooldown 由单测覆盖）；DB 发现 `c8299f70`/`0814084b` 的 pending_gate_id 仍指向已决议 Gate（O-49）；状态栏“待确认”计数语义（O-50）；UI 刷新延迟（O-51）。测试小说非完全隔离，DB 含历史/重试 Gate（`2cacdbc5`/`e9a37e3f`/`33911fcc`），A/C 指定 Gate 证据独立。**T-7-2 最终 G1–G8 仍待跑** |
 | 2026-10-31 | **T-7-2-FINAL PASS**：G1–G8 全量通过（HEAD `3266c24`）；T-7-2 → DONE、Phase 7 → DONE；新增 O-52 | 规划层实测：应用从 `3266c24` 重建启动（PID 19188→17548→16232）；作品 `T-7-2-FINAL 20261031`；DB 只读结束态 gates 7（pending 0）、commits 4；证据 `D:/qwenyan-v4/backup/t-7-2-final-20261031-1330/`；观察 O-52（`590e6cb2` 批准后跨强制重启仍 RUNNING，同条件 `6458943e` 正常 COMPLETED）、O-50/O-51 沿用；远端 `3266c24`（T-PUSH-5 fast-forward）；未改代码/未 push 本提交 |
 | 2026-11-02 | O-52 判定为缺陷并修复（`4ad645e`）；O-49 收口；新增 O-53；快照刷新 | T-O52 / T-O52-FIX / T-G16 报告 |
+| 2026-10-31 | T-G14 收口（`742280c`，T-7-2 G1–G8 PASS + O-52 登记）；T-PUSH-6 远端 = `742280c` | T-G14 / T-PUSH-6 报告 |
+| 2026-11-02 | 同上条 T-DOC-SYNC-2：O-12 改判 DONE（`Phase8FullLoopE2ETest`） | 用户裁定 |
