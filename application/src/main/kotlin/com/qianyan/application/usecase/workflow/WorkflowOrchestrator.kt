@@ -307,6 +307,18 @@ class WorkflowOrchestrator(
         val gate = wf.pendingGateId?.let { workflowRepository.getGate(it) } ?: return false
         if (gate.status != HumanGateStatus.RESOLVED || gate.decision != HumanDecision.REJECTED) return false
         val chapterId = wf.activeChapterId ?: return false
+        // O-53：重开轮次前先校验**持久可续事实** —— 被拒轮次的工作产物必须仍能在本进程解析。
+        // 失效（进程重启后内存工作区丢失）⇒ 不建新轮次、不改任何状态，明确失败：
+        // 否则会留下 `RUNNING` + `CONFIRMATION:PENDING` 且无 Gate 的悬挂态（O-53 复现）。
+        val rejectedStep = gate.stepId?.let { workflowRepository.getStep(it) } ?: return false
+        if (resolveChapterWorkingOrNull(wf, rejectedStep) == null) {
+            throw ApplicationException(
+                ApplicationError.RestoreFailure(
+                    "上一轮 AI 工作产物已失效（进程重启后内存工作区丢失），无法继续本轮；" +
+                        "请重新发起任务（未新建轮次 / 未新建 Gate）",
+                ),
+            )
+        }
         val now = Clock.System.now()
         val confirmations = workflowRepository.listSteps(wf.workflowId)
             .filter { it.chapterId == chapterId && it.phase == WorkflowStepPhase.CONFIRMATION }
@@ -317,7 +329,7 @@ class WorkflowOrchestrator(
         // P1-02j.2 统一编号：与 `abandonRound` 共用唯一后缀分配器 `nextRoundSuffix`（杜绝 `:R<n>` 冲突，
         // 不复用其旧的 `confirmations.size+1` 推导）。**创作轮次不变**：重开只是同一轮次的 Gate 决议轮，
         // `roundNo` 沿用被拒 CONFIRMATION Step 的创作轮次（`null` → 0）。
-        val creativeRound = gate.stepId?.let { workflowRepository.getStep(it)?.roundNo } ?: 0
+        val creativeRound = rejectedStep.roundNo ?: 0
         val suffix = nextRoundSuffix(wf.workflowId, chapterId)
         createStepIfMissingKey(
             wf.workflowId,
@@ -570,7 +582,30 @@ class WorkflowOrchestrator(
             convergeApprovedConfirmation(wf, step)
             return WorkflowRunResult(status = wf.status, stepCompleted = true, reused = true)
         }
-        val subject = requireChapterWorking(wf, step)
+        val subject = resolveChapterWorkingOrNull(wf, step)
+            ?: run {
+                // O-53：轮次已开（CONFIRMATION 在途）但工作产物随进程丢失 ⇒ **显式终止**，不留 `RUNNING` 悬挂：
+                // Step 置 FAILED、Workflow 置 FAILED 并清空 pending/current；随后以类型化错误告知"请重新发起任务"。
+                val now = Clock.System.now()
+                updateStep(step.copy(status = WorkflowStepStatus.FAILED, completedAt = now))
+                updateWorkflow(
+                    requireWorkflow(wf.workflowId).copy(
+                        status = WorkflowStatus.FAILED,
+                        // O-53-B：FAILED 为终态，必须同时**释放章节占位**（`getWorkflowByActiveChapter` 无状态过滤），
+                        // 否则 `startChapter` 会被这条 FAILED 行永久占位、无法重新发起新 Workflow。
+                        activeChapterId = null,
+                        pendingGateId = null,
+                        currentStepId = null,
+                        updatedAt = now,
+                    ),
+                )
+                throw ApplicationException(
+                    ApplicationError.RestoreFailure(
+                        "本轮 CONFIRMATION 已无法关联 AI 工作产物（进程重启后内存工作区丢失），本轮已终止；" +
+                            "请重新发起任务（未新建 Gate / 未产生 Commit）",
+                    ),
+                )
+            }
         val ref = workingRef(subject.workingDraftId)
         val existing = workflowRepository.getGateByKey(gateKey(wf, step, ref))
         if (existing != null && existing.status == HumanGateStatus.RESOLVED && existing.decision == HumanDecision.APPROVED) {
@@ -1066,7 +1101,9 @@ class WorkflowOrchestrator(
 
     private fun termFailed(wfId: WorkflowId, message: String) {
         val wf = requireWorkflow(wfId)
-        updateWorkflow(wf.copy(status = WorkflowStatus.FAILED, updatedAt = Clock.System.now()))
+        // O-53-C：与 O-53-B 同一语义 —— FAILED 为终态，必须释放章节占位，否则 `startChapter`
+        // 会被该 FAILED 行永久占位（`getWorkflowByActiveChapter` 无状态过滤），无法重新发起任务。
+        updateWorkflow(wf.copy(status = WorkflowStatus.FAILED, activeChapterId = null, updatedAt = Clock.System.now()))
     }
 
     /**

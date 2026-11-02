@@ -2,8 +2,10 @@ package com.qianyan.application.usecase.workflow
 
 import com.qianyan.application.di.ApplicationContainer
 import com.qianyan.application.error.ApplicationException
+import com.qianyan.application.usecase.writing.WritingSnapshot
 import com.qianyan.model.ChapterId
 import com.qianyan.model.NovelId
+import com.qianyan.model.workingdraft.WorkingDraftTarget
 import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.HumanGateStatus
 import com.qianyan.model.workflow.Workflow
@@ -152,18 +154,31 @@ class RevisionBudgetNullEquivalenceTest {
     @Test
     fun `workflow level suffix allocator raises a chapter suffix but keeps keys unique and budget chapter-scoped`() {
         val app = ApplicationContainer.open(analysisGateway = ForbiddenGateway())
+        val novelId = app.novels.createOriginal(title = "后缀作用域")
+        // O-53 后重开要求"工作产物可在本进程解析"：为 chB 构造真实 Chapter + 真实 WorkingDraft（不跑 LLM）
+        val chB = app.chapters.createNextChapter(title = "第一章", novelId = novelId).chapterId
+        val projectId = app.projects.openProject(novelId).projectId
+        val working = app.workingDrafts.create(
+            projectId = projectId,
+            target = WorkingDraftTarget(novelId, chB, null),
+            content = "章候选",
+        )
+        val workingRef = WritingSnapshot.WORKING_REF_PREFIX + working.workingDraftId.value
         val wfId = WorkflowId("wf-suffix-scope")
         val chA = ChapterId("ch-A")
-        val chB = ChapterId("ch-B")
         val now = Clock.System.now()
         val gateId = WorkflowHumanGateId("gate-suffix-scope")
         // Workflow 先建（WorkflowStep/WorkflowHumanGate 外键均指向 Workflow）；pending_gate_id 无外键，可先置。
         app.workflowRepository.createWorkflow(
             Workflow(
-                workflowId = wfId, novelId = NovelId("n-suffix"), kind = WorkflowKind.WRITE_NOVEL,
+                workflowId = wfId, novelId = novelId, kind = WorkflowKind.WRITE_NOVEL,
                 status = WorkflowStatus.WAITING_HUMAN, activeChapterId = chB, pendingGateId = gateId,
                 createdAt = now, updatedAt = now,
             ),
+        )
+        // chB：本轮已完成、携带工作引用的 REVISION Step（供 `requireChapterWorking` 解析）
+        app.workflowRepository.createStep(
+            step(wfId, chB, WorkflowStepPhase.REVISION, "${wfId.value}:${chB.value}:REVISION:R1", WorkflowStepStatus.COMPLETED, roundNo = 0, ref = workingRef, at = now),
         )
         // chA 已有一个 `:R7` 后缀（抬高 workflow 级 maxSuffix）
         app.workflowRepository.createStep(step(wfId, chA, WorkflowStepPhase.FINALIZE, "${wfId.value}:${chA.value}:FINALIZE:R7", WorkflowStepStatus.COMPLETED, roundNo = 7, ref = null, at = now))
@@ -173,15 +188,15 @@ class RevisionBudgetNullEquivalenceTest {
         app.workflowRepository.createGate(
             WorkflowHumanGate(
                 gateId = gateId, workflowId = wfId, stepId = confB.stepId, draftId = null,
-                gateKey = "${wfId.value}:${confB.logicalStepKey}:WORKING:x", status = HumanGateStatus.RESOLVED,
+                gateKey = "${wfId.value}:${confB.logicalStepKey}:$workingRef", status = HumanGateStatus.RESOLVED,
                 decision = HumanDecision.REJECTED, createdAt = now, resolvedAt = now, resolvedBy = "user",
             ),
         )
         val keysBefore = app.workflowRepository.listSteps(wfId).map { it.logicalStepKey }.toSet()
 
         // 显式作者请求 → reopenRejectedRound：为 chB 建新 CONFIRMATION（后缀由 workflow 级分配器给出）。
-        // 之后 CONFIRMATION 执行时无可用工作产物（本测试未构造）→ 预期抛出类型化错误，但重开已发生。
-        runCatching { app.workflowOrchestrator.runForward(wfId, allowReentryAfterReject = true) }
+        // 工作产物可解析 ⇒ 重开发生并继续执行 CONFIRMATION（建新 PENDING Gate，WAITING_HUMAN）。
+        app.workflowOrchestrator.runForward(wfId, allowReentryAfterReject = true)
 
         val newConfirmations = app.workflowRepository.listSteps(wfId)
             .filter { it.chapterId == chB && it.phase == WorkflowStepPhase.CONFIRMATION && it.logicalStepKey !in keysBefore }
