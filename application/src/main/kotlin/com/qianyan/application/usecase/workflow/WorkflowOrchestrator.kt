@@ -561,17 +561,34 @@ class WorkflowOrchestrator(
      * 幂等：该 Gate 已被批准（RESOLVED + APPROVED）→ 完成本 Step（不重复建 Gate）。
      */
     private fun executeConfirmation(wf: Workflow, step: WorkflowStep): WorkflowRunResult {
+        // O-52：**先判持久决议**。Workflow 绑定的待决 Gate 已批准 ⇒ 本 Step 直接收敛并清空 pendingGateId。
+        // 该分支只依赖持久事实（Gate + 已提交载体），**不依赖进程内存中的工作产物**，因此跨重启 / 中断后仍可收尾。
+        val pending = wf.pendingGateId?.let { workflowRepository.getGate(it) }
+        if (pending != null && pending.stepId == step.stepId &&
+            pending.status == HumanGateStatus.RESOLVED && pending.decision == HumanDecision.APPROVED
+        ) {
+            convergeApprovedConfirmation(wf, step)
+            return WorkflowRunResult(status = wf.status, stepCompleted = true, reused = true)
+        }
         val subject = requireChapterWorking(wf, step)
         val ref = workingRef(subject.workingDraftId)
         val existing = workflowRepository.getGateByKey(gateKey(wf, step, ref))
         if (existing != null && existing.status == HumanGateStatus.RESOLVED && existing.decision == HumanDecision.APPROVED) {
-            finishStep(wf, step, "CONFIR:" + ref)
-            return WorkflowRunResult(status = wf.status, stepCompleted = true)
+            convergeApprovedConfirmation(wf, step)
+            return WorkflowRunResult(status = wf.status, stepCompleted = true, reused = true)
         }
         // 进入 Human Gate：建 Gate（幂等）→ WAITING_HUMAN。
         val gate = createPendingGate(wf, step, ref)
         updateWorkflow(wf.copy(status = WorkflowStatus.WAITING_HUMAN, pendingGateId = gate.gateId, currentStepId = step.stepId, updatedAt = Clock.System.now()))
         return WorkflowRunResult(status = WorkflowStatus.WAITING_HUMAN, stepCompleted = true)
+    }
+
+    /** 已批准 Gate 的 CONFIRMATION 收尾：完成 Step + 建后继（KNOWLEDGE_UPDATE）+ 清空 pendingGateId（同批落库）。 */
+    private fun convergeApprovedConfirmation(wf: Workflow, step: WorkflowStep) {
+        val gateRef = wf.pendingGateId?.value ?: step.resultReference ?: "APPROVED"
+        finishStep(wf, step, "CONFIR:GATE:" + gateRef)
+        // finishStep 已完成 Step / 建后继 / 清 currentStepId；此处清空"无待决闸门"的语义字段。
+        updateWorkflow(requireWorkflow(wf.workflowId).copy(pendingGateId = null, updatedAt = Clock.System.now()))
     }
 
     private fun executeKnowledgeUpdate(wf: Workflow, step: WorkflowStep): WorkflowRunResult {

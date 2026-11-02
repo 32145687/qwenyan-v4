@@ -9,6 +9,7 @@ import com.qianyan.model.ChapterId
 import com.qianyan.model.NovelId
 import com.qianyan.model.VariantId
 import com.qianyan.model.story.Chapter
+import com.qianyan.model.workflow.HumanDecision
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -66,12 +67,27 @@ class WriterController(
     )
     val uiState: StateFlow<WriterUiState> = _uiState.asStateFlow()
 
-    /** 只读加载：章节信息 + 最新 Draft + Workflow 阶段 / 人工门（不推进任何状态）。 */
+    /** 加载：先做 O-52 批准收尾补偿，再只读加载章节信息 + 最新 Draft + Workflow 阶段 / 人工门。 */
     fun load() {
         scope.launch {
-            runCatching { readContext() }
+            runCatching {
+                compensateApprovedWorkflow()
+                readContext()
+            }
                 .onSuccess { loaded -> _uiState.update { it.applyContext(loaded).copy(isLoaded = true, dirty = false) } }
                 .onFailure { e -> _uiState.update { it.copy(error = messageFor(e)) } }
+        }
+    }
+
+    /**
+     * O-52 补偿：Workflow 的 Gate 已**批准**但流程未收尾（如批准后进程中断 / 强制重启）⇒ 走既有幂等
+     * [ChapterWorkflowGateway.approve] 收敛（不重复 Commit、不新建 Gate）。仅"已批准"触发；
+     * 待决 / 已拒绝 / 已完成（无 Gate）一律不动，不会因打开章节自动开新轮次。
+     */
+    private fun compensateApprovedWorkflow() {
+        val progress = workflow.getChapterProgress(chapterId)
+        if (progress.pendingGateDecision == HumanDecision.APPROVED) {
+            workflow.approve(chapterId)
         }
     }
 

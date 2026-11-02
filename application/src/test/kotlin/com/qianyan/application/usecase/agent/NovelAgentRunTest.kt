@@ -229,7 +229,9 @@ class NovelAgentRunTest {
         assertEquals(before["ChapterDraft"]!! + 1, after["ChapterDraft"])
         assertEquals(before["CommitHistory"]!! + 1, after["CommitHistory"])
         assertEquals(before["Workflow"]!! + 1, after["Workflow"], "桥接创建一个正式 Workflow")
-        listOf("Chapter", "ProjectState", "StoryFoundation", "Task").forEach {
+        // O-52：批准即收尾 → KNOWLEDGE_UPDATE 由审批链建立并执行（恰 +1 Task）
+        assertEquals(before["Task"]!! + 1, after["Task"], "批准收尾创建 KNOWLEDGE_UPDATE Task")
+        listOf("Chapter", "ProjectState", "StoryFoundation").forEach {
             assertEquals(before[it], after[it], "$it 不得变化")
         }
 

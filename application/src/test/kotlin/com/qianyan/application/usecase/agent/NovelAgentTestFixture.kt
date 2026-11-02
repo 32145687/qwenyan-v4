@@ -72,6 +72,8 @@ internal fun routingGateway(
         "StoryWriterAgent" in system -> jsonBody("content", writerContent)
         "StoryCriticAgent" in system -> """{"passed":true}"""
         "StoryRevisionAgent" in system -> jsonBody("content", revisionContent)
+        // O-52：批准即收尾 → KNOWLEDGE_UPDATE 成为审批链的一部分，Mock 必须给出合法（空变更）输出。
+        "KnowledgeUpdateAgent" in system || "StoryKnowledgeUpdateAgent" in system -> """{"changes":[]}"""
         else -> jsonBody("content", "占位")
     }
     ProviderResponse(

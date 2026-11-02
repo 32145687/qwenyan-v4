@@ -100,12 +100,21 @@ class ChapterWorkflowFacade(
         return project(wf)
     }
 
-    /** HITL：批准当前待确认闸门（幂等，重复 approve 不产生副作用）。随后 [advance] 完成 KU → COMPLETED。 */
+    /** HITL：批准当前待确认闸门（幂等，重复 approve 不产生副作用）。审批后**同一次调用内**显式推进到收尾。 */
     override fun approve(chapterId: ChapterId): ChapterWorkflowProgress {
         val wf = requireWorkflowByChapter(chapterId)
         val gateId = wf.pendingGateId
-            ?: throw ApplicationException(ApplicationError.InvalidOperation("chapter $chapterId 无待确认闸门"))
+        if (gateId == null) {
+            // O-52：批准已收尾（pendingGateId 已清空）⇒ 幂等 no-op，覆盖同一次双击的第二击 / 重复恢复。
+            if (wf.status == WorkflowStatus.RUNNING || wf.status == WorkflowStatus.COMPLETED) {
+                guard { orchestrator.runForward(wf.workflowId) }
+                return getChapterProgress(chapterId)
+            }
+            throw ApplicationException(ApplicationError.InvalidOperation("chapter $chapterId 无待确认闸门"))
+        }
         guard { orchestrator.approveGate(gateId) }
+        // O-52：批准 = 决议 + 提交事实；显式推进完成 CONFIRMATION（清 pendingGateId）→ KNOWLEDGE_UPDATE → COMPLETED。
+        guard { orchestrator.runForward(wf.workflowId) }
         return getChapterProgress(chapterId)
     }
 

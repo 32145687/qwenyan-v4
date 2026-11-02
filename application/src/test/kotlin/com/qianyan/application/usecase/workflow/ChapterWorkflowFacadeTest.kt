@@ -109,12 +109,12 @@ class ChapterWorkflowFacadeTest {
         c.workflowFacade.advance(chapter)
         assertEquals(ChapterPhase.WAITING_CONFIRMATION, c.workflowFacade.getChapterProgress(chapter).phase)
 
-        // approve 后：不再等待用户，但尚未完成（等 KU）
+        // O-52：approve 同一次调用内收尾（不再依赖外部 advance）→ COMPLETED，KU 已沉淀事实
         val approved = c.workflowFacade.approve(chapter)
         assertFalse(approved.waitingForUser)
-        assertNotEquals(ChapterPhase.COMPLETED, approved.phase)
+        assertEquals(ChapterPhase.COMPLETED, approved.phase)
 
-        // 再 advance → COMPLETED；KU 已沉淀事实
+        // 幂等：再 advance 保持 COMPLETED；KU 已沉淀事实
         val done = c.workflowFacade.advance(chapter)
         assertEquals(ChapterPhase.COMPLETED, done.phase)
         assertTrue(c.storyWorldContextResolver.resolve(novel).memories.any { it.contains("已突破金丹期") })

@@ -70,6 +70,9 @@ class ConvergenceReviewUseCaseTest {
 
             "StoryCharacterConsistencyAgent" in system -> ccBody()
 
+            // O-52：批准即收尾 → 审批链包含 KNOWLEDGE_UPDATE，脚本化网关需给出合法（空变更）输出。
+            "KnowledgeUpdateAgent" in system || "StoryKnowledgeUpdateAgent" in system -> """{"changes":[]}"""
+
             else -> buildJsonObject { put("content", "占位") }.toString()
         }
         ProviderResponse(
