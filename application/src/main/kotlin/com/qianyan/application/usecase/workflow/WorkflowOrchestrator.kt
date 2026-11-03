@@ -822,24 +822,19 @@ class WorkflowOrchestrator(
             )
         }
 
-        val targetChapterId = workflowRepository.getContinuationBySourceDraft(srcDraft.draftId)?.targetChapterId ?: run {
-            val target = resolveNextChapter(wf1, srcChapter)
-            workflowRepository.inTransaction {
-                if (workflowRepository.getContinuationBySourceDraft(srcDraft.draftId) == null) {
-                    workflowRepository.createContinuation(
-                        WorkflowContinuation(
-                            continuationId = WorkflowContinuationId(UUID.randomUUID().toString()),
-                            workflowId = wf1.workflowId,
-                            sourceDraftId = srcDraft.draftId,
-                            sourceChapterId = srcChapter,
-                            targetChapterId = target,
-                            createdAt = Clock.System.now(),
-                        ),
-                    )
-                }
-            }
-            target
+        val targetChapterId = workflowRepository.getContinuationBySourceDraft(srcDraft.draftId)?.targetChapterId
+            ?: resolveNextChapter(wf1, srcChapter)
+
+        // T-O54：目标章已有**非终态**占位 ⇒ 复用该 Workflow（幂等），不得再建第二条 active；
+        // 但其在途 AI 工作产物已随进程丢失时无法复用 ⇒ 明确降级，不产生新的死 Workflow。
+        val existingTarget = workflowRepository.getWorkflowByActiveChapter(targetChapterId)
+        if (existingTarget != null && !existingTarget.isTerminal()) {
+            requireResumableWorkingProduct(existingTarget, targetChapterId)
+            ensureContinuation(wf1, srcDraft.draftId, srcChapter, targetChapterId)
+            return existingTarget.workflowId
         }
+
+        ensureContinuation(wf1, srcDraft.draftId, srcChapter, targetChapterId)
 
         // 确定性 Chapter 2 Workflow 身份 → 幂等查找/创建（不因 session 不同而重复）。
         val wf2Id = WorkflowId("continue:${srcDraft.draftId.value}:${targetChapterId.value}")
@@ -850,6 +845,55 @@ class WorkflowOrchestrator(
             )
         }
         return wf2Id
+    }
+
+    /**
+     * T-O54：目标章已存在非终态 Workflow 时，只有其**在途 AI 产物**仍可解析才允许复用推进。
+     * 无在途产物（CREATED / 仅 PLANNING）⇒ 可安全续跑；有产物但解析失败（进程重启丢失）⇒ 明确降级。
+     */
+    private fun requireResumableWorkingProduct(wf: Workflow, chapterId: ChapterId) {
+        val ref = workflowRepository.listSteps(wf.workflowId)
+            .lastOrNull {
+                it.chapterId == chapterId &&
+                    it.phase in WORKING_PHASES &&
+                    it.resultReference?.let(::isWorkingRef) == true
+            }
+            ?.resultReference
+        if (ref != null && resolveWorking(ref) != null) return
+        if (ref == null && wf.pendingGateId == null) return
+        throw ApplicationException(
+            ApplicationError.RestoreFailure(
+                "目标章节 ${chapterId.value} 已有未完成 Workflow（${wf.status.name}），但其 AI 工作产物已失效" +
+                    "（进程重启后内存工作区丢失），无法复用该轮续篇；请重新发起该章任务（未新建 Workflow / 未新建 Gate）",
+            ),
+        )
+    }
+
+    private fun Workflow.isTerminal(): Boolean =
+        status == WorkflowStatus.COMPLETED || status == WorkflowStatus.FAILED || status == WorkflowStatus.CANCELLED
+
+    /** T-O54：续篇关系幂等落库（唯一 sourceDraftId+targetChapterId），复用与新建路径都保留来源。 */
+    private fun ensureContinuation(
+        sourceWf: Workflow,
+        sourceDraftId: DraftId,
+        sourceChapterId: ChapterId,
+        targetChapterId: ChapterId,
+    ) {
+        if (workflowRepository.getContinuationBySourceDraft(sourceDraftId) != null) return
+        workflowRepository.inTransaction {
+            if (workflowRepository.getContinuationBySourceDraft(sourceDraftId) == null) {
+                workflowRepository.createContinuation(
+                    WorkflowContinuation(
+                        continuationId = WorkflowContinuationId(UUID.randomUUID().toString()),
+                        workflowId = sourceWf.workflowId,
+                        sourceDraftId = sourceDraftId,
+                        sourceChapterId = sourceChapterId,
+                        targetChapterId = targetChapterId,
+                        createdAt = Clock.System.now(),
+                    ),
+                )
+            }
+        }
     }
 
     /** 解析 source Chapter 的下一章：同 novel+variant、紧邻其后（order）的既有 Chapter；无则原子创建。 */

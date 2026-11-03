@@ -91,8 +91,11 @@ getWorkflowById:
 SELECT * FROM Workflow WHERE workflow_id = :workflow_id;
 
 -- P12.2 · M1-M2：按 activeChapter 查其归属 Workflow（用户层 chapterId → workflow 句柄，供 Facade）。
+-- T-O54：历史数据可能同章多行占位（旧 WAITING_HUMAN + 新建 CONTINUE）；无 ORDER BY 时命中行不确定。
+-- 确定性取最新行（同一毫秒再按 workflow_id 兜底），保证 advance/approve 落在续篇新行而非陈旧行。
 singleWorkflowByActiveChapter:
-SELECT * FROM Workflow WHERE active_chapter_id = :active_chapter_id LIMIT 1;
+SELECT * FROM Workflow WHERE active_chapter_id = :active_chapter_id
+ORDER BY created_at DESC, workflow_id DESC LIMIT 1;
 
 updateWorkflow:
 UPDATE Workflow SET status = :status, active_chapter_id = :active_chapter_id, current_step_id = :current_step_id,
