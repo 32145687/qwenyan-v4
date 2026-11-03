@@ -37,6 +37,8 @@ Qianyan **不是**：小说版 VS Code / Cursor / Codex / 编程 IDE · ChatGPT 
 > 上位方向文档：**[docs/architecture/qianyan-novel-ide-direction.md](docs/architecture/qianyan-novel-ide-direction.md)**
 > （§13 说明新方向如何复用既有工程基础；§14 列出暂停/取代项；§15 为下一设计阶段）。
 > 已封存契约继续有效：[P20 Architecture Freeze FD-1…FD-10](docs/architecture/p20-architecture-freeze.md)、P19 Decision Model、受控 Markdown v1、schema v17（ReadingProgress）、Original 只读与写保护触发器、HITL。
+>
+> 🗂 **文档导航**：[docs/README.md](docs/README.md) —— 架构 / 计划与裁决 / 项目控制（唯一状态源）/ 状态快照 / 审计快照 / 阶段报告，各归其位。
 
 ## 要解决的问题
 
