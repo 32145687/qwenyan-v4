@@ -153,6 +153,23 @@ fun WritePage(state: DesktopAppState) {
                 val target = list.getOrNull(idx + 1)
                 if (idx in 0 until list.size - 1 && target != null) workspace.select(selectionFor(state, target))
             },
+            // O-33：续篇入口。复用既有 2A 链（durable continuation 幂等 + advance 到人工门），
+            // 成功后导航到下一章；前置不满足由 Controller 给明确文案，不静默导航。
+            onContinueNext = {
+                controller?.continueToNextChapter { targetChapterId ->
+                    val projectId = state.workspace.selection?.projectId ?: state.novel?.projectId
+                    val novelId = state.novel?.novelId
+                    if (projectId != null && novelId != null) {
+                        workspace.select(
+                            WorkspaceSelection.chapter(
+                                projectId = projectId,
+                                novelId = novelId,
+                                chapterId = targetChapterId,
+                            ),
+                        )
+                    }
+                }
+            },
             onExport = {
                 val loaded = chapter
                 if (loaded == null) state.toast("尚未加载章节") else state.exportChapterToTxt(loaded, ui.draftContent)
@@ -373,6 +390,7 @@ private fun ChapterBar(
     onReject: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
+    onContinueNext: () -> Unit,
     onExport: () -> Unit,
     onConfirmFinal: () -> Unit,
 ) {
@@ -411,6 +429,8 @@ private fun ChapterBar(
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { setMenuOpen(false) }) {
                     MenuEntry("上一章") { setMenuOpen(false); onPrev() }
                     MenuEntry("下一章") { setMenuOpen(false); onNext() }
+                    // O-33：续篇（生成下一章并进入人工门）；前置不满足时由 Controller 给明确降级文案。
+                    MenuEntry("续篇 · 从本章续写下一章") { setMenuOpen(false); onContinueNext() }
                     MenuSeparator()
                     ProseSize.entries.forEach { p ->
                         MenuEntry("字号 · ${p.label}${if (p == state.proseSize) "  ✓" else ""}") {

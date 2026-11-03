@@ -164,6 +164,41 @@ class WriterController(
         gateway.rewrite(novelId, variantId, chapterId)
     }
 
+    /**
+     * 续篇（O-33）：从**当前已完成且已确认**的章节续写下一章。
+     *
+     * 复用既有 2A 链 [ChapterWorkflowGateway.continueToNextChapter]（durable continuation 幂等），
+     * 再以同一 gateway 的 [ChapterWorkflowGateway.advance] 把下一章推到人工门（不绕过 Gate）。
+     * 前置不满足时**降级不硬拒**：给明确文案、不改任何持久状态（O-42 同族语义）。
+     *
+     * @param onReady 成功时回调下一章 [ChapterId]（UI 负责导航；本类不触碰 workspace）。
+     */
+    fun continueToNextChapter(onReady: (ChapterId) -> Unit) {
+        val state = _uiState.value
+        if (state.busy) return
+        if (state.taskStatus != WriterTaskStatus.COMPLETED) {
+            _uiState.update { it.copy(error = CONTINUATION_NOT_COMPLETED_MESSAGE) }
+            return
+        }
+        _uiState.update { it.copy(isGenerating = true, error = null) }
+        scope.launch {
+            runCatching {
+                withContext(ioDispatcher) {
+                    val target = workflow.continueToNextChapter(chapterId).chapterId
+                    workflow.advance(target)
+                    target
+                }
+            }
+                .onSuccess { target ->
+                    _uiState.update { it.copy(isGenerating = false) }
+                    onReady(target)
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(isGenerating = false, error = continuationFailureMessage(e)) }
+                }
+        }
+    }
+
     /** 通过人工门（HITL）：调用既有 [ChapterWorkflowGateway.approve]，**不自动批准、不绕过 Gate**。 */
     fun approveGate() {
         if (!_uiState.value.canApprove) return
@@ -297,4 +332,22 @@ internal fun messageFor(error: Throwable): String = when (error) {
         else -> "操作失败，请重试"
     }
     else -> "操作失败：${error.message ?: error.javaClass.simpleName}"
+}
+
+/** 续篇前置未满足（本章未完成 / 未通过确认）时的唯一用户文案（不静默、不伪造）。 */
+internal const val CONTINUATION_NOT_COMPLETED_MESSAGE: String =
+    "本章尚未完成并通过确认，无法续篇：请先通过本章的待确认提案。"
+
+/**
+ * 续篇失败的降级文案（O-42 同族语义）：
+ *  - 无已提交 Canonical → "尚无已确认正文"；
+ *  - 源 Workflow 非 COMPLETED / 无 active Chapter → "尚未完成并通过确认"；
+ *  - 其余沿用既有用户文案映射。
+ */
+private fun continuationFailureMessage(error: Throwable): String = when {
+    error is ApplicationException && error.error is ApplicationError.DraftConfirmationRequired ->
+        "上一章尚无已确认正文，无法续篇。"
+    error is ApplicationException && error.error is ApplicationError.InvalidOperation ->
+        "本章尚未完成并通过确认，无法续篇。"
+    else -> messageFor(error)
 }
