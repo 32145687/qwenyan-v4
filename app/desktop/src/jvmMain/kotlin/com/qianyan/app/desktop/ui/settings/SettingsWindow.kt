@@ -64,6 +64,7 @@ private data class SettingsGroup(val title: String, val items: List<SettingsItem
 /** 设置分区 key（入口定位用；必须与 [SETTINGS_NAV] 的 itemKey 一致）。 */
 internal const val SETTINGS_PROVIDER_SECTION = "provider"
 internal const val SETTINGS_MODELS_SECTION = "models"
+internal const val SETTINGS_USAGE_SECTION = "usage"
 
 private val SETTINGS_NAV = listOf(
     SettingsGroup("外观", listOf(SettingsItem("theme", "主题"), SettingsItem("layout", "界面"))),
@@ -72,6 +73,7 @@ private val SETTINGS_NAV = listOf(
         listOf(
             SettingsItem("provider", "AI Provider"),
             SettingsItem("models", "模型"),
+            SettingsItem(SETTINGS_USAGE_SECTION, "用量与余额"),
         ),
     ),
     SettingsGroup("写作", listOf(SettingsItem("type", "排版"))),
@@ -160,6 +162,7 @@ fun SettingsPanel(state: DesktopAppState, onClose: () -> Unit) {
                         "layout" -> LayoutSettings(state)
                         "provider" -> ProviderSection(state)
                         "models" -> ModelSettings(state)
+                        SETTINGS_USAGE_SECTION -> UsageSettings(state)
                         "type" -> TypographySection(state)
                         "shortcut" -> ShortcutSection()
                     }

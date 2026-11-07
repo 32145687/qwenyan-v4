@@ -4,10 +4,13 @@ import com.qianyan.application.di.ApplicationContainer
 import com.qianyan.app.desktop.adapter.DesktopProviderAssembler
 import com.qianyan.app.desktop.adapter.FileProviderCredentialStore
 import com.qianyan.provider.ProviderAssembler
+import com.qianyan.provider.BalanceQuery
 import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.provider.ProviderType
 import com.qianyan.provider.ReasoningEffort
+import com.qianyan.provider.UsageSink
 import com.qianyan.provider.impl.DefaultProviderAssembler
+import com.qianyan.provider.impl.UsageRecordingAssembler
 import com.qianyan.provider.impl.transport.JdkLlmHttpClient
 import com.qianyan.provider.impl.transport.LlmHttpClient
 import com.qianyan.storage.db.QianyanDbFactory
@@ -52,6 +55,9 @@ class DesktopGraph @JvmOverloads private constructor(
 
     /** 自定义模型清单（与 provider-selection 同族配置，不进 SQLite）。 */
     val modelCatalog = CustomModelCatalog(appDir.resolve("models.properties"))
+
+    /** 本地用量账本（旁路统计；`<appDir>/usage.json`，不进 SQLite）。 */
+    val usageLedger = UsageLedger(appDir.resolve("usage.json"))
 
     private val _customModelsRevision = MutableStateFlow(0)
 
@@ -122,7 +128,23 @@ class DesktopGraph @JvmOverloads private constructor(
         val handle = QianyanDbFactory.open(url)
         currentHandle?.driver?.close()
         currentHandle = handle
-        return ApplicationContainer.fromDriver(handle.driver, assembler, configuration)
+        // 记账装饰器包在装配口内侧：所有 chat 成功路径同一处记录，失败路径不记（A-14）。
+        val recording = UsageRecordingAssembler(
+            delegate = assembler,
+            sink = UsageSink { provider, modelId, usage -> usageLedger.record(provider, modelId, usage) },
+            modelId = configuration.model?.id ?: modelId(),
+        )
+        return ApplicationContainer.fromDriver(handle.driver, recording, configuration)
+    }
+
+    /**
+     * 余额查询接缝：MOCK 与未配置 Key 的 Provider 返回 null（不构造请求、不触网）。
+     *
+     * 返回的是按当前配置新装配的网关；调用方负责把网络阻塞放到后台线程。
+     */
+    fun balanceQuery(type: ProviderType): BalanceQuery? {
+        if (type == ProviderType.MOCK || !isConfigured(type)) return null
+        return runCatching { assembler.assemble(buildConfiguration(type)) as? BalanceQuery }.getOrNull()
     }
 
     private fun readStored(): Map<String, String> = runCatching {
