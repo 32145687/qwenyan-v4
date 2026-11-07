@@ -191,14 +191,14 @@ class KnowledgeUpdateExecutionTest {
         assertIs<ApplicationError.InvalidKnowledgeUpdateOutput>(ex.error)
     }
 
-    /* Provider 故障 → ProviderUnavailable */
+    /* Provider 故障（超时）→ ProviderTimeout（L-2 拆分） */
     @Test
     fun `provider failure fails typed`() {
         llmCalls = 0
         val app = ApplicationContainer.open(analysisGateway = gateway(throwing = true))
         val id = app.tasks.create(TaskType.WRITING)
         val ex = assertFailsWith<ApplicationException> { app.taskRunner.executeKnowledgeUpdate(id, confirmedDraft(app)) }
-        assertIs<ApplicationError.ProviderUnavailable>(ex.error)
+        assertIs<ApplicationError.ProviderTimeout>(ex.error)
     }
 
     /* 非 WRITING Task → InvalidOperation */

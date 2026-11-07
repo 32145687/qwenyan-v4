@@ -114,7 +114,7 @@ class RealProviderApplicationIntegrationTest {
     }
 
     @Test
-    fun `real gateway provider failure surfaces as application provider unavailable error`() {
+    fun `real gateway provider failure surfaces as application rate limited error`() {
         val transport = LlmHttpClient { _, _, _ -> HttpResponse(429, """{"error":{"code":"rate_limit_exceeded"}}""") }
         val gateway = DeepSeekLLMGateway(apiKey = "test-key", client = transport)
         val app = ApplicationContainer.open(analysisGateway = gateway, analysisModel = ModelProfile.DEEPSEEK_V4_FLASH)
@@ -124,7 +124,7 @@ class RealProviderApplicationIntegrationTest {
         val ex = kotlin.test.assertFailsWith<com.qianyan.application.error.ApplicationException> {
             app.analysis.analyzeTxtOriginal(com.qianyan.model.TxtDocumentId(docId), vocabId, originalContext(novelId))
         }
-        assertTrue(ex.error is com.qianyan.application.error.ApplicationError.ProviderUnavailable)
+        assertTrue(ex.error is com.qianyan.application.error.ApplicationError.ProviderRateLimited)
         assertTrue(app.vocabularyRepository.findCandidatesByNovel(com.qianyan.model.NovelId(novelId)).isEmpty())
     }
 }

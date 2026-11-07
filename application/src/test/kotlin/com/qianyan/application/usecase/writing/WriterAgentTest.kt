@@ -37,7 +37,7 @@ import kotlin.test.assertIs
  * 用注入的 Mock LLM（以 `{"answer":"<正文>"}` 协议返回受控输出）验证 Writer：
  *  - 合法正文 → Draft（结构 ID 来自 [ChapterPlan]，正文来自 LLM）；
  *  - 非法 JSON / 缺 content / 类型错误 / 空输出 → 类型化 [ApplicationError.InvalidWritingOutput]；
- *  - Provider / Agent 失败 → 类型化错误（ProviderUnavailable / WritingFailed）。
+ *  - Provider / Agent 失败 → 类型化错误（ProviderTimeout 等 / WritingFailed）。
  * 全程无网络，不触碰 Storage / Provider 具体实现。
  */
 class WriterAgentTest {
@@ -145,13 +145,13 @@ class WriterAgentTest {
         assertIs<ApplicationError.InvalidWritingOutput>(noAnswer.error)
     }
 
-    /* Provider 故障（超时）→ 类型化 ProviderUnavailable，不泄漏底层 */
+    /* Provider 故障（超时）→ 类型化 ProviderTimeout，不泄漏底层（L-2 拆分） */
     @Test
     fun `provider failure fails with typed error`() {
         val ex = assertFailsWith<ApplicationException> {
             writer(failingGateway(ProviderException.Timeout("connect timeout"))).write(context(), plan())
         }
-        assertIs<ApplicationError.ProviderUnavailable>(ex.error)
+        assertIs<ApplicationError.ProviderTimeout>(ex.error)
     }
 
     /* 正文为空串 → InvalidWritingOutput（拒绝"成功但无正文"） */

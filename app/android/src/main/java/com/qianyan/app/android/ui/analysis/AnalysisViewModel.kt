@@ -140,6 +140,9 @@ class AnalysisViewModel(
 
     /** ApplicationError → 用户可读文案（不泄露底层技术细节 / 堆栈）。 */
     private fun messageFor(error: ApplicationError): String = when (error) {
+        is ApplicationError.ProviderTimeout -> "分析服务响应超时，请稍后重试"
+        is ApplicationError.ProviderRateLimited -> "分析调用过于频繁，请稍后再试"
+        is ApplicationError.ProviderTokenLimit -> "内容过长，超出模型上下文限制，请缩短内容"
         is ApplicationError.ProviderUnavailable -> "分析服务不可用，请稍后重试"
         is ApplicationError.InvalidAnalysisOutput -> "分析结果无效，请重试"
         is ApplicationError.AnalysisFailed -> "分析失败，请重试"

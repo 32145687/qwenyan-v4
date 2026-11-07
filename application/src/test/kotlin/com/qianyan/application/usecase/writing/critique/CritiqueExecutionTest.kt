@@ -104,13 +104,13 @@ class CritiqueExecutionTest {
         assertIs<ApplicationError.InvalidCritiqueOutput>(ex.error)
     }
 
-    /* Provider 故障（超时）→ ProviderUnavailable（不泄漏底层） */
+    /* Provider 故障（超时）→ ProviderTimeout（不泄漏底层，L-2 拆分） */
     @Test
     fun `provider failure fails typed`() {
         val ex = assertFailsWith<ApplicationException> {
             critic(MockGateway(null, failure = ProviderException.Timeout("timeout"))).critique(draft())
         }
-        assertIs<ApplicationError.ProviderUnavailable>(ex.error)
+        assertIs<ApplicationError.ProviderTimeout>(ex.error)
     }
 
     /* --- Use Case 级（经 ApplicationContainer）--- */

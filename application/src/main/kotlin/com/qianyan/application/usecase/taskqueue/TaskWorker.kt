@@ -96,7 +96,12 @@ class TaskWorker(
      * Provider 缺凭证 = 需人工；其余（含未知）= 不可重试（有界重试上限兜底，禁止无限 retry）。
      */
     private fun classify(error: ApplicationError): AttemptErrorCategory = when (error) {
-        is ApplicationError.ProviderUnavailable -> AttemptErrorCategory.RETRYABLE
+        is ApplicationError.ProviderTimeout,
+        is ApplicationError.ProviderRateLimited,
+        is ApplicationError.ProviderUnavailable,
+        -> AttemptErrorCategory.RETRYABLE
+        // token 超限重试同一请求无意义；需用户缩短内容或换模型。
+        is ApplicationError.ProviderTokenLimit -> AttemptErrorCategory.NON_RETRYABLE
         is ApplicationError.ProviderCredentialMissing -> AttemptErrorCategory.NEEDS_HUMAN
         else -> AttemptErrorCategory.NON_RETRYABLE
     }

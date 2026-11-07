@@ -53,8 +53,20 @@ sealed interface ApplicationError {
             // 小心映射：ProviderException 具体子类 → 对应领域错误；AnalysisException → 解析/流程错误。
             // 既不泄漏 Provider 底层细节，也不经 String message 判断类型。
 
-            /** AI Analysis 提供者不可用（超时 / 限流 / 网关不可用 / token 上限）。 */
+            /**
+             * AI 提供者不可用（连接失败 / 5xx / 其它未细分的网关错误；保留作兜底）。
+             * 超时 / 限流 / token 超限已细分为下列类型，UI 不得再把四类混成一句文案。
+             */
             data class ProviderUnavailable(val detail: String) : ApplicationError
+
+            /** AI 请求超时（网络慢 / 上游响应超时）。 */
+            data class ProviderTimeout(val detail: String) : ApplicationError
+
+            /** AI 调用被限流（429 / 配额受限）。 */
+            data class ProviderRateLimited(val detail: String) : ApplicationError
+
+            /** 超出模型 token 上限（内容过长，重试同一请求无意义）。 */
+            data class ProviderTokenLimit(val detail: String) : ApplicationError
 
             /** AI 输出无法按结构解析或结构非法，无可用结构化结果。 */
             data class InvalidAnalysisOutput(val detail: String) : ApplicationError

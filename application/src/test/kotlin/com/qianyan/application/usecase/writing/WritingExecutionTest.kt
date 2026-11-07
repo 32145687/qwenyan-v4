@@ -133,7 +133,7 @@ class WritingExecutionTest {
         assertTrue(failed.error!!.isNotBlank())
     }
 
-    /* LLM/Provider 故障：超时 → ProviderUnavailable → FAILED（类型化，不伪装工作产物） */
+    /* LLM/Provider 故障：超时 → ProviderTimeout → FAILED（类型化，不伪装工作产物） */
     @Test
     fun `llm failure moves task to failed with typed error`() {
         val app = container(throwing = true)
@@ -143,7 +143,7 @@ class WritingExecutionTest {
         val ex = assertFailsWith<ApplicationException> {
             app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(app, novelId))
         }
-        assertIs<ApplicationError.ProviderUnavailable>(ex.error)
+        assertIs<ApplicationError.ProviderTimeout>(ex.error)
 
         val failed = app.tasks.findById(id)
         assertEquals(TaskStatus.FAILED, failed.status)

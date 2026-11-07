@@ -8,8 +8,10 @@ import com.qianyan.provider.BalanceQuery
 import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.provider.ProviderType
 import com.qianyan.provider.ReasoningEffort
+import com.qianyan.provider.RetryConfig
 import com.qianyan.provider.UsageSink
 import com.qianyan.provider.impl.DefaultProviderAssembler
+import com.qianyan.provider.impl.RetryingAssembler
 import com.qianyan.provider.impl.UsageRecordingAssembler
 import com.qianyan.provider.impl.transport.JdkLlmHttpClient
 import com.qianyan.provider.impl.transport.LlmHttpClient
@@ -129,12 +131,14 @@ class DesktopGraph @JvmOverloads private constructor(
         currentHandle?.driver?.close()
         currentHandle = handle
         // 记账装饰器包在装配口内侧：所有 chat 成功路径同一处记录，失败路径不记（A-14）。
+        // L-2：重试在最外层、记账在内层 —— 失败尝试不记账，最终成功只记一次（chat 无持久化副作用）。
         val recording = UsageRecordingAssembler(
             delegate = assembler,
             sink = UsageSink { provider, modelId, usage -> usageLedger.record(provider, modelId, usage) },
             modelId = configuration.model?.id ?: modelId(),
         )
-        return ApplicationContainer.fromDriver(handle.driver, recording, configuration)
+        val retrying = RetryingAssembler(delegate = recording, retry = RetryConfig())
+        return ApplicationContainer.fromDriver(handle.driver, retrying, configuration)
     }
 
     /**

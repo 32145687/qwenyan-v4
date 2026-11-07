@@ -22,7 +22,11 @@ class UsageWiringGuardTest {
             "sink 必须落到本地账本",
         )
         assertTrue(
-            "fromDriver(handle.driver, recording, configuration)" in graph,
+            "RetryingAssembler(delegate = recording, retry = RetryConfig())" in graph,
+            "重试必须在记账外层（失败不记账、最终成功只记一次）",
+        )
+        assertTrue(
+            "fromDriver(handle.driver, retrying, configuration)" in graph,
             "容器必须用包装后的 assembler 装配（单一装配口）",
         )
         assertTrue("val usageLedger = UsageLedger(appDir.resolve(\"usage.json\"))" in graph, "账本落 appDir")

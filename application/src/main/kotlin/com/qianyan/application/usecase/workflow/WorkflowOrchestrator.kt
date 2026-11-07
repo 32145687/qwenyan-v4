@@ -1230,14 +1230,24 @@ class WorkflowOrchestrator(
     private fun updateAttempt(a: WorkflowStepAttempt) = workflowRepository.updateAttempt(a)
 
     private fun classify(e: ApplicationException): AttemptErrorCategory? = when (e.error) {
-        is ApplicationError.ProviderUnavailable -> AttemptErrorCategory.RETRYABLE
+        is ApplicationError.ProviderTimeout,
+        is ApplicationError.ProviderRateLimited,
+        is ApplicationError.ProviderUnavailable,
+        -> AttemptErrorCategory.RETRYABLE
+        is ApplicationError.ProviderTokenLimit -> AttemptErrorCategory.NON_RETRYABLE
         is ApplicationError.ProviderCredentialMissing -> AttemptErrorCategory.NEEDS_HUMAN
         is ApplicationError.InvalidWritingOutput -> AttemptErrorCategory.NON_RETRYABLE
         else -> null
     }
 
-    private fun errorMapperToCategory(t: Throwable): AttemptErrorCategory =
-        if (t is ProviderException) AttemptErrorCategory.RETRYABLE else AttemptErrorCategory.NON_RETRYABLE
+    private fun errorMapperToCategory(t: Throwable): AttemptErrorCategory = when (t) {
+        is ProviderException.Timeout,
+        is ProviderException.RateLimit,
+        is ProviderException.ProviderUnavailable,
+        -> AttemptErrorCategory.RETRYABLE
+        is ProviderException.CredentialMissing -> AttemptErrorCategory.NEEDS_HUMAN
+        else -> AttemptErrorCategory.NON_RETRYABLE
+    }
 
     /** 与 [com.qianyan.application.usecase.commit.CommitUseCases] 同形的类型化拒绝（错误码承载在消息中）。 */
     private fun invalid(code: String, detail: String): ApplicationException =
