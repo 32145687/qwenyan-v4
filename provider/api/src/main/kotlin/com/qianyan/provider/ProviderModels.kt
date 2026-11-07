@@ -37,10 +37,9 @@ data class ModelProfile(
          */
         val MIMO_V2_5 = ModelProfile(id = "mimo-v2.5-pro", label = "MiMo-V2.5")
 
-        /** MiMo V2.6 系列（当前默认）：mimo-v2.6-pro / -flash / -pro-ultraspeed。 */
+        /** MiMo V2.6 系列（当前默认）：mimo-v2.6-pro / -flash。 */
         val MIMO_V2_6_PRO = ModelProfile(id = "mimo-v2.6-pro", label = "MiMo-V2.6-Pro")
         val MIMO_V2_6_FLASH = ModelProfile(id = "mimo-v2.6-flash", label = "MiMo-V2.6-Flash")
-        val MIMO_V2_6_PRO_ULTRASPEED = ModelProfile(id = "mimo-v2.6-pro-ultraspeed", label = "MiMo-V2.6-Pro-UltraSpeed")
     }
 }
 

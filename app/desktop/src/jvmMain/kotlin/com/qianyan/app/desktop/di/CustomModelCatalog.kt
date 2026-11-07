@@ -92,7 +92,6 @@ class CustomModelCatalog(private val file: Path) {
             CustomModel(ProviderType.DEEPSEEK, "deepseek-v4-pro", "DeepSeek V4 Pro"),
             CustomModel(ProviderType.MIMO, ModelProfile.MIMO_V2_6_PRO.id, "MiMo V2.6 Pro"),
             CustomModel(ProviderType.MIMO, ModelProfile.MIMO_V2_6_FLASH.id, "MiMo V2.6 Flash"),
-            CustomModel(ProviderType.MIMO, ModelProfile.MIMO_V2_6_PRO_ULTRASPEED.id, "MiMo V2.6 Pro UltraSpeed"),
         )
     }
 }

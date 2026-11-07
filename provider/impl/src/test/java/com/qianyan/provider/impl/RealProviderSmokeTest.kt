@@ -325,7 +325,7 @@ class RealProviderSmokeTest {
 
     private companion object {
         val DEEPSEEK_MODELS = listOf("deepseek-flash", "deepseek-v4-flash", "deepseek-v4-pro")
-        val MIMO_MODELS = listOf("mimo-v2.6-pro", "mimo-v2.6-flash", "mimo-v2.6-pro-ultraspeed")
+        val MIMO_MODELS = listOf("mimo-v2.6-pro", "mimo-v2.6-flash")
         val USAGE_CORE = setOf("prompt_tokens", "completion_tokens", "total_tokens")
     }
 }

@@ -27,14 +27,13 @@ class CustomModelCatalogTest {
                 "deepseek-v4-pro",
                 "mimo-v2.6-pro",
                 "mimo-v2.6-flash",
-                "mimo-v2.6-pro-ultraspeed",
             ),
             models.map { it.modelId },
         )
         assertTrue(models.none { it.modelId == "mock-v1" }, "默认清单不得包含 mock-v1")
         assertTrue(catalog.candidates(ProviderType.MOCK).isEmpty(), "离线示意没有模型候选")
         assertEquals(listOf("deepseek-v4-flash", "deepseek-v4-pro"), catalog.candidates(ProviderType.DEEPSEEK).map { it.modelId })
-        assertEquals(3, catalog.candidates(ProviderType.MIMO).size)
+        assertEquals(2, catalog.candidates(ProviderType.MIMO).size)
     }
 
     @Test

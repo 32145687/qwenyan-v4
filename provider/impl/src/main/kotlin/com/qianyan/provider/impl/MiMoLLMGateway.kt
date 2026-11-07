@@ -17,7 +17,7 @@ import com.qianyan.provider.impl.transport.LlmHttpClient
  * 真实 MiMo Provider（P9）。
  *
  * 官方 Xiaomi MiMo API 开放平台（2026 确认）：base_url=https://api.xiaomimimo.com/v1，
- * endpoint=/chat/completions，v2.6 系列官方模型 ID `mimo-v2.6-pro`（另有 -flash / -pro-ultraspeed），
+ * endpoint=/chat/completions，v2.6 系列官方模型 ID `mimo-v2.6-pro`（另有 -flash），
  * 鉴权 `api-key: <apiKey>`（官方文档 curl 示例用 `api-key` header）。max tokens 字段 `max_completion_tokens`。
  *
  * 思考强度依据 MiMo 契约编码为 `"thinking": {"type": "enabled" | "disabled"}`（开关而非档位）：
