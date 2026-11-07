@@ -359,11 +359,12 @@ fun CreateNovelDialog(state: DesktopAppState, onClose: () -> Unit) {
         )
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(
-                Modifier.width(420.dp)
-                    .clip(RoundedCornerShape(QianyanShapes.r3))
+                Modifier.width(460.dp)
+                    .clip(RoundedCornerShape(QianyanShapes.window))
                     .background(palette.raised)
+                    .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.window))
                     .consumeClicks()
-                    .padding(18.dp),
+                    .padding(24.dp),
             ) {
                 Text("新建作品", style = MaterialTheme.typography.titleLarge, color = palette.text)
                 Spacer(Modifier.height(4.dp))
@@ -395,7 +396,7 @@ fun CreateNovelDialog(state: DesktopAppState, onClose: () -> Unit) {
                 )
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    ActionButton("取消", ActionLevel.TEXT, !working, onClose)
+                    ActionButton("取消", ActionLevel.SECONDARY, !working, onClose)
                     Spacer(Modifier.width(8.dp))
                     ActionButton("创建", ActionLevel.PRIMARY, title.isNotBlank() && !working && !state.busy) {
                         val name = title.trim()

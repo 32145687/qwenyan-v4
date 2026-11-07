@@ -15,12 +15,12 @@ import androidx.compose.ui.unit.sp
 /*
  * Qianyan Writing IDE · Design Token（全站唯一视觉事实来源）。
  *
- * P0-UI · 视觉基线对齐「温润暖白」（内容优先、留白、克制）：
- *  - **浅色**：暖白画布 #FAF9F6，界面框架为暖米 #F2F0EB，浮层 / 稿纸为 #FFFFFF；
- *    层次靠暖灰级差 + 1px 极轻分隔线，不用冷灰；
- *  - **深色**：画布为舒适的深灰（#1C1C1E），框架更深（#0E0E10），浮层更亮（#2C2C2E）——不是简单反色；
- *  - 唯一强调色为暖蓝（浅色 #1769D2 / 深色 #0A84FF），只用于关键动作、焦点与当前选择；
- *  - 圆角柔和（6 / 8 / 11 / 16），按钮为胶囊形；阴影极轻，只用于浮层与主输入区；
+ * Pinguo / Apple 式视觉基线（内容优先、留白、克制）：
+ *  - **浅色**：白色画布 #FFFFFF，界面框架为 Silver Mist #F5F5F7，浮层 / 稿纸 #FFFFFF；
+ *    层次靠发丝线（#E5E5EA / #D1D1D6）+ 留白，而不是重阴影；
+ *  - **深色**：画布 Space Black #0A0A0A，框架 #161617，浮层 #242426（不是简单反色）；
+ *  - 唯一强调色为 System Blue（浅色 #007AFF / 深色 #2E8DFF），只用于关键动作、焦点与当前选择；
+ *  - 圆角柔和（10 / 12 / 16 / 20），按钮为胶囊形；阴影极轻，只用于浮层与主输入区；
  *  - 间距按 4 / 8 / 12 / 16 / 24 / 32 / 48 节奏。
  *
  * 层次约定：
@@ -68,56 +68,56 @@ data class QianyanPalette(
 )
 
 /**
- * Dark（**暖调深色分层**：画布 #1B1B18 / 框架 #141412 / 浮层 #232320）。
+ * Dark（**Apple 深色分层**：画布 #0A0A0A / 框架 #161617 / 浮层 #242426）。
  *
- * 与浅色同一套暖中性色相，避免切到深色后变成冷灰；强调色使用更亮的暖蓝。
+ * 与浅色同一套中性色相；强调色使用更亮的 System Blue。
  */
 val QianyanDarkPalette = QianyanPalette(
-    bg = Color(0xFF1B1B18),
-    surface = Color(0xFF141412),
-    raised = Color(0xFF232320),
-    soft = Color(0xFF2A2A26),
-    hover = Color(0xFF32322D),
-    line = Color(0xFF2E2E29),
-    lineStrong = Color(0xFF3B3B35),
-    text = Color(0xFFF2F0EA),
-    text2 = Color(0xFFC9C5BB),
-    text3 = Color(0xFF928D82),
-    accent = Color(0xFF4C8FF5),
+    bg = Color(0xFF0A0A0A),
+    surface = Color(0xFF161617),
+    raised = Color(0xFF242426),
+    soft = Color(0xFF2C2C2E),
+    hover = Color(0xFF303033),
+    line = Color(0xFF2E2E31),
+    lineStrong = Color(0xFF3A3A3C),
+    text = Color(0xFFF5F5F7),
+    text2 = Color(0xFFC7C7CC),
+    text3 = Color(0xFFA1A1A6),
+    accent = Color(0xFF2E8DFF),
     onAccent = Color(0xFFFFFFFF),
-    accentSoft = Color(0x334C8FF5),
-    selection = Color(0x2E4C8FF5),
-    add = Color(0xFF5FBF7A),
-    addSoft = Color(0x245FBF7A),
-    del = Color(0xFFE06A63),
-    delSoft = Color(0x24E06A63),
+    accentSoft = Color(0xFF102A43),
+    selection = Color(0xFF102A43),
+    add = Color(0xFF30D158),
+    addSoft = Color(0x2430D158),
+    del = Color(0xFFFF453A),
+    delSoft = Color(0x24FF453A),
 )
 
 /**
- * Light（**温润暖白**：画布 #FAF9F6 / 框架 #F2F0EB / 浮层与稿纸 #FFFFFF）。
+ * Light（**Apple 浅色**：白色画布 #FFFFFF / 框架 Silver Mist #F5F5F7 / 浮层 #FFFFFF）。
  *
- * 文字使用暖中性层级（#252722 / #777970 / #92938B）；
- * 强调色为暖蓝 #1769D2；选中态为极轻蓝底 #E4EEFF，不抢注意力。
+ * 文字使用 Apple 标签灰阶（#1D1D1F / #6E6E73 / #8E8E93）；
+ * 强调色为 System Blue #007AFF；选中态为极轻蓝底 #E8F2FF。
  */
 val QianyanLightPalette = QianyanPalette(
-    bg = Color(0xFFFAF9F6),
-    surface = Color(0xFFF2F0EB),
+    bg = Color(0xFFFFFFFF),
+    surface = Color(0xFFF5F5F7),
     raised = Color(0xFFFFFFFF),
-    soft = Color(0xFFF4F2EE),
-    hover = Color(0xFFEBE8E1),
-    line = Color(0xFFEAE7E0),
-    lineStrong = Color(0xFFE5E1D9),
-    text = Color(0xFF252722),
-    text2 = Color(0xFF777970),
-    text3 = Color(0xFF92938B),
-    accent = Color(0xFF1769D2),
+    soft = Color(0xFFF2F2F7),
+    hover = Color(0xFFECECF0),
+    line = Color(0xFFE5E5EA),
+    lineStrong = Color(0xFFD1D1D6),
+    text = Color(0xFF1D1D1F),
+    text2 = Color(0xFF56565C),
+    text3 = Color(0xFF73737A),
+    accent = Color(0xFF007AFF),
     onAccent = Color(0xFFFFFFFF),
-    accentSoft = Color(0xFFE4EEFF),
-    selection = Color(0xFFE4EEFF),
-    add = Color(0xFF2E7D51),
-    addSoft = Color(0x1A2E7D51),
-    del = Color(0xFFB4433C),
-    delSoft = Color(0x1AB4433C),
+    accentSoft = Color(0xFFE8F2FF),
+    selection = Color(0xFFE8F2FF),
+    add = Color(0xFF248A3D),
+    addSoft = Color(0x1A34C759),
+    del = Color(0xFFFF3B30),
+    delSoft = Color(0x1AFF3B30),
 )
 
 /** 尺寸 Token：IDE 密度 + 正文呼吸感（间距节奏 4 / 8 / 12 / 16 / 24 / 32 / 48）。 */
@@ -145,12 +145,12 @@ object QianyanDimens {
     val EditorText: TextUnit = 18.sp
 }
 
-/** 圆角 Token：6 / 8 / 11 / 16（窗口）；按钮为胶囊形。 */
+/** 圆角 Token：10 / 12 / 16 / 20（窗口）；按钮为胶囊形。 */
 object QianyanShapes {
-    val r: Dp = 6.dp
-    val r2: Dp = 8.dp
-    val r3: Dp = 11.dp
-    val window: Dp = 16.dp
+    val r: Dp = 10.dp
+    val r2: Dp = 12.dp
+    val r3: Dp = 16.dp
+    val window: Dp = 20.dp
 
     /** 胶囊（ActionButton / Tag）。 */
     val pill: Dp = 999.dp
@@ -173,10 +173,10 @@ object QianyanElevation {
     val Modal: Dp = 20.dp
 }
 
-/** Motion Token：只用于 Tab / 浮层 / Focus / Inspector 更新。 */
+/** Motion Token：Apple 式减速曲线（150 / 250ms 区间）。 */
 object QianyanMotion {
-    const val DurationMillis: Int = 160
-    val Easing = CubicBezierEasing(0.2f, 0.6f, 0.3f, 1f)
+    const val DurationMillis: Int = 180
+    val Easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)
 }
 
 /**

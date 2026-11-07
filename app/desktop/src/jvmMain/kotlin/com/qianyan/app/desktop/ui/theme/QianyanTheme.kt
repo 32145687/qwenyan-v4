@@ -35,23 +35,23 @@ object QianyanTheme {
 
 /** 排版：UI 全部使用 **bundled** Noto Sans SC；正文衬线使用显式衬线族。 */
 private fun qianyanTypography(): Typography = Typography(
-    // 页面标题：22sp / SemiBold / 轻微负字距（Apple 式紧凑标题）
+    // 页面标题：24sp / SemiBold / 轻微负字距（Apple 式紧凑标题）
     displaySmall = TextStyle(
         fontFamily = QianyanFonts.ui,
         fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
-        lineHeight = 30.sp,
-        letterSpacing = (-0.2).sp,
+        fontSize = 24.sp,
+        lineHeight = 32.sp,
+        letterSpacing = (-0.3).sp,
     ),
-    titleLarge = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, lineHeight = 24.sp),
-    titleMedium = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 13.5.sp, lineHeight = 21.sp),
-    titleSmall = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 19.sp),
-    bodyLarge = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 13.5.sp, lineHeight = 22.sp),
-    bodyMedium = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 12.5.sp, lineHeight = 20.sp),
-    bodySmall = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 11.5.sp, lineHeight = 18.sp),
-    labelLarge = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 12.5.sp, lineHeight = 17.sp),
-    labelMedium = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 11.5.sp, lineHeight = 16.sp),
-    labelSmall = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 10.5.sp, lineHeight = 15.sp, letterSpacing = 0.2.sp),
+    titleLarge = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.SemiBold, fontSize = 17.sp, lineHeight = 25.sp),
+    titleMedium = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 21.sp),
+    titleSmall = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 14.sp, lineHeight = 21.sp),
+    bodyLarge = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 14.sp, lineHeight = 22.sp),
+    bodyMedium = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 13.5.sp, lineHeight = 21.sp),
+    bodySmall = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 13.sp, lineHeight = 20.sp),
+    labelLarge = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 13.sp, lineHeight = 19.sp),
+    labelMedium = TextStyle(fontFamily = QianyanFonts.ui, fontWeight = FontWeight.Medium, fontSize = 12.5.sp, lineHeight = 18.sp),
+    labelSmall = TextStyle(fontFamily = QianyanFonts.ui, fontSize = 11.5.sp, lineHeight = 16.sp, letterSpacing = 0.3.sp),
 )
 
 /** 正文（书稿）样式：衬线 + 行距 2.0；字号由 [QianyanDimens.EditorText] 起。 */
@@ -64,8 +64,8 @@ fun qianyanProseStyle(fontSize: androidx.compose.ui.unit.TextUnit = QianyanDimen
 /** 等宽（字数 / 时间 / ID / Diff 行号）。 */
 val QianyanCodeStyle = TextStyle(
     fontFamily = QianyanFonts.mono,
-    fontSize = 11.sp,
-    lineHeight = 17.sp,
+    fontSize = 12.sp,
+    lineHeight = 18.sp,
 )
 
 /** 章节标题（稿纸标题层；24–30px）。 */
