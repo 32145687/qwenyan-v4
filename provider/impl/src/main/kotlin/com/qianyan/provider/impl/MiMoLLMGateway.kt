@@ -1,7 +1,9 @@
 package com.qianyan.provider.impl
 
+import com.qianyan.provider.BalanceQuery
 import com.qianyan.provider.LLMGateway
 import com.qianyan.provider.ModelProfile
+import com.qianyan.provider.ProviderBalance
 import com.qianyan.provider.ProviderException
 import com.qianyan.provider.ProviderRequest
 import com.qianyan.provider.ProviderResponse
@@ -30,7 +32,7 @@ class MiMoLLMGateway(
     private val baseUrl: String = "https://api.xiaomimimo.com/v1",
     private val wireModel: String = ModelProfile.MIMO_V2_6_PRO.id,
     private val reasoningEffort: ReasoningEffort? = null,
-) : LLMGateway {
+) : LLMGateway, BalanceQuery {
 
     override fun chat(request: ProviderRequest): ProviderResponse {
         requireConfigured()
@@ -46,6 +48,27 @@ class MiMoLLMGateway(
             maxTokensParam = "max_completion_tokens",
             thinkingEncoding = ThinkingEncoding.THINKING_TYPE_FIELD,
         )
+    }
+
+    /**
+     * `GET {base}/platform/balance`（base 已含 /v1）或 `{base}/v1/platform/balance`；
+     * `api-key` 鉴权；字段映射见 [BalanceQuerySupport.parseMiMo]。
+     */
+    override fun queryBalance(): ProviderBalance {
+        requireConfigured()
+        val base = baseUrl.trimEnd('/')
+        val url = base + if (base.endsWith("/v1")) "/platform/balance" else "/v1/platform/balance"
+        val response = BalanceQuerySupport.call("MiMo") {
+            client.getJson(
+                url,
+                mapOf(
+                    "api-key" to apiKey,
+                    "Accept" to "application/json",
+                ),
+            )
+        }
+        BalanceQuerySupport.ensureSuccess("MiMo", response)
+        return BalanceQuerySupport.parseMiMo(response.body)
     }
 
     /** API Key 缺失是装配错误：调用时类型化拒绝（不打印 key 内容，不进入 HTTP）。 */

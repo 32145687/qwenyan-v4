@@ -30,4 +30,14 @@ class JdkLlmHttpClient(
         val response = client.send(builder.build(), BodyHandlers.ofString())
         return HttpResponse(response.statusCode(), response.body())
     }
+
+    /** GET（余额等只读端点）：读超时沿用 [TimeoutConfig.readMillis]，头由调用方传入。 */
+    override fun getJson(url: String, headers: Map<String, String>): HttpResponse {
+        val builder = HttpRequest.newBuilder(URI.create(url))
+            .timeout(Duration.ofMillis(timeoutConfig.readMillis))
+            .GET()
+        headers.forEach { (name, value) -> builder.header(name, value) }
+        val response = client.send(builder.build(), BodyHandlers.ofString())
+        return HttpResponse(response.statusCode(), response.body())
+    }
 }

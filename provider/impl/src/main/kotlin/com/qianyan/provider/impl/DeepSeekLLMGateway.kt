@@ -1,7 +1,9 @@
 package com.qianyan.provider.impl
 
+import com.qianyan.provider.BalanceQuery
 import com.qianyan.provider.LLMGateway
 import com.qianyan.provider.ModelProfile
+import com.qianyan.provider.ProviderBalance
 import com.qianyan.provider.ProviderException
 import com.qianyan.provider.ProviderRequest
 import com.qianyan.provider.ProviderResponse
@@ -29,7 +31,7 @@ class DeepSeekLLMGateway(
     private val baseUrl: String = "https://api.deepseek.com",
     private val wireModel: String = ModelProfile.DEEPSEEK_V4_FLASH.id,
     private val reasoningEffort: ReasoningEffort? = null,
-) : LLMGateway {
+) : LLMGateway, BalanceQuery {
 
     override fun chat(request: ProviderRequest): ProviderResponse {
         requireConfigured()
@@ -45,6 +47,23 @@ class DeepSeekLLMGateway(
             maxTokensParam = "max_tokens",
             thinkingEncoding = ThinkingEncoding.REASONING_EFFORT_FIELD,
         )
+    }
+
+    /** `GET {base}/user/balance`：Bearer 鉴权；字段映射见 [BalanceQuerySupport.parseDeepSeek]。 */
+    override fun queryBalance(): ProviderBalance {
+        requireConfigured()
+        val url = baseUrl.trimEnd('/') + "/user/balance"
+        val response = BalanceQuerySupport.call("DeepSeek") {
+            client.getJson(
+                url,
+                mapOf(
+                    "Authorization" to "Bearer $apiKey",
+                    "Accept" to "application/json",
+                ),
+            )
+        }
+        BalanceQuerySupport.ensureSuccess("DeepSeek", response)
+        return BalanceQuerySupport.parseDeepSeek(response.body)
     }
 
     /** API Key 缺失是装配错误：调用时类型化拒绝（不打印 key 内容，不进入 HTTP）。 */

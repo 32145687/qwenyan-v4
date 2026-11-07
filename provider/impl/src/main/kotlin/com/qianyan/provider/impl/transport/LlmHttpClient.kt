@@ -11,6 +11,15 @@ fun interface LlmHttpClient {
 
     /** 发送 JSON POST，返回状态码与响应体。IO 失败抛出原始异常（由调用方映射）。 */
     fun postJson(url: String, headers: Map<String, String>, body: String): HttpResponse
+
+    /**
+     * 发送 GET，返回状态码与响应体（余额等只读端点用）。
+     *
+     * 默认实现直接拒绝：只有具备 GET 能力的真实 transport 才覆盖它，
+     * 既有的 POST-only fake / SAM 实现零改动。Accept 头由调用方传入，客户端不写死。
+     */
+    fun getJson(url: String, headers: Map<String, String>): HttpResponse =
+        throw UnsupportedOperationException("当前 HTTP transport 不支持 GET 请求")
 }
 
 /** 传输层响应（纯数据）。 */
