@@ -6,6 +6,7 @@ import com.qianyan.provider.FinishReason
 import com.qianyan.provider.ModelProfile
 import com.qianyan.provider.ProviderException
 import com.qianyan.provider.ProviderRequest
+import com.qianyan.provider.ReasoningEffort
 import com.qianyan.provider.impl.transport.HttpResponse
 import java.net.http.HttpTimeoutException
 import kotlin.test.Test
@@ -18,10 +19,11 @@ import kotlin.test.assertTrue
 class MiMoLLMGatewayTest {
 
     private fun request(
-        model: ModelProfile = ModelProfile.MIMO_V2_5,
+        model: ModelProfile = ModelProfile.MIMO_V2_6_PRO,
         content: String = "提取世界设定词汇",
         temperature: Double? = 0.0,
         maxTokens: Int? = 1024,
+        reasoningEffort: ReasoningEffort? = null,
     ) = ProviderRequest(
         model = model,
         messages = listOf(
@@ -30,6 +32,7 @@ class MiMoLLMGatewayTest {
         ),
         temperature = temperature,
         maxTokens = maxTokens,
+        reasoningEffort = reasoningEffort,
     )
 
     private val okJson =
@@ -59,7 +62,7 @@ class MiMoLLMGatewayTest {
         assertEquals("https://api.xiaomimimo.com/v1/chat/completions", fake.lastUrl)
         assertEquals("test-key", fake.lastHeaders["api-key"])
         // wire body：模型 ID / 角色 / 内容 / 温度 / max_completion_tokens / 非流式
-        assertTrue(fake.lastBody.contains("\"model\":\"mimo-v2.5-pro\""))
+        assertTrue(fake.lastBody.contains("\"model\":\"mimo-v2.6-pro\""))
         assertTrue(fake.lastBody.contains("\"role\":\"user\""))
         assertTrue(fake.lastBody.contains("提取世界设定词汇"))
         assertTrue(fake.lastBody.contains("\"temperature\":0.0"))
@@ -72,6 +75,39 @@ class MiMoLLMGatewayTest {
         assertEquals(9, out.usage.promptTokens)
         assertEquals(4, out.usage.completionTokens)
         assertEquals(13, out.usage.totalTokens)
+    }
+
+    /* 思考强度：MiMo 是开关，不是档位 */
+    @Test
+    fun `thinking disabled for none effort and enabled for other levels`() {
+        val disabled = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+        MiMoLLMGateway(apiKey = "test-key", client = disabled).chat(request(reasoningEffort = ReasoningEffort.NONE))
+        assertTrue(disabled.lastBody.contains("\"thinking\":{\"type\":\"disabled\"}"), disabled.lastBody)
+        assertTrue(!disabled.lastBody.contains("reasoning_effort"), "MiMo 不使用 reasoning_effort")
+
+        listOf(ReasoningEffort.LOW, ReasoningEffort.HIGH, ReasoningEffort.MAX).forEach { effort ->
+            val enabled = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+            MiMoLLMGateway(apiKey = "test-key", client = enabled).chat(request(reasoningEffort = effort))
+            assertTrue(enabled.lastBody.contains("\"thinking\":{\"type\":\"enabled\"}"), "effort=$effort 应为 enabled")
+            assertTrue(!enabled.lastBody.contains("reasoning_effort"))
+        }
+    }
+
+    @Test
+    fun `null reasoning effort sends no thinking parameter`() {
+        val fake = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+        MiMoLLMGateway(apiKey = "test-key", client = fake).chat(request())
+        assertTrue(!fake.lastBody.contains("thinking"), "null 时不得出现 thinking")
+        assertTrue(!fake.lastBody.contains("reasoning_effort"), "null 时不得出现 reasoning_effort")
+    }
+
+    /* 旧配置兼容：显式配置 mimo-v2.5-pro 时仍原样发送 */
+    @Test
+    fun `explicit legacy mimo v2_5 model still goes to wire unchanged`() {
+        val fake = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+        MiMoLLMGateway(apiKey = "test-key", client = fake, wireModel = ModelProfile.MIMO_V2_5.id)
+            .chat(request(model = ModelProfile.MIMO_V2_5))
+        assertTrue(fake.lastBody.contains("\"model\":\"mimo-v2.5-pro\""), fake.lastBody)
     }
 
     @Test

@@ -8,6 +8,7 @@ import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.provider.ProviderException
 import com.qianyan.provider.ProviderRequest
 import com.qianyan.provider.ProviderType
+import com.qianyan.provider.ReasoningEffort
 import com.qianyan.provider.impl.transport.HttpResponse
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -94,9 +95,30 @@ class ProviderAssemblerTest {
         val gateway = DefaultProviderAssembler(store, fake).assemble(ProviderConfiguration(provider = ProviderType.MIMO))
 
         assertIs<MiMoLLMGateway>(gateway)
-        gateway.chat(request(ModelProfile.MIMO_V2_5))
+        gateway.chat(request(ModelProfile.MIMO_V2_6_PRO))
         assertEquals("https://api.xiaomimimo.com/v1/chat/completions", fake.lastUrl)
         assertEquals(secret, fake.lastHeaders["api-key"])
+        assertTrue(fake.lastBody.contains("\"model\":\"mimo-v2.6-pro\""), "MiMo 默认 wire 模型应为 v2.6")
+    }
+
+    /* T5b — 思考强度从 ProviderConfiguration 注入网关并进入 wire */
+    @Test
+    fun `configured reasoning effort reaches wire for both providers`() {
+        val store = InMemoryProviderCredentialStore()
+        store.setApiKey(ProviderType.DEEPSEEK, secret)
+        store.setApiKey(ProviderType.MIMO, secret)
+
+        val deepseekFake = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+        DefaultProviderAssembler(store, deepseekFake).assemble(
+            ProviderConfiguration(provider = ProviderType.DEEPSEEK, reasoningEffort = ReasoningEffort.LOW),
+        ).chat(request())
+        assertTrue(deepseekFake.lastBody.contains("\"reasoning_effort\":\"low\""), deepseekFake.lastBody)
+
+        val mimoFake = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+        DefaultProviderAssembler(store, mimoFake).assemble(
+            ProviderConfiguration(provider = ProviderType.MIMO, reasoningEffort = ReasoningEffort.NONE),
+        ).chat(request(ModelProfile.MIMO_V2_6_PRO))
+        assertTrue(mimoFake.lastBody.contains("\"thinking\":{\"type\":\"disabled\"}"), mimoFake.lastBody)
     }
 
     /* T6 — API Key 不进入 Configuration（Domain/配置对象无 apiKey 字段） */

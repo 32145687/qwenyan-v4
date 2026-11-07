@@ -32,12 +32,26 @@ data class ModelProfile(
         val DEEPSEEK_V4_FLASH = ModelProfile(id = "deepseek-v4-flash", label = "DeepSeek-V4-Flash")
 
         /**
-         * P9 真实 Provider：MiMo V2.5 系列。
+         * P9 真实 Provider：MiMo V2.5 系列（旧配置兼容，保留原 id）。
          * 官方 Xiaomi MiMo API 开放平台：base_url=https://api.xiaomimimo.com/v1，v2.5 系列官方模型 ID `mimo-v2.5-pro`。
          */
         val MIMO_V2_5 = ModelProfile(id = "mimo-v2.5-pro", label = "MiMo-V2.5")
+
+        /** MiMo V2.6 系列（当前默认）：mimo-v2.6-pro / -flash / -pro-ultraspeed。 */
+        val MIMO_V2_6_PRO = ModelProfile(id = "mimo-v2.6-pro", label = "MiMo-V2.6-Pro")
+        val MIMO_V2_6_FLASH = ModelProfile(id = "mimo-v2.6-flash", label = "MiMo-V2.6-Flash")
+        val MIMO_V2_6_PRO_ULTRASPEED = ModelProfile(id = "mimo-v2.6-pro-ultraspeed", label = "MiMo-V2.6-Pro-UltraSpeed")
     }
 }
+
+/**
+ * 跨厂商统一的"思考强度"（provider:api 契约）。
+ *
+ * 各网关按自家契约编码：DeepSeek → `reasoning_effort`（none/low/high/max）；
+ * MiMo → `thinking.type`（NONE=disabled，其余=enabled）。
+ */
+@Serializable
+enum class ReasoningEffort { NONE, LOW, HIGH, MAX }
 
 /** 一次补全请求。 */
 @Serializable
@@ -48,6 +62,8 @@ data class ProviderRequest(
     val temperature: Double? = null,
     /** 最大输出 token 数，null 表示用模型默认。 */
     val maxTokens: Int? = null,
+    /** 思考强度；null 表示不发送任何思考参数（保持厂商默认）。 */
+    val reasoningEffort: ReasoningEffort? = null,
 )
 
 /** Token 用量统计（provider:api 建模，供配额/可观测）。 */

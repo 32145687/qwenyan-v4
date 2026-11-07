@@ -5,7 +5,9 @@ import com.qianyan.provider.ModelProfile
 import com.qianyan.provider.ProviderException
 import com.qianyan.provider.ProviderRequest
 import com.qianyan.provider.ProviderResponse
+import com.qianyan.provider.ReasoningEffort
 import com.qianyan.provider.impl.openai.OpenAiChatCompletion
+import com.qianyan.provider.impl.openai.ThinkingEncoding
 import com.qianyan.provider.impl.transport.JdkLlmHttpClient
 import com.qianyan.provider.impl.transport.LlmHttpClient
 
@@ -16,6 +18,9 @@ import com.qianyan.provider.impl.transport.LlmHttpClient
  * 鉴权 `Authorization: Bearer <apiKey>`，模型 ID `deepseek-v4-flash`（DeepSeek-V4-Flash-0731 正式版；
  * 旧 `deepseek-chat`/`deepseek-reasoner` 已于 2026-07-24 退役）。max tokens 字段 `max_tokens`。
  *
+ * 思考强度依据 DeepSeek 契约编码为 `reasoning_effort`（none / low / high / max）；thinking 默认开启、
+ * 默认 effort=high。`medium` 等取值会被服务端映射，故 UI 不提供。
+ *
  * API Key 为**注入式**：只经构造参数进入，绝不写入日志/异常/仓库/UI。测试注入 fake key。
  */
 class DeepSeekLLMGateway(
@@ -23,18 +28,22 @@ class DeepSeekLLMGateway(
     private val client: LlmHttpClient = JdkLlmHttpClient(),
     private val baseUrl: String = "https://api.deepseek.com",
     private val wireModel: String = ModelProfile.DEEPSEEK_V4_FLASH.id,
+    private val reasoningEffort: ReasoningEffort? = null,
 ) : LLMGateway {
 
     override fun chat(request: ProviderRequest): ProviderResponse {
         requireConfigured()
+        // 思考强度由配置注入；请求自身显式指定时优先（3 个生产构造点无需改动）。
+        val merged = request.copy(reasoningEffort = request.reasoningEffort ?: reasoningEffort)
         return OpenAiChatCompletion.chat(
             client = client,
             url = "$baseUrl/chat/completions",
             authHeaderName = "Authorization",
             apiKey = "Bearer $apiKey",
-            request = request,
+            request = merged,
             wireModel = wireModel,
             maxTokensParam = "max_tokens",
+            thinkingEncoding = ThinkingEncoding.REASONING_EFFORT_FIELD,
         )
     }
 

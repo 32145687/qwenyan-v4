@@ -21,11 +21,13 @@ enum class ProviderType { MOCK, DEEPSEEK, MIMO }
  *
  * @param model 模型标识；null 时由 [ProviderAssembler] 使用该 Provider 的默认模型。
  * @param baseUrl 端点覆盖；null 时用该 Provider 官方默认 endpoint。
+ * @param reasoningEffort 思考强度；null 表示请求不带任何思考参数。
  */
 data class ProviderConfiguration(
     val provider: ProviderType,
     val model: ModelProfile? = null,
     val baseUrl: String? = null,
+    val reasoningEffort: ReasoningEffort? = null,
 )
 
 /**

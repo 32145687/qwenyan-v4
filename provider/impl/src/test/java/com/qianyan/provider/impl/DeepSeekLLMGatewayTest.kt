@@ -6,6 +6,7 @@ import com.qianyan.provider.FinishReason
 import com.qianyan.provider.ModelProfile
 import com.qianyan.provider.ProviderException
 import com.qianyan.provider.ProviderRequest
+import com.qianyan.provider.ReasoningEffort
 import com.qianyan.provider.impl.transport.HttpResponse
 import java.net.http.HttpTimeoutException
 import kotlin.test.Test
@@ -22,6 +23,7 @@ class DeepSeekLLMGatewayTest {
         content: String = "提取世界设定词汇",
         temperature: Double? = 0.0,
         maxTokens: Int? = 512,
+        reasoningEffort: ReasoningEffort? = null,
     ) = ProviderRequest(
         model = model,
         messages = listOf(
@@ -30,6 +32,7 @@ class DeepSeekLLMGatewayTest {
         ),
         temperature = temperature,
         maxTokens = maxTokens,
+        reasoningEffort = reasoningEffort,
     )
 
     private val okJson =
@@ -74,9 +77,36 @@ class DeepSeekLLMGatewayTest {
         assertEquals(18, out.usage.totalTokens)
     }
 
+    /* 思考强度：null → 不发送任何思考参数；四档 → reasoning_effort */
     @Test
-    fun `success maps length finish reason`() {
-        val body = okJson.replace("\"finish_reason\": \"stop\"", "\"finish_reason\": \"length\"")
+    fun `null reasoning effort sends no thinking parameters`() {
+        val fake = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+        DeepSeekLLMGateway(apiKey = "test-key", client = fake).chat(request())
+
+        assertTrue(!fake.lastBody.contains("reasoning_effort"), "reasoningEffort=null 时不得出现 reasoning_effort")
+        assertTrue(!fake.lastBody.contains("thinking"), "reasoningEffort=null 时不得出现 thinking")
+        // 既有采样参数不变
+        assertTrue(fake.lastBody.contains("\"temperature\":0.0"))
+        assertTrue(fake.lastBody.contains("\"max_tokens\":512"))
+    }
+
+    @Test
+    fun `reasoning effort levels map to deepseek wire values`() {
+        listOf(
+            ReasoningEffort.NONE to "\"reasoning_effort\":\"none\"",
+            ReasoningEffort.LOW to "\"reasoning_effort\":\"low\"",
+            ReasoningEffort.HIGH to "\"reasoning_effort\":\"high\"",
+            ReasoningEffort.MAX to "\"reasoning_effort\":\"max\"",
+        ).forEach { (effort, wire) ->
+            val fake = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, okJson) }
+            DeepSeekLLMGateway(apiKey = "test-key", client = fake).chat(request(reasoningEffort = effort))
+            assertTrue(fake.lastBody.contains(wire), "effort=$effort 应编码为 $wire，实际：${fake.lastBody}")
+            assertTrue(!fake.lastBody.contains("thinking"), "DeepSeek 不使用 thinking 字段")
+        }
+    }
+
+    @Test
+    fun `success maps length finish reason`() {        val body = okJson.replace("\"finish_reason\": \"stop\"", "\"finish_reason\": \"length\"")
         val gateway = DeepSeekLLMGateway(apiKey = "test-key", client = FakeLlmHttpClient { _, _, _ -> HttpResponse(200, body) })
         val out = gateway.chat(request(maxTokens = null))
         assertEquals(FinishReason.LENGTH, out.finishReason)

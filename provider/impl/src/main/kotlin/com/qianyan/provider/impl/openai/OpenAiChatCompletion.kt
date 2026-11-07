@@ -6,6 +6,7 @@ import com.qianyan.provider.FinishReason
 import com.qianyan.provider.ProviderException
 import com.qianyan.provider.ProviderRequest
 import com.qianyan.provider.ProviderResponse
+import com.qianyan.provider.ReasoningEffort
 import com.qianyan.provider.Usage
 import com.qianyan.provider.impl.transport.HttpResponse
 import com.qianyan.provider.impl.transport.LlmHttpClient
@@ -24,6 +25,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 
 /**
  * DeepSeek / MiMo 共用的 OpenAI 兼容 Chat Completions 客户端（P9，仅 provider:impl 内部）。
@@ -41,7 +43,10 @@ internal object OpenAiChatCompletion {
 
     private val Json = Json { ignoreUnknownKeys = true }
 
-    /** 执行一次补全。wireModel 为 provider 侧实际模型 ID；maxTokensParam 为各 API 的 max tokens 字段名。 */
+    /**
+     * 执行一次补全。wireModel 为 provider 侧实际模型 ID；maxTokensParam 为各 API 的 max tokens 字段名；
+     * thinkingEncoding 为思考强度在 wire 上的编码形态（DeepSeek `reasoning_effort` / MiMo `thinking.type`）。
+     */
     fun chat(
         client: LlmHttpClient,
         url: String,
@@ -50,6 +55,7 @@ internal object OpenAiChatCompletion {
         request: ProviderRequest,
         wireModel: String,
         maxTokensParam: String,
+        thinkingEncoding: ThinkingEncoding,
     ): ProviderResponse {
         val body = buildJsonObject {
             put("model", wireModel)
@@ -63,6 +69,17 @@ internal object OpenAiChatCompletion {
             }
             request.temperature?.let { put("temperature", it) }
             request.maxTokens?.let { put(maxTokensParam, it) }
+            request.reasoningEffort?.let { effort ->
+                when (thinkingEncoding) {
+                    ThinkingEncoding.REASONING_EFFORT_FIELD ->
+                        put("reasoning_effort", effort.name.lowercase())
+
+                    ThinkingEncoding.THINKING_TYPE_FIELD ->
+                        putJsonObject("thinking") {
+                            put("type", if (effort == ReasoningEffort.NONE) "disabled" else "enabled")
+                        }
+                }
+            }
             put("stream", false)
         }
 
@@ -144,6 +161,15 @@ internal object OpenAiChatCompletion {
 
     private fun truncate(body: String): String =
         if (body.length <= 200) body else body.take(200) + "..."
+}
+
+/** 思考强度在 wire 上的编码形态（各厂商契约不同，只能由网关选择）。 */
+internal enum class ThinkingEncoding {
+    /** DeepSeek：`"reasoning_effort": "none" | "low" | "high" | "max"`。 */
+    REASONING_EFFORT_FIELD,
+
+    /** MiMo：`"thinking": {"type": "enabled" | "disabled"}`（开关，不是档位）。 */
+    THINKING_TYPE_FIELD,
 }
 
 private fun ChatRole.wireValue(): String = when (this) {

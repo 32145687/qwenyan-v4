@@ -37,6 +37,7 @@ class DefaultProviderAssembler(
                 client = client,
                 baseUrl = config.baseUrl ?: DEEPSEEK_BASE_URL,
                 wireModel = config.model?.id ?: ModelProfile.DEEPSEEK_V4_FLASH.id,
+                reasoningEffort = config.reasoningEffort,
             )
         }
 
@@ -46,7 +47,8 @@ class DefaultProviderAssembler(
                 apiKey = apiKey,
                 client = client,
                 baseUrl = config.baseUrl ?: MIMO_BASE_URL,
-                wireModel = config.model?.id ?: ModelProfile.MIMO_V2_5.id,
+                wireModel = config.model?.id ?: ModelProfile.MIMO_V2_6_PRO.id,
+                reasoningEffort = config.reasoningEffort,
             )
         }
     }

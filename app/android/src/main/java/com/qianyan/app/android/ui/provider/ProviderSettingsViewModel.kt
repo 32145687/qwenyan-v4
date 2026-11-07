@@ -94,7 +94,7 @@ class ProviderSettingsViewModel(
         viewModelScope.launch {
             try {
                 val gateway = CoroutineLlmGateway.wrap(application.assembleGateway(provider))
-                val model = if (provider == ProviderType.DEEPSEEK) ModelProfile.DEEPSEEK_V4_FLASH else ModelProfile.MIMO_V2_5
+                val model = if (provider == ProviderType.DEEPSEEK) ModelProfile.DEEPSEEK_V4_FLASH else ModelProfile.MIMO_V2_6_PRO
                 val request = ProviderRequest(
                     model = model,
                     messages = listOf(ChatMessage(ChatRole.USER, "ping")),

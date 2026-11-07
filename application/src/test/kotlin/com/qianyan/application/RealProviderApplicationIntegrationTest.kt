@@ -100,7 +100,7 @@ class RealProviderApplicationIntegrationTest {
         val gateway = MiMoLLMGateway(apiKey = "test-key", client = transport)
         val app = ApplicationContainer.open(
             analysisGateway = gateway,
-            analysisModel = ModelProfile.MIMO_V2_5,
+            analysisModel = ModelProfile.MIMO_V2_6_PRO,
         )
         val (docId, novelId) = import(app)
         val vocabId = vocab(app, novelId)
@@ -110,7 +110,7 @@ class RealProviderApplicationIntegrationTest {
         assertEquals(2, out.candidateIds.size)
         assertEquals(listOf("灵石", "丹田"), out.analysisResult.vocabularySuggestions.map { it.canonical })
         assertEquals("https://api.xiaomimimo.com/v1/chat/completions", capturedUrl)
-        assertTrue(capturedBody!!.contains("\"model\":\"mimo-v2.5-pro\""))
+        assertTrue(capturedBody!!.contains("\"model\":\"mimo-v2.6-pro\""))
     }
 
     @Test
