@@ -191,6 +191,9 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     /** 打开设置窗口时要定位的分区（设置页 itemKey）；null = 默认首页，由设置窗口消费后清空。 */
     var settingsSection by mutableStateOf<String?>(null)
 
+    /** 与 [settingsSection] 一同消费的目标厂商（预选 AI Provider 页的厂商分段）；null = 当前生效 Provider。 */
+    var settingsProvider by mutableStateOf<ProviderType?>(null)
+
     /** 新建作品弹窗（顶部项目切换与命令面板共用同一入口）。 */
     var createNovelOpen by mutableStateOf(false)
 
@@ -275,14 +278,16 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     /**
      * 打开设置窗口并定位到指定分区（"provider" / "models" …）。
      *
-     * 沿用旧弹窗的 busy 守卫——任务进行中不改配置，只提示等待；被拒时不留下定位残留。
+     * [provider] 只对 AI Provider 分区生效：用来预选用户刚点的厂商。
+     * 沿用旧弹窗的 busy 守卫——任务进行中不改配置，只提示等待；被拒时两个字段都不留残留。
      */
-    fun openSettingsSection(section: String) {
+    fun openSettingsSection(section: String, provider: ProviderType? = null) {
         if (busy) {
             toast("任务进行中，请等待完成后再修改模型配置")
             return
         }
         settingsSection = section
+        settingsProvider = provider
         settingsOpen = true
     }
 
@@ -302,8 +307,8 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             return false
         }
         if (provider != ProviderType.MOCK && !graph.isConfigured(provider)) {
-            // 未配置 Key 要落在「AI Provider」（Key 录入处），不是「模型」清单
-            openSettingsSection(SETTINGS_PROVIDER_SECTION)
+            // 未配置 Key 要落在「AI Provider」（Key 录入处），并预选本次所点的厂商
+            openSettingsSection(SETTINGS_PROVIDER_SECTION, provider)
             toast("请先配置 ${providerLabel(provider)} 的 API Key")
             return false
         }

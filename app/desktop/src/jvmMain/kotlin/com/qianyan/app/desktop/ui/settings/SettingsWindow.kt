@@ -97,7 +97,10 @@ fun SettingsPanel(state: DesktopAppState, onClose: () -> Unit) {
     val initialGroup = SETTINGS_NAV.first { group -> group.items.any { it.key == initialItem } }.title
     var groupKey by remember { mutableStateOf(initialGroup) }
     var itemKey by remember { mutableStateOf(initialItem) }
-    LaunchedEffect(Unit) { state.settingsSection = null }
+    LaunchedEffect(Unit) {
+        state.settingsSection = null
+        state.settingsProvider = null
+    }
     val group = SETTINGS_NAV.firstOrNull { it.title == groupKey } ?: SETTINGS_NAV.first()
     val item = group.items.firstOrNull { it.key == itemKey } ?: group.items.first()
 
@@ -348,7 +351,9 @@ private fun ProviderSection(state: DesktopAppState) {
 private fun ProviderCredentials(state: DesktopAppState) {
     val palette = QianyanTheme.palette
     val current by state.graph.provider.collectAsState()
-    var selected by remember { mutableStateOf(current) }
+    var selected by remember {
+        mutableStateOf(initialSettingsProvider(state.settingsSection, state.settingsProvider, current))
+    }
     var apiKey by remember { mutableStateOf("") }
     var baseUrl by remember { mutableStateOf("") }
     var reveal by remember { mutableStateOf(false) }
@@ -468,6 +473,22 @@ private fun ProviderCredentials(state: DesktopAppState) {
         }
     }
 }
+
+/**
+ * 设置页的初始厂商：入口点名了厂商就用它，否则用当前生效的 Provider。
+ *
+ * 只有 AI Provider 分区接受厂商预设；其它分区（模型 / 主题 …）一律回到当前生效值。
+ */
+internal fun initialSettingsProvider(
+    requestedSection: String?,
+    requestedProvider: ProviderType?,
+    current: ProviderType,
+): ProviderType =
+    if (requestedSection == SETTINGS_PROVIDER_SECTION && requestedProvider != null) {
+        requestedProvider
+    } else {
+        current
+    }
 
 /**
  * 设置 › AI Provider 的保存动作（UI 与测试共用，只经 [DesktopGraph.saveProviderConfig] 落盘）。

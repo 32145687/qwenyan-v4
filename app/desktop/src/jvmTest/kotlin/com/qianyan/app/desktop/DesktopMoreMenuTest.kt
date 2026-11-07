@@ -115,13 +115,16 @@ class DesktopMoreMenuTest {
         assertFalse("AI Provider 设置" in palette, "旧标签不得残留")
         assertTrue("state.openSettingsSection(SETTINGS_PROVIDER_SECTION)" in palette, "命令面板必须定位到 AI Provider 分区")
         val chooser = section(stateSource, "fun chooseProviderModel", "fun launchWork")
-        assertTrue("openSettingsSection(SETTINGS_PROVIDER_SECTION)" in chooser, "未配置 Key 兜底必须落在 AI Provider 分区")
+        assertTrue(
+            "openSettingsSection(SETTINGS_PROVIDER_SECTION, provider)" in chooser,
+            "未配置 Key 兜底必须落在 AI Provider 分区并预选该厂商",
+        )
         assertEquals(
             3,
             Regex("state\\.openSettingsSection\\(").findAll(composer).count(),
             "composer 三处入口（未配置 / 清单为空 / 模型管理）都要走统一入口",
         )
-        assertTrue("state.openSettingsSection(SETTINGS_PROVIDER_SECTION)" in composer, "未配置厂商要落在 AI Provider")
+        assertTrue("state.openSettingsSection(SETTINGS_PROVIDER_SECTION, type)" in composer, "未配置厂商要落在 AI Provider 并预选该厂商")
         assertEquals(
             2,
             Regex("state\\.openSettingsSection\\(SETTINGS_MODELS_SECTION\\)").findAll(composer).count(),
@@ -134,11 +137,16 @@ class DesktopMoreMenuTest {
         assertTrue("SettingsItem(\"models\", \"模型\")" in settings, "设置导航必须有 models 分区")
         assertTrue("\"models\" -> ModelSettings(state)" in settings, "models 分区必须渲染模型页")
         assertTrue("val requested = state.settingsSection" in settings, "初始分区必须取自状态")
-        assertTrue(
-            "LaunchedEffect(Unit) { state.settingsSection = null }" in settings,
-            "定位分区必须一次性消费，否则下次普通打开仍会跳页",
-        )
+        // 定位分区 + 目标厂商必须一次性消费，否则下次普通打开仍会跳页/跳厂商
+        val consumeBlock = settings.substringAfter("LaunchedEffect(Unit) {").substringBefore("}")
+        assertTrue("state.settingsSection = null" in consumeBlock, "定位分区必须一次性消费")
+        assertTrue("state.settingsProvider = null" in consumeBlock, "目标厂商必须与分区一起消费")
         assertTrue("firstOrNull { it.key == requested }?.key" in settings, "未知分区必须回落默认首页")
+        // 厂商预选：ProviderCredentials 的初值必须经 initialSettingsProvider 决定
+        assertTrue(
+            "mutableStateOf(initialSettingsProvider(state.settingsSection, state.settingsProvider, current))" in settings,
+            "AI Provider 页的初始厂商必须来自入口请求",
+        )
     }
 
     @Test
@@ -152,21 +160,26 @@ class DesktopMoreMenuTest {
     fun `openSettingsSection locates the requested section and refuses while busy`() {
         val state = DesktopAppState(graphAt())
 
-        state.openSettingsSection("provider")
+        state.openSettingsSection("provider", ProviderType.MIMO)
         assertTrue(state.settingsOpen, "必须打开设置窗口")
         assertEquals("provider", state.settingsSection, "必须定位到请求的分区")
+        assertEquals(ProviderType.MIMO, state.settingsProvider, "必须带上目标厂商供预选")
 
         state.settingsOpen = false
         state.settingsSection = null
+        state.settingsProvider = null
         state.openSettingsSection("models")
         assertEquals("models", state.settingsSection, "分区必须按入参定位")
+        assertNull(state.settingsProvider, "未点名厂商时不得预选任何厂商")
 
         state.settingsOpen = false
         state.settingsSection = null
+        state.settingsProvider = null
         state.busy = true
-        state.openSettingsSection("provider")
+        state.openSettingsSection("provider", ProviderType.MIMO)
         assertFalse(state.settingsOpen, "任务进行中不得打开设置")
         assertNull(state.settingsSection, "被拒绝时不得留下定位残留")
+        assertNull(state.settingsProvider, "被拒绝时不得留下厂商预选残留")
         assertEquals("任务进行中，请等待完成后再修改模型配置", state.toast)
     }
 

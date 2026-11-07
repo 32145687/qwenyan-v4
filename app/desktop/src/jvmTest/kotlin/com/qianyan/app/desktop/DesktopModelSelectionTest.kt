@@ -127,6 +127,7 @@ class DesktopModelSelectionTest {
         assertEquals(before, graph.provider.value, "未配置 Key 时当前 Provider 不得变化")
         assertTrue(state.settingsOpen, "必须打开设置窗口")
         assertEquals("provider", state.settingsSection, "未配置 Key 必须定位到 AI Provider 分区（Key 录入处）")
+        assertEquals(ProviderType.MIMO, state.settingsProvider, "O-64：设置页必须预选用户刚点的厂商")
         assertTrue(state.toast?.contains("API Key") == true, state.toast)
     }
 

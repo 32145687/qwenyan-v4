@@ -3,6 +3,7 @@ package com.qianyan.app.desktop
 import com.qianyan.app.desktop.adapter.FileProviderCredentialStore
 import com.qianyan.app.desktop.di.DesktopGraph
 import com.qianyan.app.desktop.ui.DesktopAppState
+import com.qianyan.app.desktop.ui.settings.initialSettingsProvider
 import com.qianyan.app.desktop.ui.settings.saveProviderFromSettings
 import com.qianyan.provider.ProviderType
 import com.qianyan.provider.ReasoningEffort
@@ -80,6 +81,31 @@ class DesktopProviderCredentialsTest {
         assertEquals(modelBefore, after.getProperty("model"), "model 不得被改写")
         assertEquals(effortBefore, after.getProperty("effort"), "effort 不得被改写")
         assertEquals("LOW", after.getProperty("effort"), "留空的思考档位应保持 LOW")
+    }
+
+    /** O-64：入口点名的厂商只在 AI Provider 分区生效，其余情况回到当前生效 Provider。 */
+    @Test
+    fun `initial provider follows the request only inside the provider section`() {
+        assertEquals(
+            ProviderType.MIMO,
+            initialSettingsProvider("provider", ProviderType.MIMO, ProviderType.DEEPSEEK),
+            "点未配置的 MiMo 后，设置页必须预选 MiMo",
+        )
+        assertEquals(
+            ProviderType.DEEPSEEK,
+            initialSettingsProvider("provider", null, ProviderType.DEEPSEEK),
+            "未点名厂商时必须用当前生效 Provider",
+        )
+        assertEquals(
+            ProviderType.DEEPSEEK,
+            initialSettingsProvider("models", ProviderType.MIMO, ProviderType.DEEPSEEK),
+            "非 AI Provider 分区不接受厂商预设",
+        )
+        assertEquals(
+            ProviderType.DEEPSEEK,
+            initialSettingsProvider(null, ProviderType.MIMO, ProviderType.DEEPSEEK),
+            "普通打开设置不得预选任何厂商",
+        )
     }
 
     @Test

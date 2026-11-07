@@ -222,8 +222,6 @@ private fun AddMenu(state: DesktopAppState) {
     }
 }
 
-/* ---------------- 模型（三级：厂商 → 模型 → 思考强度） ---------------- */
-
 /* ---------------- Provider 状态（原左栏页脚的诚实标记） ---------------- */
 
 /**
@@ -314,7 +312,7 @@ private fun ModelMenu(state: DesktopAppState) {
                             when {
                                 state.busy -> state.toast("任务进行中，暂时不能切换模型")
                                 !configured -> {
-                                    state.openSettingsSection(SETTINGS_PROVIDER_SECTION)
+                                    state.openSettingsSection(SETTINGS_PROVIDER_SECTION, type)
                                     state.toast("请先配置 ${providerLabel(type)} 的 API Key")
                                 }
                                 type != current -> state.chooseProviderModel(type)
