@@ -44,6 +44,7 @@ import com.qianyan.app.desktop.ui.Workspace
 import com.qianyan.app.desktop.ui.PanelToggle
 import com.qianyan.app.desktop.ui.SectionLabel
 import com.qianyan.app.desktop.ui.consumeClicks
+import com.qianyan.app.desktop.ui.settings.SETTINGS_PROVIDER_SECTION
 import com.qianyan.app.desktop.ui.shortcutLabel
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanShapes
@@ -206,10 +207,7 @@ private fun buildCommands(state: DesktopAppState): List<PaletteCommand> {
     out += PaletteCommand("操作", "导入 TXT", "") {
         state.importTxtFromPicker()
     }
-    out += PaletteCommand("操作", "AI Provider 设置", "") {
-        if (state.busy) state.toast("任务进行中，请等待完成后再修改模型配置")
-        else state.providerSettingsOpen = true
-    }
+    out += PaletteCommand("操作", "模型与 Provider", "") { state.openSettingsSection(SETTINGS_PROVIDER_SECTION) }
     out += PaletteCommand("视图", "折叠 / 展开左侧导航", "$mod+B") { state.toggle(PanelToggle.SIDEBAR) }
     out += PaletteCommand("视图", "折叠 / 展开检查器", "$mod+\\") { state.toggle(PanelToggle.INSPECTOR) }
     out += PaletteCommand("视图", "专注模式", "$mod+Shift+E") { state.toggle(PanelToggle.FOCUS) }

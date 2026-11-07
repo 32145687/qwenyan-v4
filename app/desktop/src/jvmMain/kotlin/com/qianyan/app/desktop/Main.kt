@@ -38,12 +38,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.draw.clip
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -60,7 +67,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
@@ -98,12 +104,12 @@ import com.qianyan.app.desktop.ui.pages.TasksPage
 import com.qianyan.app.desktop.ui.pages.VocabularyPage
 import com.qianyan.app.desktop.ui.pages.WorldPage
 import com.qianyan.app.desktop.ui.pages.WritePage
-import com.qianyan.app.desktop.ui.settings.ProviderSettingsDialog
 import com.qianyan.app.desktop.ui.settings.SettingsPanel
 import com.qianyan.app.desktop.ui.shortcutLabel
 import com.qianyan.app.desktop.ui.statusLabel
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanDimens
+import com.qianyan.app.desktop.ui.theme.QianyanMotion
 import com.qianyan.app.desktop.ui.theme.QianyanShapes
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.app.desktop.ui.workspace.CommandPalette
@@ -111,8 +117,11 @@ import com.qianyan.app.desktop.ui.workspace.ContextInspector
 import com.qianyan.model.core.Novel
 import com.qianyan.model.story.Chapter
 import java.awt.Cursor
+import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.sin
 import com.qianyan.model.workspace.WorkspaceSelection
 
 /**
@@ -193,7 +202,6 @@ private fun handleShortcut(state: DesktopAppState, event: KeyEvent): Boolean {
     if (event.key == Key.Escape) {
         return when {
             state.settingsOpen -> { state.settingsOpen = false; true }
-            state.providerSettingsOpen -> { state.providerSettingsOpen = false; true }
             state.createNovelOpen -> { state.createNovelOpen = false; true }
             state.paletteOpen -> { state.paletteOpen = false; true }
             state.focusMode -> { state.toggle(PanelToggle.FOCUS); true }
@@ -202,7 +210,7 @@ private fun handleShortcut(state: DesktopAppState, event: KeyEvent): Boolean {
     }
 
     // 浮层打开时不响应工作区快捷键（键盘属于浮层）。
-    if (state.settingsOpen || state.providerSettingsOpen || state.createNovelOpen) return false
+    if (state.settingsOpen || state.createNovelOpen) return false
     if (state.modalOpen) return false
 
     if (!mod) {
@@ -279,9 +287,21 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
             }
 
             Row(Modifier.weight(1f).fillMaxWidth()) {
-                if (showSidebar) {
-                    LeftPanel(state, sidebarWidth)
-                    VLine()
+                AnimatedVisibility(
+                    visible = showSidebar,
+                    enter = expandHorizontally(
+                        expandFrom = Alignment.Start,
+                        animationSpec = tween(240, easing = QianyanMotion.Easing),
+                    ) + fadeIn(tween(180)),
+                    exit = shrinkHorizontally(
+                        shrinkTowards = Alignment.Start,
+                        animationSpec = tween(220, easing = QianyanMotion.Easing),
+                    ) + fadeOut(tween(140)),
+                ) {
+                    Row {
+                        LeftPanel(state, sidebarWidth)
+                        VLine()
+                    }
                 }
 
                 Column(Modifier.weight(1f).fillMaxHeight()) {
@@ -290,9 +310,21 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
                     }
                 }
 
-                if (showInspector) {
-                    VLine()
-                    ContextInspector(state, inspectorWidth)
+                AnimatedVisibility(
+                    visible = showInspector,
+                    enter = expandHorizontally(
+                        expandFrom = Alignment.End,
+                        animationSpec = tween(240, easing = QianyanMotion.Easing),
+                    ) + fadeIn(tween(180)),
+                    exit = shrinkHorizontally(
+                        shrinkTowards = Alignment.End,
+                        animationSpec = tween(220, easing = QianyanMotion.Easing),
+                    ) + fadeOut(tween(140)),
+                ) {
+                    Row {
+                        VLine()
+                        ContextInspector(state, inspectorWidth)
+                    }
                 }
             }
 
@@ -320,11 +352,6 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
         /* ---------------- 浮层：新建作品 ---------------- */
         if (state.createNovelOpen) {
             CreateNovelDialog(state) { state.createNovelOpen = false }
-        }
-
-        /* ---------------- 浮层：Provider 设置 ---------------- */
-        if (state.providerSettingsOpen) {
-            ProviderSettingsDialog(state.graph) { state.providerSettingsOpen = false }
         }
 
         /* ---------------- 浮层：Toast（最终前景，压在所有浮层之上） ---------------- */
@@ -400,7 +427,7 @@ private fun TopBar(state: DesktopAppState, window: ComposeWindow, onClose: () ->
                 }
             }
             Spacer(Modifier.width(4.dp))
-            MoreMenu(state)
+            SettingsButton(state)
             Spacer(Modifier.width(4.dp))
             WindowControl(WinGlyph.MINIMIZE, palette.text2) {
                 window.extendedState = window.extendedState or java.awt.Frame.ICONIFIED
@@ -604,43 +631,37 @@ private fun SearchCommandField(state: DesktopAppState, compact: Boolean) {
     }
 }
 
-/** 顶栏「更多」：设置（与命令面板 / ⌘, 同一入口）。 */
+/** 顶栏「设置」：齿轮按钮直达设置窗口（与命令面板 / ⌘, 同一入口），不再有二级菜单。 */
 @Composable
-private fun MoreMenu(state: DesktopAppState) {
+private fun SettingsButton(state: DesktopAppState) {
     val palette = QianyanTheme.palette
-    var open by remember { mutableStateOf(false) }
-    Box {
-        Box(
-            Modifier.size(28.dp).clip(RoundedCornerShape(QianyanShapes.r2))
-                .hoverBackground(RoundedCornerShape(QianyanShapes.r2), color = palette.hover)
-                .clickable { open = true },
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("···", style = MaterialTheme.typography.titleMedium, color = palette.text2, maxLines = 1)
-        }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { Text("设置", style = MaterialTheme.typography.bodyLarge, color = palette.text) },
-                onClick = { open = false; state.settingsOpen = true },
-            )
-            DropdownMenuItem(
-                text = { Text("AI Provider 设置…", style = MaterialTheme.typography.bodyLarge, color = palette.text) },
-                onClick = {
-                    open = false
-                    if (state.busy) state.toast("任务进行中，请等待完成后再修改模型配置")
-                    else state.providerSettingsOpen = true
-                },
-            )
-            DropdownMenuItem(
-                text = {
-                    Text(
-                        if (state.focusMode) "退出专注模式" else "专注模式",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = palette.text,
-                    )
-                },
-                onClick = { open = false; state.toggle(PanelToggle.FOCUS) },
-            )
+    val shape = RoundedCornerShape(QianyanShapes.r2)
+    Box(
+        Modifier.size(28.dp).clip(shape)
+            .hoverBackground(shape, color = palette.hover)
+            .clickable { state.settingsOpen = true },
+        contentAlignment = Alignment.Center,
+    ) {
+        val tint = palette.text2
+        Canvas(Modifier.size(16.dp)) {
+            val d = density
+            val stroke = 1.3f * d
+            val center = Offset(8f * d, 8f * d)
+            // 8 齿 + 双环：与 PanelToggleIcon / WinGlyph 同一 Canvas 线条画法
+            repeat(8) { i ->
+                val angle = i * PI / 4.0
+                val cos = cos(angle).toFloat()
+                val sin = sin(angle).toFloat()
+                drawLine(
+                    tint,
+                    Offset(center.x + cos * 5.2f * d, center.y + sin * 5.2f * d),
+                    Offset(center.x + cos * 7.0f * d, center.y + sin * 7.0f * d),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round,
+                )
+            }
+            drawCircle(tint, radius = 4.4f * d, center = center, style = Stroke(stroke))
+            drawCircle(tint, radius = 1.5f * d, center = center, style = Stroke(stroke))
         }
     }
 }
@@ -802,8 +823,6 @@ private fun LeftPanel(state: DesktopAppState, width: androidx.compose.ui.unit.Dp
             MaterialsBlock(state)
             Spacer(Modifier.height(12.dp))
         }
-
-        ProviderFooter(state)
     }
 }
 
@@ -1002,64 +1021,6 @@ private fun MaterialsBlock(state: DesktopAppState) {
     }
 }
 
-@Composable
-private fun ProviderFooter(state: DesktopAppState) {
-    val palette = QianyanTheme.palette
-    val provider by state.graph.provider.collectAsState()
-    val model by state.graph.effectiveModel.collectAsState()
-    val configured = state.graph.isConfigured(provider)
-    Column(Modifier.fillMaxWidth().background(palette.surface)) {
-        HLine()
-        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 12.dp)) {
-            Text(
-                "AI PROVIDER",
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.text3,
-                letterSpacing = 1.1.sp,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(
-                Modifier.fillMaxWidth()
-                    .clip(RoundedCornerShape(QianyanShapes.r2))
-                    .hoverBackground(RoundedCornerShape(QianyanShapes.r2), color = palette.hover)
-                    .clickable {
-                        if (state.busy) state.toast("任务进行中，请等待完成后再修改模型配置")
-                        else state.providerSettingsOpen = true
-                    }
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier.size(7.dp).clip(RoundedCornerShape(4.dp))
-                        // MOCK 是离线示意：不显示为"在线/已连接"的绿点
-                        .background(if (configured && provider.name != "MOCK") palette.add else palette.text3.copy(alpha = 0.5f)),
-                )
-                Spacer(Modifier.width(9.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        provider.name,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        color = if (state.busy) palette.text3 else palette.text,
-                        maxLines = 1,
-                    )
-                    Text(
-                        buildString {
-                            append(model)
-                            append(if (provider.name == "MOCK") " · 离线示意" else if (configured) " · 可用" else " · 未配置")
-                        },
-                        style = MaterialTheme.typography.labelSmall,
-                        color = palette.text2,
-                        maxLines = 1,
-                    )
-                }
-                Text("⌄", style = QianyanCodeStyle, color = palette.text3)
-            }
-        }
-    }
-}
-
 /* ---------------- 中栏：工作区内容 ---------------- */
 
 @Composable
@@ -1131,8 +1092,6 @@ private fun WorkspaceTabs(
 private fun StatusBar(state: DesktopAppState) {
     val palette = QianyanTheme.palette
     val s = state.status
-    val provider by state.graph.provider.collectAsState()
-    val model by state.graph.effectiveModel.collectAsState()
     Row(
         Modifier.fillMaxWidth().height(QianyanDimens.StatusBar).background(palette.surface)
             .padding(horizontal = 15.dp),
@@ -1158,8 +1117,7 @@ private fun StatusBar(state: DesktopAppState) {
             }
         }
         Spacer(Modifier.weight(1f))
-        Text("${provider.name} · $model", style = QianyanCodeStyle, color = palette.text3, maxLines = 1)
-        Spacer(Modifier.width(14.dp))
+        // Provider / 模型只在创作区 composer 与左栏页脚显示；状态栏不重复（A-12）
         Text(
             "${shortcutLabel()}+K 命令 · ${shortcutLabel()}+, 设置",
             style = QianyanCodeStyle,

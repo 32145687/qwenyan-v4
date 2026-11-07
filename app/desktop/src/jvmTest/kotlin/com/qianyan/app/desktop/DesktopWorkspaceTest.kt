@@ -90,13 +90,17 @@ class DesktopWorkspaceTest {
         val main = File(mainFile).readText()
         val composer = File("$workspaceUiDir/TaskComposer.kt").readText()
         val settings = File("src/jvmMain/kotlin/com/qianyan/app/desktop/ui/settings/SettingsWindow.kt").readText()
-        val providerSettings = File("src/jvmMain/kotlin/com/qianyan/app/desktop/ui/settings/ProviderSettings.kt").readText()
+        // 旧 Provider 弹窗已删除；模型提示的检查范围扩大到整个设置包（等价迁移，覆盖不减）
+        val settingsSources = File("src/jvmMain/kotlin/com/qianyan/app/desktop/ui/settings")
+            .walkTopDown().filter { it.isFile && it.extension == "kt" }
+            .joinToString("\n") { it.readText() }
 
         assertTrue("val effectiveModel" in graph, "模型 ID 必须暴露为可观察状态")
-        assertTrue("effectiveModel.collectAsState()" in main, "左栏必须收集模型 ID")
+        // A-13：左栏页脚已删除，模型/Provider 只在 composer 与设置页呈现，主壳不得再收集模型 ID
+        assertFalse("effectiveModel.collectAsState()" in main, "左栏已不承载模型 ID")
         assertTrue("effectiveModel.collectAsState()" in composer, "模型菜单必须收集模型 ID")
         assertTrue("effectiveModel.collectAsState()" in settings, "设置页必须收集模型 ID")
-        assertFalse("deepseek-reasoner" in providerSettings, "不得提示已退役模型")
+        assertFalse("deepseek-reasoner" in settingsSources, "不得提示已退役模型")
     }
 
     @Test
@@ -158,7 +162,7 @@ class DesktopWorkspaceTest {
             "ui/workspace/TaskComposer.kt",
             "ui/pages/AgentPage.kt",
             "ui/workspace/CommandPalette.kt",
-            "ui/settings/SettingsWindow.kt",
+            // 设置页不再承载 TXT 导入（入口在创作页、命令面板与「添加」菜单）。
             "Main.kt",
         ).forEach { relative ->
             val code = File("src/jvmMain/kotlin/com/qianyan/app/desktop/$relative").readText()
@@ -177,15 +181,25 @@ class DesktopWorkspaceTest {
     }
 
     @Test
-    fun `thinking control does not advertise unimplemented levels`() {
+    fun `thinking control advertises only implemented levels`() {
         val composer = File("$workspaceUiDir/TaskComposer.kt")
         assertTrue(composer.isFile, "找不到 TaskComposer.kt: ${composer.absolutePath}")
-        val code = composer.readText()
+        val reasoning = File("$workspaceUiDir/ReasoningUi.kt")
+        assertTrue(reasoning.isFile, "找不到 ReasoningUi.kt: ${reasoning.absolutePath}")
+        // 三级选择器已落地：思考形态与诚实文案在 ReasoningUi，入口文案在 TaskComposer。
+        val code = composer.readText() + "\n" + reasoning.readText()
         assertTrue("思考能力" in code, "入口必须标注为思考能力")
-        assertTrue("不会发送思考参数" in code, "必须向用户说明不会发送思考参数")
+        assertTrue("不会发送思考参数" in code, "必须向用户说明离线示意不会发送思考参数")
         listOf("\"低\"", "\"标准\"", "\"高\"", "\"极高\"", "\"自动\"").forEach { level ->
-            assertFalse(level in code, "不得在思考菜单中展示未落地的档位：$level")
+            assertFalse(level in code, "不得展示未落地的档位：$level")
         }
+        // 已落地的形态：DeepSeek 四档 / MiMo 开关。
+        listOf("ReasoningEffort.NONE", "ReasoningEffort.LOW", "ReasoningEffort.HIGH", "ReasoningEffort.MAX").forEach { effort ->
+            assertTrue(effort in code, "缺少已落地思考档位：$effort")
+        }
+        assertTrue("\"关\"" in code && "\"开\"" in code, "MiMo 第三级必须是两态开关")
+        assertTrue("Slider(" in composer.readText(), "思考强度必须用滑块控件")
+        assertTrue("思考强度" in composer.readText(), "滑块必须标注为思考强度")
     }
 
     @Test

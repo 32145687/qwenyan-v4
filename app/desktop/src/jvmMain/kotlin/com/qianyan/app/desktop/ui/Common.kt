@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -58,6 +59,9 @@ import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.app.desktop.ui.theme.QianyanThemeMode
 import com.qianyan.app.desktop.ui.workspace.WorkspaceController
 import com.qianyan.application.usecase.agent.ConvergenceOutcome
+import com.qianyan.provider.ProviderType
+import com.qianyan.app.desktop.ui.settings.SETTINGS_PROVIDER_SECTION
+import com.qianyan.provider.ReasoningEffort
 import com.qianyan.model.core.Novel
 import com.qianyan.model.NovelId
 import com.qianyan.model.VocabularyCandidateId
@@ -139,7 +143,6 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     var toast by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
     var refreshKey by mutableStateOf(0)
-    var providerSettingsOpen by mutableStateOf(false)
 
     /** 各工作区的内部标签（只记 UI 选择，不参与业务判断）。 */
     var writeTab by mutableStateOf(0)
@@ -184,6 +187,9 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
 
     /** 设置（**弹窗**：模态浮层，不替换主工作区页面，关闭后页面与 Selection 不变）。 */
     var settingsOpen by mutableStateOf(false)
+
+    /** 打开设置窗口时要定位的分区（设置页 itemKey）；null = 默认首页，由设置窗口消费后清空。 */
+    var settingsSection by mutableStateOf<String?>(null)
 
     /** 新建作品弹窗（顶部项目切换与命令面板共用同一入口）。 */
     var createNovelOpen by mutableStateOf(false)
@@ -264,6 +270,49 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             kotlinx.coroutines.delay(3200)
             if (toast == msg) toast = null
         }
+    }
+
+    /**
+     * 打开设置窗口并定位到指定分区（"provider" / "models" …）。
+     *
+     * 沿用旧弹窗的 busy 守卫——任务进行中不改配置，只提示等待；被拒时不留下定位残留。
+     */
+    fun openSettingsSection(section: String) {
+        if (busy) {
+            toast("任务进行中，请等待完成后再修改模型配置")
+            return
+        }
+        settingsSection = section
+        settingsOpen = true
+    }
+
+    /**
+     * 模型 / 思考强度选择的唯一 UI 入口。
+     *
+     * busy 时拒绝；未配置 Key 的真实 Provider 引导到设置且不切换；
+     * 真正生效一律经 [DesktopGraph.saveProviderConfig]（持久化 + 容器整体重建）。
+     */
+    fun chooseProviderModel(
+        provider: ProviderType,
+        modelId: String? = null,
+        reasoningEffort: ReasoningEffort? = null,
+    ): Boolean {
+        if (busy) {
+            toast("任务进行中，暂时不能切换模型")
+            return false
+        }
+        if (provider != ProviderType.MOCK && !graph.isConfigured(provider)) {
+            // 未配置 Key 要落在「AI Provider」（Key 录入处），不是「模型」清单
+            openSettingsSection(SETTINGS_PROVIDER_SECTION)
+            toast("请先配置 ${providerLabel(provider)} 的 API Key")
+            return false
+        }
+        val targetModel = modelId ?: if (provider == graph.provider.value) {
+            graph.modelId()
+        } else {
+            graph.customModels(provider).firstOrNull()?.modelId ?: graph.defaultModelId(provider)
+        }
+        return graph.saveProviderConfig(provider, modelId = targetModel, reasoningEffort = reasoningEffort)
     }
 
     /** 后台执行 + 统一错误提示（ApplicationError → 用户语言）。 */
@@ -618,6 +667,13 @@ internal fun agentTaskToast(result: com.qianyan.model.novelagent.NovelAgentResul
 
 /* ---------------- 基元：分隔线 / 标签 / 文本 ---------------- */
 
+/** Provider 的用户可见名称（菜单 / 提示统一用这一处）。 */
+fun providerLabel(type: ProviderType): String = when (type) {
+    ProviderType.MOCK -> "离线示意"
+    ProviderType.DEEPSEEK -> "DeepSeek"
+    ProviderType.MIMO -> "MiMo"
+}
+
 /** 1px 水平分隔线（层次靠线与留白，不靠阴影）。 */
 @Composable
 fun HLine(modifier: Modifier = Modifier, color: Color = QianyanTheme.palette.line) {
@@ -641,8 +697,9 @@ fun SectionLabel(text: String, modifier: Modifier = Modifier, trailing: (@Compos
         Text(
             text,
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
             color = QianyanTheme.palette.text3,
-            letterSpacing = 0.6.sp,
+            letterSpacing = 1.2.sp,
             maxLines = 1,
         )
         if (trailing != null) {
@@ -694,7 +751,7 @@ fun Tag(text: String, color: Color = QianyanTheme.palette.text3) {
 }
 
 /**
- * 暖白卡片：白底 + 1px 暖灰边 + 极轻投影（0.5 层），用于故事 / 资料总览。
+ * Apple 式卡片：白底 + 1px 发丝边 + 极轻投影，用于故事 / 资料总览。
  *
  * 只是展示容器：不引入任何业务语义；[onClick] 为空时是纯静态卡片。
  */
@@ -975,7 +1032,12 @@ fun ActionButton(
     val source = remember { MutableInteractionSource() }
     val hovered by source.collectIsHoveredAsState()
     val textColor = when {
-        !enabled -> palette.text3.copy(alpha = 0.55f)
+        !enabled -> when (level) {
+            ActionLevel.PRIMARY -> palette.onAccent
+            ActionLevel.SECONDARY -> palette.text
+            ActionLevel.GHOST -> palette.text2
+            ActionLevel.TEXT -> palette.text3
+        }
         level == ActionLevel.PRIMARY -> palette.onAccent
         level == ActionLevel.SECONDARY -> palette.text
         level == ActionLevel.GHOST -> palette.text2
@@ -983,13 +1045,11 @@ fun ActionButton(
     }
     val shape = RoundedCornerShape(QianyanShapes.pill)
     val baseColor = when {
-        !enabled -> Color.Transparent
         level == ActionLevel.PRIMARY -> palette.accent
         level == ActionLevel.SECONDARY -> palette.soft
         else -> Color.Transparent
     }
     val hoverColor = when {
-        !enabled -> Color.Transparent
         level == ActionLevel.PRIMARY -> androidx.compose.ui.graphics.lerp(palette.accent, Color.Black, 0.08f)
         else -> palette.hover
     }
@@ -1001,10 +1061,12 @@ fun ActionButton(
     Text(
         label,
         style = MaterialTheme.typography.labelMedium,
-        fontWeight = if (level == ActionLevel.PRIMARY) FontWeight.Medium else FontWeight.Normal,
+        fontWeight = if (level == ActionLevel.PRIMARY) FontWeight.SemiBold else FontWeight.Medium,
         color = textColor,
         maxLines = 1,
-        modifier = Modifier.clip(shape)
+        modifier = Modifier
+            .graphicsLayer(alpha = if (enabled) 1f else 0.42f)
+            .clip(shape)
             .background(background)
             .then(
                 if (enabled) {
@@ -1015,14 +1077,14 @@ fun ActionButton(
             )
             .padding(
                 horizontal = when (level) {
-                    ActionLevel.PRIMARY -> 16.dp
-                    ActionLevel.SECONDARY -> 13.dp
-                    else -> 6.dp
+                    ActionLevel.PRIMARY -> 18.dp
+                    ActionLevel.SECONDARY -> 14.dp
+                    else -> 7.dp
                 },
                 vertical = when (level) {
-                    ActionLevel.PRIMARY -> 7.dp
-                    ActionLevel.SECONDARY -> 6.dp
-                    else -> 4.dp
+                    ActionLevel.PRIMARY -> 8.dp
+                    ActionLevel.SECONDARY -> 7.dp
+                    else -> 5.dp
                 },
             ),
     )
@@ -1051,12 +1113,12 @@ fun QuietField(
 ) {
     val palette = QianyanTheme.palette
     var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(QianyanShapes.r3)
+    val shape = RoundedCornerShape(QianyanShapes.r2)
     Box(
         modifier
             .clip(shape)
             .background(palette.soft)
-            .border(1.dp, if (focused) palette.accent else Color.Transparent, shape)
+            .border(1.dp, if (focused) palette.accent else palette.line, shape)
             .padding(horizontal = 12.dp, vertical = 9.dp),
     ) {
         if (value.isEmpty() && placeholder.isNotEmpty()) {

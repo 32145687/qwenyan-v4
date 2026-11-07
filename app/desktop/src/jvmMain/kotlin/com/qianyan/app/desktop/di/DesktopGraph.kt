@@ -6,7 +6,10 @@ import com.qianyan.app.desktop.adapter.FileProviderCredentialStore
 import com.qianyan.provider.ProviderAssembler
 import com.qianyan.provider.ProviderConfiguration
 import com.qianyan.provider.ProviderType
+import com.qianyan.provider.ReasoningEffort
 import com.qianyan.provider.impl.DefaultProviderAssembler
+import com.qianyan.provider.impl.transport.JdkLlmHttpClient
+import com.qianyan.provider.impl.transport.LlmHttpClient
 import com.qianyan.storage.db.QianyanDbFactory
 import com.qianyan.storage.db.QianyanDbHandle
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,9 +35,10 @@ import java.util.Properties
  * 约束：只通过 [ApplicationContainer] 暴露的 UseCase 访问能力；不实现业务逻辑，不改共享核心。
  * Provider 切换会整体重建容器（数据在同一个 SQLite 文件中，不丢）。
  */
-class DesktopGraph private constructor(
+class DesktopGraph @JvmOverloads private constructor(
     val appDir: Path,
     val credentialStore: FileProviderCredentialStore,
+    private val httpClient: LlmHttpClient = JdkLlmHttpClient(),
 ) {
     /** 当前生效容器（Provider 切换时整体重建；数据在同一个 SQLite 文件中，不丢）。 */
     @Volatile
@@ -46,12 +50,26 @@ class DesktopGraph private constructor(
     private val selectionFile: Path = appDir.resolve("provider-selection.properties")
     private val uiPreferences = DesktopUiPreferences(appDir.resolve("ui-preferences.properties"))
 
+    /** 自定义模型清单（与 provider-selection 同族配置，不进 SQLite）。 */
+    val modelCatalog = CustomModelCatalog(appDir.resolve("models.properties"))
+
+    private val _customModelsRevision = MutableStateFlow(0)
+
+    /** 清单变更版本：UI 收集它以在增删改后刷新。 */
+    val customModelsRevision = _customModelsRevision.asStateFlow()
+
     private val _provider = MutableStateFlow(readSelection())
     val provider = _provider.asStateFlow()
 
     /** 当前模型配置（可被用户覆盖；null = 用 Provider 默认模型）。 */
     private val _modelId = MutableStateFlow<String?>(null)
     private val _baseUrl = MutableStateFlow<String?>(null)
+
+    /** 当前思考强度（读取失败回落 HIGH；null 仅表示请求不带参数，桌面配置始终有值）。 */
+    private val _reasoningEffort = MutableStateFlow(readEffort())
+    val effectiveReasoningEffort = _reasoningEffort.asStateFlow()
+
+    fun reasoningEffort(): ReasoningEffort = _reasoningEffort.value
 
     /** 当前生效的模型 id（用户设置优先，否则该 Provider 的默认模型）。 */
     fun modelId(): String = _modelId.value ?: defaultModelId(_provider.value)
@@ -74,11 +92,12 @@ class DesktopGraph private constructor(
     private lateinit var configuration: ProviderConfiguration
 
     init {
-        assembler = DesktopProviderAssembler(DefaultProviderAssembler(credentialStore))
+        assembler = DesktopProviderAssembler(DefaultProviderAssembler(credentialStore, httpClient))
         val stored = readStored()
         // 空串 = 未设置（null 语义 = 用该 Provider 的默认模型 / 官方默认 endpoint），不能赋成 ""。
         _modelId.value = stored["model"]?.takeIf { it.isNotBlank() }
         _baseUrl.value = stored["baseUrl"]?.takeIf { it.isNotBlank() }
+        _reasoningEffort.value = parseEffort(stored["effort"])
         configuration = buildConfiguration(_provider.value)
         container = build(_provider.value)
         refreshEffectiveModel()
@@ -92,6 +111,8 @@ class DesktopGraph private constructor(
             provider = type,
             model = model?.let { com.qianyan.provider.ModelProfile(id = it, label = it) },
             baseUrl = url,
+            // 离线示意不携带任何思考参数；真实 Provider 用用户选择（默认 high）。
+            reasoningEffort = if (type == ProviderType.MOCK) null else _reasoningEffort.value,
         )
     }
 
@@ -111,8 +132,16 @@ class DesktopGraph private constructor(
             "selected" to (p.getProperty("selected") ?: ProviderType.MOCK.name),
             "model" to (p.getProperty("model") ?: ""),
             "baseUrl" to (p.getProperty("baseUrl") ?: ""),
+            "effort" to (p.getProperty("effort") ?: ""),
         )
-    }.getOrDefault(mapOf("selected" to ProviderType.MOCK.name, "model" to "", "baseUrl" to ""))
+    }.getOrDefault(mapOf("selected" to ProviderType.MOCK.name, "model" to "", "baseUrl" to "", "effort" to ""))
+
+    private fun parseEffort(raw: String?): ReasoningEffort =
+        raw?.takeIf { it.isNotBlank() }
+            ?.let { name -> ReasoningEffort.entries.firstOrNull { it.name == name } }
+            ?: ReasoningEffort.HIGH
+
+    private fun readEffort(): ReasoningEffort = parseEffort(readStored()["effort"])
 
     private fun readSelection(): ProviderType =
         runCatching { ProviderType.valueOf(readStored()["selected"] ?: ProviderType.MOCK.name) }
@@ -123,6 +152,7 @@ class DesktopGraph private constructor(
             setProperty("selected", type.name)
             _modelId.value?.takeIf { it.isNotBlank() }?.let { setProperty("model", it) }
             _baseUrl.value?.takeIf { it.isNotBlank() }?.let { setProperty("baseUrl", it) }
+            setProperty("effort", _reasoningEffort.value.name)
         }
         selectionFile.toFile().outputStream().use { p.store(it, "Qianyan Desktop provider selection") }
     }
@@ -131,7 +161,7 @@ class DesktopGraph private constructor(
     fun defaultModelId(type: ProviderType): String = when (type) {
         ProviderType.MOCK -> "mock-v1"
         ProviderType.DEEPSEEK -> "deepseek-v4-flash"
-        ProviderType.MIMO -> "mimo-v2.5-pro"
+        ProviderType.MIMO -> "mimo-v2.6-pro"
     }
 
     /** 各 Provider 的官方默认 endpoint（仅作说明；留空即用此默认）。 */
@@ -150,12 +180,15 @@ class DesktopGraph private constructor(
         apiKey: String = "",
         modelId: String? = null,
         baseUrl: String? = null,
+        reasoningEffort: ReasoningEffort? = null,
     ): Boolean {
         val previousModel = _modelId.value
         val previousBaseUrl = _baseUrl.value
+        val previousEffort = _reasoningEffort.value
         if (apiKey.isNotBlank()) credentialStore.setApiKey(type, apiKey.trim())
         if (modelId != null) _modelId.value = modelId.trim().ifBlank { null }
         if (baseUrl != null) _baseUrl.value = baseUrl.trim().ifBlank { null }
+        if (reasoningEffort != null) _reasoningEffort.value = reasoningEffort
 
         val cfg = buildConfiguration(type)
         val result = runCatching { assembler.assemble(cfg) }
@@ -170,9 +203,10 @@ class DesktopGraph private constructor(
                 true
             },
             onFailure = {
-                // 切换失败不得留下半改的模型/端点，否则 UI 会显示一个并未生效的模型。
+                // 切换失败不得留下半改的模型/端点/强度，否则 UI 会显示一个并未生效的配置。
                 _modelId.value = previousModel
                 _baseUrl.value = previousBaseUrl
+                _reasoningEffort.value = previousEffort
                 refreshEffectiveModel()
                 providerMessage.value = "无法切换到 ${type.name}：${it.message ?: "凭证缺失"}（当前仍使用 ${_provider.value.name}）"
                 false
@@ -216,8 +250,32 @@ class DesktopGraph private constructor(
     fun describe(type: ProviderType): String = when (type) {
         ProviderType.MOCK -> "离线示意稿 · 不需要 API Key。用于无网络 / 无凭证时走通完整创作流程（Task / Workflow / 持久化仍为真实实现）。"
         ProviderType.DEEPSEEK -> "DeepSeek 真实网关 · 需要 API Key。模型 ID 可自由填写（默认 deepseek-v4-flash）。"
-        ProviderType.MIMO -> "MiMo 真实网关 · 需要 API Key。模型 ID 可自由填写（默认 mimo-v2.5-pro）。"
+        ProviderType.MIMO -> "MiMo 真实网关 · 需要 API Key。模型 ID 可自由填写（默认 mimo-v2.6-pro）。"
     }
+
+    // ---- 自定义模型清单（UI 只经这些方法读写，避免两份表）----
+
+    fun customModels(): List<CustomModel> = modelCatalog.read()
+
+    fun customModels(type: ProviderType): List<CustomModel> = modelCatalog.candidates(type)
+
+    fun addCustomModel(model: CustomModel): Boolean = modelCatalog.add(model).also { if (it) bumpCustomModels() }
+
+    fun updateCustomModel(original: CustomModel, updated: CustomModel): Boolean =
+        modelCatalog.update(original, updated).also { if (it) bumpCustomModels() }
+
+    fun removeCustomModel(provider: ProviderType, modelId: String): Boolean =
+        modelCatalog.remove(provider, modelId).also { if (it) bumpCustomModels() }
+
+    fun setCustomModelEnabled(provider: ProviderType, modelId: String, enabled: Boolean): Boolean =
+        modelCatalog.setEnabled(provider, modelId, enabled).also { if (it) bumpCustomModels() }
+
+    private fun bumpCustomModels() {
+        _customModelsRevision.value += 1
+    }
+
+    /** 当前生效的 Provider 配置（测试与设置页只读投影）。 */
+    internal fun currentConfiguration(): ProviderConfiguration = configuration
 
     companion object {
         /** 应用数据目录：%APPDATA%/Qianyan（回退 ~/.qianyan）。 */
