@@ -111,7 +111,11 @@ class CanonicalReadTest {
         baseDraftId: DraftId? = w.canonicalDraftId,
     ): String {
         val artifact = artifactFor(f, w, content, baseDraftId = baseDraftId)
-        f.app.commits.commit(w.projectId, artifact.artifactId, approvedGate(f, w, gateId = gateId))
+        f.app.commits.commit(
+            w.projectId,
+            artifact.artifactId,
+            approvedGate(f, w, gateId = gateId, workingDraftId = artifact.workingDraftId),
+        )
         return content
     }
 

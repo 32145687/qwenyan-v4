@@ -131,6 +131,22 @@ class ActivityRepositoryTest {
         driver.getConnection().close()
     }
 
+    /** O-56：同毫秒并列必须按插入序（真实发生时序），不得按随机 activity_id 倒置。 */
+    @Test
+    fun `same-millisecond activities keep insertion order`() {
+        val (repo, _, driver) = repos()
+        // 插入序 = 真实发生时序：先“分析”，后“续步”；activity_id 故意与插入序相反。
+        repo.save(activity("zzzz-analysis", kind = "EXECUTE", status = AgentLogStatus.COMPLETED, summary = "分析"))
+        repo.save(activity("aaaa-followup", kind = "EXECUTE", status = AgentLogStatus.COMPLETED, summary = "续步"))
+
+        assertEquals(
+            listOf("zzzz-analysis", "aaaa-followup"),
+            repo.listBySession(AgentSessionId("s-1")).map { it.activityId.value },
+            "同毫秒并列时必须按插入序（rowid），否则“分析 → 续步”会被随机倒置",
+        )
+        driver.getConnection().close()
+    }
+
     @Test
     fun `project isolation never leaks across projects`() {
         val (repo, _, driver) = repos()

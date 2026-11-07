@@ -31,9 +31,11 @@ VALUES (:activity_id, :session_id, :project_id, :kind, :status, :started_at, :co
 getActivity:
 SELECT * FROM Activity WHERE activity_id = :activity_id;
 
-/** 会话内活动（时序升序：日志时序）。 */
+-- 会话内活动（时序升序：日志时序）。
+-- O-56：同毫秒并列按 **插入序（rowid）** 兜底 = 真实发生顺序；不得用随机 activity_id 排序，
+-- 否则同一毫秒内的“分析 → 续步”会被任意倒置（与 CommitHistory 的 rowid 口径一致）。
 listActivitiesBySession:
-SELECT * FROM Activity WHERE session_id = :session_id ORDER BY started_at ASC, activity_id ASC;
+SELECT * FROM Activity WHERE session_id = :session_id ORDER BY started_at ASC, rowid ASC;
 
 listActivitiesByProject:
 SELECT * FROM Activity WHERE project_id = :project_id ORDER BY started_at ASC, activity_id ASC;

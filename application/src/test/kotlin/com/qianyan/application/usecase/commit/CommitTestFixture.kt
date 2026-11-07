@@ -56,6 +56,8 @@ internal fun approvedGate(
     status: HumanGateStatus = HumanGateStatus.RESOLVED,
     decision: HumanDecision = HumanDecision.APPROVED,
     chapterId: ChapterId = w.chapter2,
+    /** O-56：有 Artifact 时必须显式传入；不得让夹具跨同毫秒产物“猜最新”。 */
+    workingDraftId: WorkingDraftId? = null,
 ): CommitApproval {
     val workflowId = WorkflowId("wf-i10-$gateId")
     f.app.workflows.createWorkflow(
@@ -93,7 +95,9 @@ internal fun approvedGate(
             resolvedBy = if (status == HumanGateStatus.RESOLVED) "user" else null,
         ),
     )
-    latestWorkingDraftId(f, w, chapterId)?.let { bindWorkingStep(f, workflowId, chapterId, it) }
+    (workingDraftId ?: latestWorkingDraftId(f, w, chapterId))?.let {
+        bindWorkingStep(f, workflowId, chapterId, it)
+    }
     return CommitApproval(WorkflowHumanGateId(gateId))
 }
 
@@ -136,7 +140,8 @@ private const val WORKING_REF_PREFIX: String =
 private fun latestWorkingDraftId(f: WorkingDraftFixture, w: SeededWorld, chapterId: ChapterId): WorkingDraftId? {
     val candidates = f.app.workingDrafts.list(w.projectId).filter { it.target.chapterId == chapterId }
     val latest = candidates.maxByOrNull { it.createdAt } ?: return null
-    // 同毫秒创建时，list 的插入序仍可区分；取该时间戳下最后一个。
+    // 仅作“单产物”夹具的兜底：list 按 workingDraftId 排序，同毫秒多产物无法还原插入序。
+    // 有 Artifact 的调用方必须显式传 workingDraftId（approvedGate 的显式参数）。
     return candidates.lastOrNull { it.createdAt == latest.createdAt }?.workingDraftId
 }
 

@@ -119,7 +119,11 @@ class ReadingUseCasesCanonicalTest {
         baseDraftId: DraftId? = w.canonicalDraftId,
     ) {
         val artifact = artifactFor(f, w, content, baseDraftId = baseDraftId)
-        f.app.commits.commit(w.projectId, artifact.artifactId, approvedGate(f, w, gateId = gateId))
+        f.app.commits.commit(
+            w.projectId,
+            artifact.artifactId,
+            approvedGate(f, w, gateId = gateId, workingDraftId = artifact.workingDraftId),
+        )
     }
 
     private companion object {
