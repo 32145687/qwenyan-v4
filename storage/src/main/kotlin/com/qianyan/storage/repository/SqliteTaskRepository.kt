@@ -87,6 +87,10 @@ class SqliteTaskRepository(
         db.taskQueries.selectLatestCheckpoint(taskId.value).executeAsOneOrNull()
             ?.let { StorageMappers.dbCheckpoint(it) }
 
+    override fun findCheckpointsByStage(stage: String, limit: Long): List<Checkpoint> =
+        db.taskQueries.selectCheckpointsByStage(stage, limit).executeAsList()
+            .map { StorageMappers.dbCheckpoint(it) }
+
     private fun mapWriteError(e: Throwable): Throwable {
         val msg = e.message.orEmpty()
         return when {

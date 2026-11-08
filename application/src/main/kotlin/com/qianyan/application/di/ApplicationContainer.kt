@@ -810,6 +810,10 @@ class ApplicationContainer(
     val knowledgeUpdate: KnowledgeUpdateExecutionUseCase
         get() = KnowledgeUpdateExecutionUseCase(tasks, knowledgeUpdater, memoryRepository, draftRepository, errorMapper)
 
+    /** O-08：按作品读取最近一次 KU 状态（Checkpoint 快照 → Task.status；只读投影）。 */
+    val knowledgeUpdateStatus: com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateStatusUseCases
+        get() = com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateStatusUseCases(taskRepository, errorMapper)
+
     /** P12.1.4 最小 HITL 确认闸门：confirm a Final Draft（FINAL/PENDING → CONFIRMED，幂等，作用域隔离）。 */
     val confirmations: ConfirmationExecutionUseCase
         get() = ConfirmationExecutionUseCase(draftRepository, errorMapper)

@@ -38,4 +38,7 @@ interface TaskRepository {
 
     /** 查询某 Task 的最近 Checkpoint（revision 最大）。不存在返回 null。 */
     fun findLatestCheckpoint(taskId: TaskId): Checkpoint?
+
+    /** 按 stage 查询最近 [limit] 条 Checkpoint（跨 Task，created_at 倒序；O-08 按作品定位 KU 结果）。 */
+    fun findCheckpointsByStage(stage: String, limit: Long): List<Checkpoint>
 }

@@ -83,7 +83,7 @@ class KnowledgeUpdateExecutionUseCase(
         }
 
         val outcome = KnowledgeUpdateOutcome(validated, applied)
-        taskManager.saveCheckpoint(taskId, KnowledgeUpdateSnapshot.STAGE, KnowledgeUpdateSnapshot.encode(validated))
+        taskManager.saveCheckpoint(taskId, KnowledgeUpdateSnapshot.STAGE, KnowledgeUpdateSnapshot.encode(validated, source.novelId))
         return outcome
     }
 

@@ -56,3 +56,6 @@ SELECT * FROM Checkpoint WHERE task_id = :task_id ORDER BY revision;
 
 selectLatestCheckpoint:
 SELECT * FROM Checkpoint WHERE task_id = :task_id ORDER BY revision DESC LIMIT 1;
+
+selectCheckpointsByStage:
+SELECT * FROM Checkpoint WHERE stage = :stage ORDER BY created_at DESC LIMIT :limit;

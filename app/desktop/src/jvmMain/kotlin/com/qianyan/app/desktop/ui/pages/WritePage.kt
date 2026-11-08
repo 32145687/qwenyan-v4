@@ -63,8 +63,10 @@ import com.qianyan.app.desktop.ui.write.WriterController
 import com.qianyan.app.desktop.ui.write.WriterUiState
 import com.qianyan.application.usecase.memory.WritingMemorySummary
 import com.qianyan.application.usecase.writing.WriterPendingProposal
+import com.qianyan.application.usecase.writing.knowledgeupdate.LatestKnowledgeUpdate
 import com.qianyan.model.change.DiffLineKind
 import com.qianyan.model.story.Chapter
+import com.qianyan.model.task.TaskStatus
 import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
 
@@ -89,15 +91,19 @@ fun WritePage(state: DesktopAppState) {
     var rewriting by remember { mutableStateOf(false) }
     var allChapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
     var knowledgeUpdate by remember { mutableStateOf<WritingMemorySummary?>(null) }
+    var latestKu by remember { mutableStateOf<LatestKnowledgeUpdate?>(null) }
 
     // O-08：知识更新结果视图（按作品 + layer=WRITING + effective；只读投影）。
     LaunchedEffect(state.novel?.novelId, state.refreshKey) {
         val novelId = state.novel?.novelId
         if (novelId == null) {
             knowledgeUpdate = null
+            latestKu = null
             return@LaunchedEffect
         }
         knowledgeUpdate = runCatching { state.load { it.memories.writingLayerSummary(novelId) } }.getOrNull()
+        // O-08-S：最近一次 KU 状态（Checkpoint 快照 → Task.status）；无记录保持空态。
+        latestKu = runCatching { state.load { it.knowledgeUpdateStatus.latestForNovel(novelId) } }.getOrNull()
     }
 
     LaunchedEffect(chapterId, state.novel?.novelId, state.refreshKey) {
@@ -282,7 +288,7 @@ fun WritePage(state: DesktopAppState) {
                     }
 
                     Spacer(Modifier.height(18.dp))
-                    KnowledgeUpdateCard(knowledgeUpdate)
+                    KnowledgeUpdateCard(knowledgeUpdate, latestKu)
                     Spacer(Modifier.height(56.dp))
                 }
             }
@@ -522,11 +528,11 @@ private fun MenuPending(label: String, useCase: String) {
 /**
  * O-08：知识更新结果卡片（只读）。
  *
- * 审批通过后由 Workflow 自动执行 KU；本卡片只展示本作品 `layer=WRITING` 的有效记忆沉淀，
- * **不提供手动触发**（入口即无重复触发）。任务状态不具备按作品追溯的可靠来源，故不显示。
+ * 审批通过后由 Workflow 自动执行 KU；本卡片展示本作品**最近一次 KU 状态**（Checkpoint 快照 → Task.status）
+ * 与 `layer=WRITING` 的有效记忆沉淀，**不提供手动触发**（入口即无重复触发）。
  */
 @Composable
-private fun KnowledgeUpdateCard(summary: WritingMemorySummary?) {
+private fun KnowledgeUpdateCard(summary: WritingMemorySummary?, latest: LatestKnowledgeUpdate?) {
     val palette = QianyanTheme.palette
     Column(
         Modifier.width(QianyanDimens.EditorWidth)
@@ -547,23 +553,48 @@ private fun KnowledgeUpdateCard(summary: WritingMemorySummary?) {
             color = palette.text3,
         )
         Spacer(Modifier.height(10.dp))
-        when {
-            summary == null -> Text("读取中…", style = MaterialTheme.typography.bodySmall, color = palette.text3)
-
-            summary.count == 0 -> Text(
-                "本作品还没有知识更新沉淀（审批通过后自动执行）",
-                style = MaterialTheme.typography.bodySmall,
-                color = palette.text3,
-            )
-
-            else -> {
-                val last = summary.lastUpdatedAt?.let { " · 最近更新 ${shortTime(it)}" } ?: ""
+        if (summary == null && latest == null) {
+            Text("读取中…", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+        } else {
+            if (latest != null) {
                 Text(
-                    "已沉淀 ${summary.count} 条事实$last",
+                    "最近一次：${latest.status.name} · ${shortTime(latest.at)} · 采纳 ${latest.accepted} / 拒绝 ${latest.rejected}",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.text2,
                 )
-                summary.recentContents.forEach { content ->
+                val reason = latest.error
+                    ?.takeIf { latest.status == TaskStatus.FAILED }
+                    ?.replace('\n', ' ')
+                    ?.trim()
+                    ?.takeIf { it.isNotEmpty() }
+                if (reason != null) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "失败原因：" + reason.take(80),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.text3,
+                        maxLines = 2,
+                    )
+                }
+            }
+            val memoryCount = summary?.count ?: 0
+            if (memoryCount == 0) {
+                if (latest == null) {
+                    Text(
+                        "本作品还没有知识更新沉淀（审批通过后自动执行）",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.text3,
+                    )
+                }
+            } else {
+                if (latest != null) Spacer(Modifier.height(6.dp))
+                val last = summary?.lastUpdatedAt?.let { " · 最近更新 ${shortTime(it)}" } ?: ""
+                Text(
+                    "已沉淀 ${summary?.count ?: 0} 条事实$last",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text2,
+                )
+                summary?.recentContents?.forEach { content ->
                     Spacer(Modifier.height(6.dp))
                     Text(
                         "· " + content.replace('\n', ' ').take(80),

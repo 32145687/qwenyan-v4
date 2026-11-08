@@ -25,4 +25,12 @@ class KnowledgeUpdateCardGuardTest {
         assertTrue("最近更新" in page, "必须展示最近更新时间")
         assertFalse("MenuEntry(\"知识更新" in page, "不得新增手动触发菜单项")
     }
+
+    @Test
+    fun `card shows latest knowledge-update status from persisted checkpoints`() {
+        assertTrue("latestForNovel" in page, "状态必须来自按作品的 KU 记录查询")
+        assertTrue("最近一次：" in page, "必须展示最近一次 KU 状态")
+        assertTrue("采纳 " in page && "拒绝 " in page, "必须展示采纳/拒绝数")
+        assertTrue("失败原因：" in page, "FAILED 必须附任务错误摘要")
+    }
 }

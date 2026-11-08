@@ -2,6 +2,7 @@ package com.qianyan.application.usecase.writing.knowledgeupdate
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
+import com.qianyan.model.NovelId
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -24,28 +25,41 @@ object KnowledgeUpdateSnapshot {
 
     private const val KEY_TYPE = "type"
     private const val KEY_RESULT = "result"
+    private const val KEY_NOVEL = "novelId"
 
-    /** 把 [ValidatedKnowledgeUpdate] 编码为 Checkpoint 可见的结构化 JsonObject（含 type 标签）。 */
-    fun encode(result: ValidatedKnowledgeUpdate): JsonObject = buildJsonObject {
+    /**
+     * 把 [ValidatedKnowledgeUpdate] 编码为 Checkpoint 可见的结构化 JsonObject（含 type 标签）。
+     *
+     * O-08：写入 `novelId`（顶层键），供"按作品查最近一次 KU 状态"；旧快照无该键，
+     * 读取侧视为 null（[decodePayload] / [decode] 均不崩）。
+     */
+    fun encode(result: ValidatedKnowledgeUpdate, novelId: NovelId): JsonObject = buildJsonObject {
         put(KEY_TYPE, STAGE)
+        put(KEY_NOVEL, novelId.value)
         put(KEY_RESULT, json.encodeToJsonElement(SnapshotDto.serializer(), SnapshotDto.from(result)))
     }
 
+    /** 从 Checkpoint.snapshot 解码 [ValidatedKnowledgeUpdate]。缺失 / 非该 stage / 结构非法 → null。 */
+    fun decode(snapshot: JsonObject?): ValidatedKnowledgeUpdate? = decodePayload(snapshot)?.result
+
     /**
-     * 从 Checkpoint.snapshot 解码 [ValidatedKnowledgeUpdate]。缺失 / 非该 stage / 结构非法 → null。
+     * 解码完整快照（结果 + 归属作品）。
+     *
+     * 兼容旧格式：无 `novelId` 键 → [SnapshotPayload.novelId] 为 null，[SnapshotPayload.result] 照常解码。
      */
-    fun decode(snapshot: JsonObject?): ValidatedKnowledgeUpdate? {
+    fun decodePayload(snapshot: JsonObject?): SnapshotPayload? {
         if (snapshot == null) return null
         if ((snapshot[KEY_TYPE]?.jsonPrimitive?.contentOrNull ?: "") != STAGE) return null
         val el = snapshot[KEY_RESULT] ?: return null
-        return try {
-            val dto = json.decodeFromJsonElement<SnapshotDto>(el)
-            dto.toResult()
+        val result = try {
+            json.decodeFromJsonElement<SnapshotDto>(el).toResult()
         } catch (e: SerializationException) {
-            null
+            return null
         } catch (e: IllegalArgumentException) {
-            null
+            return null
         }
+        val novelId = snapshot[KEY_NOVEL]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() }?.let(::NovelId)
+        return SnapshotPayload(novelId = novelId, result = result)
     }
 
     private val json = Json {
@@ -78,3 +92,9 @@ object KnowledgeUpdateSnapshot {
         val reason: String,
     )
 }
+
+/** 解码后的 KU 快照：确定性校验结果 + 归属作品（旧快照无 novelId → null）。 */
+data class SnapshotPayload(
+    val novelId: NovelId?,
+    val result: ValidatedKnowledgeUpdate,
+)
