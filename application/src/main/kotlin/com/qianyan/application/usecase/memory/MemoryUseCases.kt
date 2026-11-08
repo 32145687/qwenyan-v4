@@ -57,4 +57,28 @@ class MemoryUseCases(
     /** QueryMemory：读取该 Novel（在 context 下）的记忆条目。 */
     fun query(context: VariantContext): List<MemoryEntry> =
         guard { repo.findEntriesByNovel(NovelId(context.baseNovelId.value)) }
+
+    /**
+     * O-08：知识更新结果视图的数据源（按 Novel + layer=WRITING + effective 统计）。
+     *
+     * 只读投影：条数 / 最近更新时间 / 最近 2 条内容。用于桌面「知识更新」卡片；
+     * 不尝试按作品追溯 KU Task 状态（Task 无作品关联，且审批链创建的 KU Task 不置 COMPLETED）。
+     */
+    fun writingLayerSummary(novelId: NovelId): WritingMemorySummary {
+        val entries = guard { repo.findEntriesByNovel(novelId) }
+            .filter { it.layer == MemoryLayer.WRITING && it.effective }
+            .sortedByDescending { it.updatedAt }
+        return WritingMemorySummary(
+            count = entries.size,
+            lastUpdatedAt = entries.firstOrNull()?.updatedAt,
+            recentContents = entries.take(2).map { it.content },
+        )
+    }
 }
+
+/** O-08：知识更新沉淀结果的只读摘要。 */
+data class WritingMemorySummary(
+    val count: Int,
+    val lastUpdatedAt: kotlinx.datetime.Instant?,
+    val recentContents: List<String>,
+)

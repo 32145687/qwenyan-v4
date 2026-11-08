@@ -47,6 +47,7 @@ import com.qianyan.app.desktop.ui.ProseSize
 import com.qianyan.app.desktop.ui.chapterTitleOnly
 import com.qianyan.app.desktop.ui.exportChapterToTxt
 import com.qianyan.app.desktop.ui.formatCount
+import com.qianyan.app.desktop.ui.shortTime
 import com.qianyan.app.desktop.ui.statusLabel
 import com.qianyan.app.desktop.ui.theme.QianyanChapterStyle
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
@@ -60,6 +61,7 @@ import com.qianyan.app.desktop.ui.write.CANDIDATE_LOST_MESSAGE
 import com.qianyan.app.desktop.ui.write.RewriteDialog
 import com.qianyan.app.desktop.ui.write.WriterController
 import com.qianyan.app.desktop.ui.write.WriterUiState
+import com.qianyan.application.usecase.memory.WritingMemorySummary
 import com.qianyan.application.usecase.writing.WriterPendingProposal
 import com.qianyan.model.change.DiffLineKind
 import com.qianyan.model.story.Chapter
@@ -86,6 +88,17 @@ fun WritePage(state: DesktopAppState) {
     var menuOpen by remember { mutableStateOf(false) }
     var rewriting by remember { mutableStateOf(false) }
     var allChapters by remember { mutableStateOf<List<Chapter>>(emptyList()) }
+    var knowledgeUpdate by remember { mutableStateOf<WritingMemorySummary?>(null) }
+
+    // O-08：知识更新结果视图（按作品 + layer=WRITING + effective；只读投影）。
+    LaunchedEffect(state.novel?.novelId, state.refreshKey) {
+        val novelId = state.novel?.novelId
+        if (novelId == null) {
+            knowledgeUpdate = null
+            return@LaunchedEffect
+        }
+        knowledgeUpdate = runCatching { state.load { it.memories.writingLayerSummary(novelId) } }.getOrNull()
+    }
 
     LaunchedEffect(chapterId, state.novel?.novelId, state.refreshKey) {
         val novelId = state.novel?.novelId
@@ -268,6 +281,8 @@ fun WritePage(state: DesktopAppState) {
                         }
                     }
 
+                    Spacer(Modifier.height(18.dp))
+                    KnowledgeUpdateCard(knowledgeUpdate)
                     Spacer(Modifier.height(56.dp))
                 }
             }
@@ -449,9 +464,6 @@ private fun ChapterBar(
                         MenuEntry("去 Agent 重新发起") { setMenuOpen(false); state.nav = Workspace.CREATE }
                     }
                     MenuPending("自动保存 · 已开启", "停止输入 1.2 秒后写入当前 Draft（待审候选不会自动保存）")
-                    MenuSeparator()
-                    // 未接入的收尾动作：写明接入点，不放假按钮
-                    MenuPending("知识更新 · 未接入", "knowledgeUpdate.execute(taskId, draft)")
                 }
             }
         }
@@ -504,5 +516,63 @@ private fun MenuPending(label: String, useCase: String) {
     Column(Modifier.padding(horizontal = 12.dp, vertical = 5.dp)) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = palette.text3)
         Text(useCase, style = QianyanCodeStyle, color = palette.text3)
+    }
+}
+
+/**
+ * O-08：知识更新结果卡片（只读）。
+ *
+ * 审批通过后由 Workflow 自动执行 KU；本卡片只展示本作品 `layer=WRITING` 的有效记忆沉淀，
+ * **不提供手动触发**（入口即无重复触发）。任务状态不具备按作品追溯的可靠来源，故不显示。
+ */
+@Composable
+private fun KnowledgeUpdateCard(summary: WritingMemorySummary?) {
+    val palette = QianyanTheme.palette
+    Column(
+        Modifier.width(QianyanDimens.EditorWidth)
+            .clip(RoundedCornerShape(QianyanShapes.r3))
+            .background(palette.raised)
+            .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.r3))
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("知识更新", style = MaterialTheme.typography.bodyMedium, color = palette.text)
+            Spacer(Modifier.weight(1f))
+            Text("自动执行", style = QianyanCodeStyle, color = palette.text3)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "审批通过后自动执行，无需手动触发；结果以本作品的记忆沉淀为准。",
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.text3,
+        )
+        Spacer(Modifier.height(10.dp))
+        when {
+            summary == null -> Text("读取中…", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+
+            summary.count == 0 -> Text(
+                "本作品还没有知识更新沉淀（审批通过后自动执行）",
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.text3,
+            )
+
+            else -> {
+                val last = summary.lastUpdatedAt?.let { " · 最近更新 ${shortTime(it)}" } ?: ""
+                Text(
+                    "已沉淀 ${summary.count} 条事实$last",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text2,
+                )
+                summary.recentContents.forEach { content ->
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "· " + content.replace('\n', ' ').take(80),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.text3,
+                        maxLines = 2,
+                    )
+                }
+            }
+        }
     }
 }
