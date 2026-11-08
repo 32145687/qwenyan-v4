@@ -508,6 +508,7 @@ class ApplicationContainer(
             taskQueue = taskQueue,
             sessions = agentSessions,
             storyState = storyState,
+            workflowRepository = workflowRepository,
             errorMapper = errorMapper,
             contextPackStore = contextPackStore,
         )

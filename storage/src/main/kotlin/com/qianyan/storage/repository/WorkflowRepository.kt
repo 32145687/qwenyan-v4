@@ -50,6 +50,17 @@ interface WorkflowRepository {
     fun getGateByKey(gateKey: String): WorkflowHumanGate?
     fun updateGate(gate: WorkflowHumanGate)
 
+    /**
+     * O-50：Project 内**待确认（PENDING）Gate 计数**。
+     *
+     * 归属按 `gate.workflow_id → Workflow.novel_id` 优先，其次 `gate.draft_id → ChapterDraft.novel_id`；
+     * 两者都解析不到 Project 的 Gate 不计入（无归属 = 不属于任何 Project 的待确认）。
+     */
+    fun pendingGateCount(projectId: com.qianyan.model.ProjectId): Long
+
+    /** O-50：Project 内待确认 Gate 明细（与 [pendingGateCount] 同源；供 Inspector 展示章节/阶段）。 */
+    fun listPendingGates(projectId: com.qianyan.model.ProjectId): List<PendingGateSummary>
+
     /* ---- Continuation ---- */
     fun createContinuation(continuation: WorkflowContinuation)
     fun getContinuation(continuationId: WorkflowContinuationId): WorkflowContinuation?
@@ -64,3 +75,16 @@ interface WorkflowRepository {
     /** 在给定事务内执行一次写操作（供跨表原子完成）。 */
     fun inTransaction(block: () -> Unit)
 }
+
+/**
+ * O-50：Project 内一条待确认 Gate 的只读投影。
+ *
+ * `chapterId` 取 Step → Workflow.activeChapter → Draft 的章节；`phase` 为 Gate 绑定 Step 的阶段
+ * （standalone Gate 可能为空）。仅用于 Inspector 展示，不参与审批链。
+ */
+data class PendingGateSummary(
+    val gateId: WorkflowHumanGateId,
+    val chapterId: com.qianyan.model.ChapterId?,
+    val phase: String?,
+    val createdAt: kotlinx.datetime.Instant,
+)

@@ -115,6 +115,21 @@ class SqliteWorkflowRepository(
         resolved_at = g.resolvedAt?.toEpochMilliseconds(), resolved_by = g.resolvedBy, gate_id = g.gateId.value,
     )
 
+    /** O-50：Project 内待确认 Gate 计数（workflow 优先、draft 兜底归属；无归属不计入）。 */
+    override fun pendingGateCount(projectId: com.qianyan.model.ProjectId): Long =
+        db.workflowQueries.countPendingGatesByProject(projectId.value).executeAsOne()
+
+    /** O-50：Project 内待确认 Gate 明细（与计数同一 WHERE / 归属规则）。 */
+    override fun listPendingGates(projectId: com.qianyan.model.ProjectId): List<PendingGateSummary> =
+        db.workflowQueries.listPendingGatesByProject(projectId.value).executeAsList().map { row ->
+            PendingGateSummary(
+                gateId = WorkflowHumanGateId(row.gate_id),
+                chapterId = row.chapter_id?.let { com.qianyan.model.ChapterId(it) },
+                phase = row.phase,
+                createdAt = Instant.fromEpochMilliseconds(row.created_at),
+            )
+        }
+
     override fun createContinuation(c: WorkflowContinuation) = db.workflowQueries.insertContinuation(
         continuation_id = c.continuationId.value, workflow_id = c.workflowId.value,
         source_draft_id = c.sourceDraftId.value, source_chapter_id = c.sourceChapterId?.value,

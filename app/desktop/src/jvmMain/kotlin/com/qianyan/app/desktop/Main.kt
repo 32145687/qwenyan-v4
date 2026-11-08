@@ -255,7 +255,8 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
             return@LaunchedEffect
         }
         pendingText = try {
-            state.load { it.changes.list(pid).size }.toString()
+            // O-50：待确认 = 持久化 PENDING Gate 数（不再读内存 ChangeArtifact 列表）。
+            state.load { it.workspace.pendingGateCount(pid) }.toString()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {

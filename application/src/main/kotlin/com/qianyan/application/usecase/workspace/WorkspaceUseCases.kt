@@ -77,6 +77,7 @@ class WorkspaceUseCases(
     private val taskQueue: TaskQueueUseCases,
     private val sessions: AgentSessionUseCases,
     private val storyState: StoryStateRepository,
+    private val workflowRepository: com.qianyan.storage.repository.WorkflowRepository,
     errorMapper: ErrorMapper,
     /** A2：任务实际 Pack 的只读查询入口；null = 未装配（Inspector 只能显示无 Pack 状态）。 */
     private val contextPackStore: ContextPackStore? = null,
@@ -336,6 +337,9 @@ class WorkspaceUseCases(
             selection = normalized,
             title = title,
             detail = detail,
+            // O-50：待审批以持久化 PENDING Gate 为准（与状态栏同源）。
+            pendingGateCount = pendingGateCount(projectId),
+            pendingGates = pendingGateViews(projectId),
             // A2：只投影任务实际发布的 Pack；没有真实 Pack 时保持 null，绝不重新构建。
             context = resolution.pack?.let { pack ->
                 WorkspaceProjections.contextView(
@@ -359,6 +363,31 @@ class WorkspaceUseCases(
         val view: InspectorTaskContextView,
         val pack: ContextPack?,
     )
+
+    /** O-50：Project 内待确认 Gate 数（持久化事实；状态栏唯一数据源）。 */
+    fun pendingGateCount(projectId: ProjectId): Int =
+        guard { workflowRepository.pendingGateCount(projectId).toInt() }
+
+    /** O-50：Inspector 待审批明细（与计数同一仓储查询族）。 */
+    private fun pendingGateViews(projectId: ProjectId): List<com.qianyan.model.workspace.InspectorPendingGateView> =
+        guard { workflowRepository.listPendingGates(projectId) }.map { gate ->
+            val chapter = gate.chapterId?.let { id -> runCatching { chapters.findById(id) }.getOrNull() }
+            com.qianyan.model.workspace.InspectorPendingGateView(
+                chapterLabel = chapter?.let { "第 ${it.order} 章" } ?: "未关联章节",
+                phaseLabel = pendingPhaseLabel(gate.phase),
+            )
+        }
+
+    private fun pendingPhaseLabel(phase: String?): String = when (phase) {
+        "PLANNING" -> "规划"
+        "WRITING" -> "写作"
+        "CRITIQUE" -> "评审"
+        "REVISION" -> "修订"
+        "FINALIZE" -> "收尾"
+        "CONFIRMATION" -> "等待确认"
+        "KNOWLEDGE_UPDATE" -> "更新故事状态"
+        else -> "待确认"
+    }
 
     /**
      * A2 任务上下文四状态（读取真实 Store，不构建 Pack）。

@@ -49,6 +49,8 @@ class WriterController(
     private val autoSave: Boolean = false,
     /** 单调时钟（毫秒），用于 Gate 决议防抖；测试可注入。 */
     private val nowMillis: () -> Long = { System.nanoTime() / 1_000_000L },
+    /** O-50：Gate 决议成功后回调（写页用于 `refreshKey++`，刷新状态栏/Inspector 的待确认计数）。 */
+    private val onDecision: () -> Unit = {},
 ) {
 
     private var autoSaveJob: kotlinx.coroutines.Job? = null
@@ -211,6 +213,7 @@ class WriterController(
                 .onSuccess { loaded ->
                     startDecisionCooldown()
                     _uiState.update { it.applyContext(loaded).copy(isApproving = false) }
+                    onDecision()
                 }
                 .onFailure { e -> _uiState.update { it.copy(isApproving = false, error = messageFor(e)) } }
         }
@@ -231,6 +234,7 @@ class WriterController(
                 .onSuccess { loaded ->
                     startDecisionCooldown()
                     _uiState.update { it.applyContext(loaded).copy(isRejecting = false) }
+                    onDecision()
                 }
                 .onFailure { e -> _uiState.update { it.copy(isRejecting = false, error = messageFor(e)) } }
         }

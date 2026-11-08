@@ -109,6 +109,7 @@ fun WritePage(state: DesktopAppState) {
             workflow = state.container.workflowFacade,
             scope = state.scope,
             autoSave = true,
+            onDecision = { state.refreshKey++ },
         )
         controller = c
         c.load()

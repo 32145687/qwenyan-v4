@@ -27,7 +27,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -110,7 +109,7 @@ fun ContextInspector(
                     InspectorPane.TASK -> TaskTab(app, view)
                     InspectorPane.CONTEXT -> ContextTab(view)
                     InspectorPane.ACTIVITY -> ActivityTab(view.activities)
-                    InspectorPane.CHANGES -> ChangesTab(view.changes, view.history)
+                    InspectorPane.CHANGES -> ChangesTab(app, view)
                 }
             }
         }
@@ -227,9 +226,13 @@ private fun TaskTab(app: DesktopAppState, view: WorkspaceInspectorView) {
         Spacer(Modifier.height(10.dp))
 
         SectionLabel("待审批")
+        PendingGatesSection(app, view.pendingGateCount, view.pendingGates)
+        Spacer(Modifier.height(14.dp))
+
+        SectionLabel("本会话提案（内存，重启清空）")
         val pending = view.changes
         if (pending.isEmpty()) {
-            Text("没有待审批的修改", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+            Text("本会话暂无提案", style = MaterialTheme.typography.bodySmall, color = palette.text3)
         } else {
             val first = pending.last()
             Column(
@@ -246,18 +249,9 @@ private fun TaskTab(app: DesktopAppState, view: WorkspaceInspectorView) {
                     style = QianyanCodeStyle,
                     color = palette.text3,
                 )
-                Spacer(Modifier.height(8.dp))
-                // 正式批准 / 拒绝只在「正文」页完成；这里只负责把作者带到那里
-                Text(
-                    "请在正文页处理 →",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = palette.accent,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.clickable { app.openWorkspace(com.qianyan.app.desktop.ui.Workspace.WRITE, 0) },
-                )
                 if (pending.size > 1) {
                     Spacer(Modifier.height(4.dp))
-                    Text("另有 ${pending.size - 1} 项待确认", style = MaterialTheme.typography.labelSmall, color = palette.text3)
+                    Text("另有 ${pending.size - 1} 项", style = MaterialTheme.typography.labelSmall, color = palette.text3)
                 }
             }
         }
@@ -474,24 +468,28 @@ private fun ActivityTab(activities: List<InspectorActivityView>) {
 /* ---------------- 修改（I9 待确认 + I10 历史） ---------------- */
 
 @Composable
-private fun ChangesTab(changes: List<InspectorChangeView>, history: List<InspectorHistoryView>) {
+private fun ChangesTab(app: DesktopAppState, view: WorkspaceInspectorView) {
     val palette = QianyanTheme.palette
     Column(Modifier.fillMaxWidth()) {
-        SectionLabel("待确认修改 · ${changes.size}")
-        if (changes.isEmpty()) {
-            EmptyState("暂无内容", "还没有待确认的修改")
+        SectionLabel("待审批")
+        PendingGatesSection(app, view.pendingGateCount, view.pendingGates)
+        Spacer(Modifier.height(14.dp))
+
+        SectionLabel("本会话提案（内存，重启清空） · ${view.changes.size}")
+        if (view.changes.isEmpty()) {
+            EmptyState("暂无内容", "本会话还没有提案")
         }
-        changes.reversed().forEach { change ->
+        view.changes.reversed().forEach { change ->
             ChangeBlock(change)
             Spacer(Modifier.height(14.dp))
         }
 
         Spacer(Modifier.height(2.dp))
-        SectionLabel("已提交历史 · ${history.size}")
-        if (history.isEmpty()) {
+        SectionLabel("已提交历史 · ${view.history.size}")
+        if (view.history.isEmpty()) {
             EmptyState("暂无内容", "还没有提交记录")
         }
-        history.reversed().forEach { entry ->
+        view.history.reversed().forEach { entry ->
             Column(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
                 Text(entry.title, style = MaterialTheme.typography.bodySmall, color = palette.text2, maxLines = 2)
                 Spacer(Modifier.height(2.dp))
@@ -503,6 +501,50 @@ private fun ChangesTab(changes: List<InspectorChangeView>, history: List<Inspect
                 )
             }
             HLine()
+        }
+    }
+}
+
+/** O-50：待审批 Gate 区块（状态栏同源；只显示数量 + 首条章节/阶段）。 */
+@Composable
+private fun PendingGatesSection(
+    app: DesktopAppState,
+    count: Int,
+    gates: List<com.qianyan.model.workspace.InspectorPendingGateView>,
+) {
+    val palette = QianyanTheme.palette
+    if (count == 0) {
+        Text("没有待审批的修改", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+        return
+    }
+    Column(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(QianyanShapes.r3))
+            .background(palette.raised)
+            .border(1.dp, palette.line, RoundedCornerShape(QianyanShapes.r3))
+            .padding(13.dp),
+    ) {
+        Text("共 $count 项", style = MaterialTheme.typography.bodyMedium, color = palette.text)
+        Spacer(Modifier.height(4.dp))
+        gates.firstOrNull()?.let { gate ->
+            Text(
+                gate.chapterLabel + " · " + gate.phaseLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.text2,
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        // 正式批准 / 拒绝只在「正文」页完成；这里只负责把作者带到那里
+        Text(
+            "请在正文页处理 →",
+            style = MaterialTheme.typography.bodySmall,
+            color = palette.accent,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.clickable { app.openWorkspace(com.qianyan.app.desktop.ui.Workspace.WRITE, 0) },
+        )
+        if (count > 1) {
+            Spacer(Modifier.height(4.dp))
+            Text("另有 ${count - 1} 项待确认", style = MaterialTheme.typography.labelSmall, color = palette.text3)
         }
     }
 }

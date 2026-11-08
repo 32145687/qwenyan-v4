@@ -211,6 +211,10 @@ data class WorkspaceInspectorView(
     val selection: WorkspaceSelection,
     val title: String,
     val detail: String = "",
+    /** O-50：Project 内持久化 PENDING Gate 数（状态栏与 Inspector 同源）。 */
+    val pendingGateCount: Int = 0,
+    /** O-50：待审批 Gate 明细（章节 / 阶段；不含内部 ID）。 */
+    val pendingGates: List<InspectorPendingGateView> = emptyList(),
     /** A2：真实任务 Pack 投影；无 Store 记录时为 null（不得用重建 Pack 填充）。 */
     val context: InspectorContextView? = null,
     /** A2：任务上下文四状态；不包含 Pack 本体。 */
@@ -227,6 +231,13 @@ data class WorkspaceInspectorView(
     /** 当前对象是否有任何可展示的修改 / 历史（供 UI 显示空态）。 */
     val hasChangeData: Boolean get() = changes.isNotEmpty() || history.isNotEmpty()
 }
+
+/** O-50：一条待审批 Gate 的用户可读投影（只读；不参与审批链）。 */
+@Serializable
+data class InspectorPendingGateView(
+    val chapterLabel: String,
+    val phaseLabel: String,
+)
 
 /** Task 选择的附加投影（Task 状态仍以既有 Task / TaskQueueItem 为准，§19）。 */
 @Serializable
