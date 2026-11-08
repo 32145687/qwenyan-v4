@@ -255,7 +255,7 @@ fun WritePage(state: DesktopAppState) {
                             BasicTextField(
                                 value = ui.draftContent,
                                 onValueChange = { controller?.onContentChange(it) },
-                                textStyle = prose,
+                                textStyle = prose.copy(color = palette.text),
                                 cursorBrush = SolidColor(palette.accent),
                                 modifier = Modifier.fillMaxWidth(),
                                 decorationBox = { inner ->
