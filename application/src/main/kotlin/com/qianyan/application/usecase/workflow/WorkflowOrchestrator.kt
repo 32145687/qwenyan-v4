@@ -630,8 +630,22 @@ class WorkflowOrchestrator(
         val confirmed = draftRepository.latestByChapter(step.chapterId)
             ?.takeIf { it.status == DraftStatus.CONFIRMED }
             ?: throw ApplicationException(ApplicationError.DraftConfirmationRequired("Knowledge Update 需要 CONFIRMED Final Draft"))
+        // O-72：KU 是本次新建的任务，生命周期归本调用方（KnowledgeUpdateExecutionUseCase 只写 Checkpoint）：
+        // PENDING → RUNNING → COMPLETED / FAILED。complete 放在 try 之外——否则 complete 自身失败时
+        // catch 会对终态任务再 fail（非法转换）。
         val kuTaskId = taskManager.create(TaskType.KNOWLEDGE_UPDATE)
-        knowledgeUpdate.execute(kuTaskId, confirmed)
+        taskManager.start(kuTaskId)
+        try {
+            knowledgeUpdate.execute(kuTaskId, confirmed)
+        } catch (e: ApplicationException) {
+            taskManager.fail(kuTaskId, e.error.toString())
+            throw e
+        } catch (t: Throwable) {
+            val mapped = errorMapper.map(t)
+            taskManager.fail(kuTaskId, mapped.error.toString())
+            throw mapped
+        }
+        taskManager.complete(kuTaskId)
         completeStep(step, "KU:" + kuTaskId.value)
         advance(wf.workflowId, step)
         // 单章完成：Workflow → COMPLETED。

@@ -93,6 +93,10 @@ internal class TaskRunner(
     /**
      * 执行 WRITING Task 上的 Knowledge Update（P11.5）：KnowledgeUpdateAgent → Parser → 确定性 Validate/Apply
      * → Memory 沉淀 → KNOWN_UPDATE Checkpoint。INPUT 为最终 [Draft]；显式单步入口，无自动串联循环。
+     *
+     * 状态归属（O-72）：本入口**不改变 Task 状态**，透传给 [KnowledgeUpdateExecutionUseCase]（只写 Checkpoint）；
+     * Task 生命周期由**调用方**管理。生产链的 KU 由 [com.qianyan.application.usecase.workflow.WorkflowOrchestrator]
+     * 自建 KNOWLEDGE_UPDATE Task 并 start/complete/fail，不经本入口；本入口当前无生产调用方。
      */
     fun executeKnowledgeUpdate(taskId: TaskId, draft: Draft): KnowledgeUpdateOutcome =
         knowledgeUpdate.execute(taskId, draft)
