@@ -104,7 +104,7 @@ class PlanningExecutionUseCase(
             val context = assembly.assemble(request, pack, continuationReference, resolved)
             // P20-P5：Resume → 复用传入政策；新 Task → decide 一次（不重复决定）。
             val policies = decisionPolicies ?: decidePolicy(context)
-            val plan = planner.plan(context, policies)
+            val plan = planWithCorrectionRetry(context, policies)
             val planWithChapter = bindChapter(plan, targetChapterId)
             taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(planWithChapter, policies))
             taskManager.complete(taskId)
@@ -131,6 +131,34 @@ class PlanningExecutionUseCase(
             com.qianyan.model.decision.DecisionType.STORY_DIRECTION,
             com.qianyan.model.decision.DecisionType.WRITING_STYLE,
         )
+    }
+
+    /**
+     * O-73 P1/P3：Planner 输出无法解析时**有界重试最多 2 次**（总尝试 ≤3；仅 Planner；不改 maxSteps）。
+     *
+     * 只对 [ApplicationError.InvalidPlanningOutput] 重试，且每次重试输入末尾追加「【修正】」指令
+     * （携带上一次的 detail）；其它错误（网络 / 鉴权 / Agent 循环）不重试。
+     * 3 次尝试仍失败 → **原类型错误继续上抛**，绝无第 4 次调用。
+     */
+    private fun planWithCorrectionRetry(
+        context: PlanningContext,
+        policies: List<com.qianyan.model.decision.DecisionPolicy>,
+    ): ChapterPlan {
+        var lastError: ApplicationException? = null
+        for (attempt in 0..MAX_CORRECTION_RETRIES) {
+            val correction: String? = lastError?.let { error ->
+                val detail = (error.error as? ApplicationError.InvalidPlanningOutput)?.detail ?: throw error
+                "上一次输出无法解析为规划 JSON：$detail。" +
+                    "请只输出合法 JSON 对象（顶层 chapterGoal），字符串内引号必须转义。"
+            }
+            try {
+                return planner.plan(context, policies, correction = correction)
+            } catch (e: ApplicationException) {
+                if (e.error !is ApplicationError.InvalidPlanningOutput) throw e
+                lastError = e
+            }
+        }
+        throw checkNotNull(lastError)
     }
 
     /**
@@ -195,5 +223,8 @@ class PlanningExecutionUseCase(
     private companion object {
         /** Chapter 标题由章节目标截取（不引入第二套命名）。 */
         const val CHAPTER_TITLE_LIMIT: Int = 40
+
+        /** O-73：Planner 纠正重试上限（不含首次尝试；总尝试 = 1 + 该值 = 3）。 */
+        const val MAX_CORRECTION_RETRIES: Int = 2
     }
 }

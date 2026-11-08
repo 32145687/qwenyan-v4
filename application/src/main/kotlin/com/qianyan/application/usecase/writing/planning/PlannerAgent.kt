@@ -62,6 +62,11 @@ class PlannerAgent(
         policies: List<DecisionPolicy>,
         activityId: ActivityId? = null,
         allowedTools: List<ToolName> = PLANNER_TOOLS,
+        /**
+         * O-73 P1：上一次输出解析失败时，由调用方（[PlanningExecutionUseCase]）注入的修正指令，
+         * 追加在输入末尾；null = 首次调用（行为不变）。
+         */
+        correction: String? = null,
     ): ChapterPlan {
         val structure = ChapterPlanStructure(
             novelId = context.novelId,
@@ -74,7 +79,7 @@ class PlannerAgent(
         return try {
             val result = toolRuntime(activityId, allowedTools).run(
                 contract(activityId, allowedTools),
-                renderInput(context, policies),
+                renderInput(context, policies, correction),
             )
             val raw = result.answer
                 ?: throw PlanningException.InvalidOutput("planner returned no answer")
@@ -98,7 +103,11 @@ class PlannerAgent(
     }
 
     /** 构造供 Planner LLM 使用的输入文本。 */
-    private fun renderInput(context: PlanningContext, policies: List<DecisionPolicy>): String = buildString {
+    private fun renderInput(
+        context: PlanningContext,
+        policies: List<DecisionPolicy>,
+        correction: String? = null,
+    ): String = buildString {
         appendLine("【创作请求】")
         appendLine("intent: ${context.request.intentType}")
         appendLine("target: ${context.request.target.kind}${context.request.target.id?.let { "(${it.value})" } ?: ""}")
@@ -178,6 +187,25 @@ class PlannerAgent(
             policies.forEach { p ->
                 appendLine("- ${p.decisionType} → ${p.outcome} (source=${p.source})")
             }
+        }
+
+        // O-73：输出契约（T-O73-D 实测：无契约时模型把 answer 当小说正文，解析必然失败）。
+        // T-O73-F2：首版"作为 answer 的值"被 DeepSeek 字面执行成 {"answer": {…}}（对象），而运行时只接受字符串 answer，
+        // 故明确二选一：顶层直接输出，或 answer 为规划 JSON 的转义字符串。
+        appendLine("【输出契约（必须遵守）】")
+        appendLine("- 本题没有可用工具：禁止返回 tool 调用，禁止要求补充信息。")
+        appendLine("- 直接输出规划 JSON 对象本身：顶层键就是 chapterGoal，禁止再用 {\"answer\": …} 包一层。")
+        appendLine("- 若你坚持遵循运行时的 answer 协议，则 answer 必须是字符串，其内容是规划 JSON 的转义字符串（不是嵌套对象）。")
+        appendLine("- 不要输出小说正文、解释或 Markdown 代码块；字符串里的引号必须转义。")
+        appendLine("- 字符串值内禁止出现未转义的英文双引号；需要引用时改用中文引号「」，或写成 \\\"。")
+        appendLine(
+            "- 字段：{\"chapterGoal\":\"…\",\"mainConflict\":\"…\",\"characterGoals\":{\"角色\":\"目标\"}," +
+                "\"expectedEvents\":[\"…\"],\"emotionalDirection\":\"…\",\"endingHook\":\"…\"," +
+                "\"constraints\":[\"…\"],\"forbiddenEvents\":[\"…\"]}",
+        )
+        appendLine("- chapterGoal 必填非空；其余可缺省。")
+        if (correction != null) {
+            appendLine("【修正】$correction")
         }
     }.trimEnd()
 
