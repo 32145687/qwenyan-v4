@@ -12,12 +12,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
 /**
- * P11.3 DraftParser 单元测试。
+ * P11.3 + O-75 DraftParser 单元测试。
  *
  * 验证 LLM 原始输出（AgentRuntime 提取后的 answer 文本）→ 现有
  * [com.qianyan.model.writing.Draft] 的解析：
- *  - 合法正文 → Draft（content 必填且为 String，结构 ID 由 [DraftStructure] 提供）；
- *  - 空输出 / 非 JSON / 缺 content / content 类型错误 / 空白正文 → [WritingException.InvalidOutput]（类型化）。
+ *  - 结构化路径（以 `{` / `[` 开头）：必须是 `{"content":"…"}`；失败/缺 content/类型错误 → [WritingException.InvalidOutput]；
+ *  - 自由正文路径（O-75）：非空纯文本 → content 原样保留（换行 / 中文引号 / 英文引号）；
+ *  - 空 / 纯空白 / Markdown 围栏（```）→ [WritingException.InvalidOutput]。
  * 绝不把解析失败伪装成成功 Draft。全程无网络。
  */
 class DraftParserTest {
@@ -49,26 +50,48 @@ class DraftParserTest {
         assertEquals("mock-v1", draft.sourceModel)
     }
 
-    /* 空输出：raw 为空 → InvalidOutput（类型化） */
+    /* 自由正文（O-75）：非 JSON 的纯文本即正文 → content 原样保留（换行 / 中文引号 / 英文引号） */
+    @Test
+    fun `free form prose maps to draft content verbatim`() {
+        val prose = "雨落在青石板上。\n\n「你回来了。」门里的人说。\n\n少年没有回答，只把木箱放在台阶上。\n他说:\"先看看这个。\""
+        val draft = DraftParser.parse(prose, structure)
+        assertEquals(prose, draft.content)
+        assertEquals(DraftStatus.WRITTEN, draft.status)
+    }
+
+    /* 空输出：raw 为空 / 纯空白 → InvalidOutput（类型化） */
     @Test
     fun `empty output fails with typed error`() {
         assertFailsWith<WritingException.InvalidOutput> { DraftParser.parse("", structure) }
-        assertFailsWith<WritingException.InvalidOutput> { DraftParser.parse("   ", structure) }
+        assertFailsWith<WritingException.InvalidOutput> { DraftParser.parse("   \n\t ", structure) }
     }
 
-    /* 非 JSON：raw 不是合法 JSON → InvalidOutput */
+    /* 围栏包裹（O-75）：```…``` → InvalidOutput，不静默剥离 */
     @Test
-    fun `illegal json fails with typed error`() {
+    fun `fenced output fails with typed error`() {
         assertFailsWith<WritingException.InvalidOutput> {
-            DraftParser.parse("这不是 JSON 正文", structure)
+            DraftParser.parse("```json\n{\"content\":\"正文\"}\n```", structure)
+        }
+        assertFailsWith<WritingException.InvalidOutput> {
+            DraftParser.parse("```\n雨落在青石板上。\n```", structure)
         }
     }
 
-    /* 缺 content：JSON 合法但无 content 字段 → InvalidOutput */
+    /* 缺 content：JSON 合法但无 content 字段 → InvalidOutput（结构化路径不回落成正文） */
     @Test
     fun `missing content fails with typed error`() {
         assertFailsWith<WritingException.InvalidOutput> {
             DraftParser.parse("{\"other\":1}", structure)
+        }
+        // O-75：结构化残片（含 answer 包装 / tool 包）同样拒绝，绝不回落为正文
+        assertFailsWith<WritingException.InvalidOutput> {
+            DraftParser.parse("{\"answer\":{\"chapterGoal\":\"x\"}}", structure)
+        }
+        assertFailsWith<WritingException.InvalidOutput> {
+            DraftParser.parse("{\"tool\":\"continue_chapter\",\"arguments\":{}}", structure)
+        }
+        assertFailsWith<WritingException.InvalidOutput> {
+            DraftParser.parse("[1,2,3]", structure)
         }
     }
 
@@ -91,14 +114,15 @@ class DraftParserTest {
         }
     }
 
-    /* 非法输出断言：全部得到类型化 InvalidOutput（不伪造成功 Draft） */
+    /* 非法输出断言：结构化路径的全部失败都是类型化 InvalidOutput（不伪造成功 Draft） */
     @Test
-    fun `all failures are typed invalid output not silent drafts`() {
+    fun `all structured failures are typed invalid output not silent drafts`() {
         val raws = listOf(
-            "not json",
             "{\"other\":1}",
             "{\"content\":42}",
             "{\"content\":\"\"}",
+            "{\"answer\":{\"content\":\"嵌套对象\"}}",
+            "[{\"content\":\"数组包一层\"}]",
             "",
         )
         raws.forEach { r ->

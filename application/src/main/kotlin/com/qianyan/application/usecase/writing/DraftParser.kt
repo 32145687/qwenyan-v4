@@ -13,24 +13,27 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * [Draft] 输出解析（P11.3）。
+ * [Draft] 输出解析（P11.3 + O-75）。
  *
  * 把 Writer 的 LLM 原始文本可靠映射为现有 [Draft]（复用 core:model，不新建重复模型）。
  * 规则：
  *  - 结构 ID（draftId / novelId / variantId / scope / chapterId / planId / sourceModel / 时间）
  *    来自装配上下文 / [ChapterPlan]，不由 LLM 生成 —— LLM 只负责正文 content；
- *  - 空输出 / 非 JSON / 缺 content / content 类型错误 / 空白正文 → [WritingException.InvalidOutput]
- *    （类型化，不经 String.contains）；
+ *  - **O-75 形态判定（两条路径）**：
+ *      1) 以 `{` / `[` 开头 → 结构化路径：必须是 `{"content":"…"}`；
+ *         解析失败 / 缺 content / 类型错误 → [WritingException.InvalidOutput]，**绝不回落成正文**
+ *         （避免把 tool 包、结构化残片当成合法正文）；
+ *      2) 其余非空文本 → 自由正文路径：原样作为 content（保留换行与中文引号）。
+ *         运行时 `answer` 已经承载正文，正文即语义；
+ *  - 空输出 / 纯空白 / Markdown 围栏包裹（```）→ [WritingException.InvalidOutput]；
+ *  - 本类只做**形态**判定，不做品味判断：是否贴题由 CRITIQUE 与人工门负责，候选不会自动入 Canonical；
  *  - 绝不把解析失败伪装成"成功 Draft"。
  */
 object DraftParser {
 
     /** 解析 Writer 输出为 [Draft]。structure 提供结构信息，raw 提供正文。 */
     fun parse(raw: String, structure: DraftStructure): Draft {
-        val dto = decode(raw)
-        if (dto.content.isBlank()) {
-            throw WritingException.InvalidOutput("draft content is empty")
-        }
+        val content = extractContent(raw)
         return Draft(
             draftId = DraftId(structure.draftId),
             novelId = structure.novelId,
@@ -38,7 +41,7 @@ object DraftParser {
             scope = structure.scope,
             chapterId = structure.chapterId,
             planId = structure.planId,
-            content = dto.content,
+            content = content,
             status = DraftStatus.WRITTEN,
             sourceModel = structure.sourceModel,
             createdAt = structure.now,
@@ -46,17 +49,32 @@ object DraftParser {
         )
     }
 
-    private fun decode(raw: String): DraftDto {
-        if (raw.isBlank()) {
-            throw WritingException.InvalidOutput("empty draft output")
+    /** O-75：形态判定（结构化 or 自由正文）；拒绝空 / 围栏 / 结构化残片。 */
+    private fun extractContent(raw: String): String {
+        val text = raw.trim()
+        if (text.isEmpty()) {
+            throw WritingException.InvalidOutput("Writer 输出为空")
         }
-        return try {
-            json.decodeFromString<DraftDto>(raw)
+        if (text.startsWith("```")) {
+            throw WritingException.InvalidOutput("Writer 输出被 Markdown 围栏包裹")
+        }
+        if (text.startsWith("{") || text.startsWith("[")) {
+            val dto = decodeStructured(text)
+            if (dto.content.isBlank()) {
+                throw WritingException.InvalidOutput("draft content is empty")
+            }
+            return dto.content
+        }
+        return text
+    }
+
+    /** 结构化路径：非 JSON / 缺 content / content 类型错误 统一走类型化解析错误（不回落正文）。 */
+    private fun decodeStructured(text: String): DraftDto =
+        try {
+            json.decodeFromString<DraftDto>(text)
         } catch (e: Exception) {
-            // 非 JSON / 缺 content / content 类型错误 统一走类型化解析错误。
             throw WritingException.InvalidOutput("illegal json or wrong field type: ${e.message}")
         }
-    }
 
     private val json = Json { ignoreUnknownKeys = true }
 

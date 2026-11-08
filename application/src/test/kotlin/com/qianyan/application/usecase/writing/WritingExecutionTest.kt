@@ -176,7 +176,7 @@ class WritingExecutionTest {
     /* 失败路径不产生可解码工作产物（绝不伪造草稿） */
     @Test
     fun `failed writing leaves no decodable working snapshot`() {
-        val app = container(draftJson = "不是 JSON")
+        val app = container(draftJson = "{\"content\":123}")
         val novelId = app.novels.createOriginal(title = "测试")
         val id = app.tasks.create(TaskType.WRITING)
 

@@ -69,7 +69,8 @@ class WorkflowRevisionBranchTest {
             val body = when {
                 "StoryWriterAgent" in system -> {
                     if (throwOnWriter) throw ProviderException.Timeout("writer should not be called")
-                    if (writerMalformed) """## not a json"""
+                    // O-75：DraftParser 接受自由正文，故"malformed"夹具改为**结构化非法**（content 类型错误）
+                    if (writerMalformed) """{"content":123}"""
                     else """{"content":"$writerContent"}"""
                 }
                 "StoryCriticAgent" in system -> {

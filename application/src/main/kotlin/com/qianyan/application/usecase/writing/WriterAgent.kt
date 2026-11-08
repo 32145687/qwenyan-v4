@@ -171,6 +171,10 @@ class WriterAgent(
                 appendLine("- ${p.decisionType} → ${p.outcome} (source=${p.source})")
             }
         }
+
+        // O-75：形态契约（自由正文；禁止结构化包装与说明文字）。
+        appendLine("【输出契约】只输出本章正文本身（纯文本，可用换行分段）；不要输出 JSON、Markdown 代码块、" +
+            "解释、\"我无法…\"之类说明或章节编号标题。正文中需要引用时使用中文引号「」。")
     }.trimEnd()
 
     private val runtime: AgentRuntime = AgentRuntime(

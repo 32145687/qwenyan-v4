@@ -187,7 +187,8 @@ class RevisionExecutionTest {
         val bad = MockLLMGateway { req ->
             llmCalls++
             val agent = req.messages.first { it.role == ChatRole.SYSTEM }.content
-            val body = if ("StoryRevisionAgent" in agent) "不是 JSON" else """{"content":"$originalContent"}"""
+            // O-75：DraftParser 现在接受自由正文，故"非法输出"夹具改为**结构化非法**（content 类型错误）
+            val body = if ("StoryRevisionAgent" in agent) "{\"content\":123}" else """{"content":"$originalContent"}"""
             ProviderResponse(
                 message = ChatMessage(ChatRole.ASSISTANT, buildJsonObject { put("answer", body) }.toString()),
                 usage = Usage(10, 10, 20),

@@ -104,13 +104,12 @@ class WriterAgentTest {
         assertEquals(ModelProfile.MOCK.id, draft.sourceModel)
     }
 
-    /* 非法 JSON → InvalidWritingOutput */
+    /* 自由正文（O-75）：非 JSON 的纯文本即正文 → content 原样保留 */
     @Test
-    fun `illegal json output fails with typed error`() {
-        val ex = assertFailsWith<ApplicationException> {
-            writerWithAnswer("这不是正文 JSON").write(context(), plan())
-        }
-        assertIs<ApplicationError.InvalidWritingOutput>(ex.error)
+    fun `free form prose is accepted as draft content`() {
+        val draft = writerWithAnswer("雨落在青石板上。\n\n「你回来了。」门里的人说。")
+            .write(context(), plan())
+        assertEquals("雨落在青石板上。\n\n「你回来了。」门里的人说。", draft.content)
     }
 
     /* 缺 content：JSON 合法但无 content → InvalidWritingOutput */
