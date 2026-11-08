@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>千言待完成清单 · 按完成顺序 · 2026-11-07</title>
+<style>
+  :root{--bg:#f5f5f7;--card:#fff;--text:#1d1d1f;--text2:#56565c;--text3:#73737a;
+        --line:#e5e5ea;--accent:#007aff;--add:#248a3d;--del:#ff3b30;--warn:#b26a00}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+       font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1180px;margin:0 auto;padding:32px 24px 64px}
+  h1{font-size:24px;margin:0 0 6px;letter-spacing:-.2px}
+  h2{font-size:17px;margin:32px 0 10px}
+  .meta{color:var(--text3);font-size:12.5px;margin-bottom:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#fafafa;color:var(--text2);font-weight:600;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  code{font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;color:var(--text2);
+       background:#f0f0f3;border-radius:5px;padding:1px 5px}
+  .num{font-weight:700;color:var(--accent)}
+  .wave{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .w0{background:#e8f2ff;color:#0b5cad}.w1{background:#e7f6ec;color:var(--add)}
+  .w2{background:#fff4e0;color:var(--warn)}.w3{background:#fdeceb;color:var(--del)}
+  .w4{background:#ececf0;color:var(--text3)}.w5{background:#f3ecff;color:#6b3fa0}
+  .filters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 10px}
+  .filters button{font:12.5px/1 inherit;padding:7px 13px;border-radius:999px;border:1px solid var(--line);
+                  background:#fff;color:var(--text2);cursor:pointer}
+  .filters button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .check{width:26px}
+  .check input{width:15px;height:15px;accent-color:var(--accent)}
+  tr.done-row td:not(.check){opacity:.45}
+  .chain{background:#0f1115;color:#d7dbe0;border-radius:14px;padding:16px 18px;
+         font:12.5px/1.85 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+  .chain .a{color:#7fb2ff}.chain .b{color:#8ee6a3}.chain .c{color:#f0c674}.chain .d{color:#c792ea}
+  .progress{display:flex;align-items:center;gap:12px;margin:10px 0 6px;color:var(--text3);font-size:12.5px}
+  .bar{flex:1;height:8px;border-radius:999px;background:#e6e6ea;overflow:hidden}
+  .bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+  .note{color:var(--text3);font-size:12px;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>千言待完成清单 · 按完成顺序</h1>
+  <div class="meta">2026-11-07　|　<b>维护中</b>（更新 2026-11-08 22:10）　|　基线 HEAD <code>dfdbc4b</code>（ahead 16，origin <code>be309f8</code>，未 push；工作区 O-37-A 未提交）　|　权威文本：<code>qianyan-todo-order-20261107.md</code>　|　配套统计：<code>qianyan-project-feature-stats-20261107.md</code></div>
+
+  <div class="progress">
+    <span id="pLabel">已完成 0 / 20</span>
+    <div class="bar"><i id="pBar"></i></div>
+  </div>
+  <div class="filters" id="waveFilters">
+    <button class="on" data-w="all">全部波次</button>
+    <button data-w="w0">W0 证据补齐</button>
+    <button data-w="w1">W1 确定性</button>
+    <button data-w="w2">W2 接线</button>
+    <button data-w="w3">W3 裁决后</button>
+    <button data-w="w4">W4 治理</button>
+    <button data-w="w5">W5 平台</button>
+    <button data-w="gov">治理</button>
+  </div>
+
+  <div class="card">
+    <table id="todo">
+      <thead><tr><th class="check"></th><th style="width:40px">#</th><th style="width:92px">ID</th><th>事项</th><th style="width:150px">当前</th><th style="width:170px">依赖</th><th style="width:74px">波次</th></tr></thead>
+      <tbody>
+        <tr data-w="w0" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">1</td><td>O-61</td><td>生效模型 ID 与自定义清单对齐</td><td>✅ DONE：生效值 <code>deepseek-v4-flash</code> 已在清单中</td><td>无</td><td><span class="wave w0">W0</span></td></tr>
+        <tr data-w="w0" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">2</td><td>O-58</td><td>真实模型真机冒烟（含思考参数）</td><td>✅ DONE <code>7d45a8a</code>：9/9 200；MiMo 无 Key 跳过</td><td>DeepSeek Key（已配置）</td><td><span class="wave w0">W0</span></td></tr>
+        <tr data-w="w0" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">3</td><td>J8/J9</td><td>真实生成写入账本 + 非零用量行</td><td>✅ DONE：应用内 2 次真实 chat → 账本 2 次/1,564 token，页面非零行</td><td>#2（已满足）</td><td><span class="wave w0">W0</span></td></tr>
+        <tr data-w="w0" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">4</td><td>J7</td><td>MiMo 余额真机（/v1/platform/balance）</td><td>✅ DONE：chat 4/4 + 页面 MiMo 行刷新成功</td><td>Key 已录入</td><td><span class="wave w0">W0</span></td></tr>
+        <tr data-w="w0" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">5</td><td>O-09</td><td>阅读位置写入的 L3 验收</td><td>✅ DONE：滚动 0→7、切章仍 7、重启仍 7</td><td>无</td><td><span class="wave w0">W0</span></td></tr>
+        <tr data-w="w0" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">6</td><td>O-50</td><td>状态栏「待确认 N」语义（Gate 数而非 Change 行）</td><td>✅ DONE：持久化 Gate 驱动，状态栏/Inspector 同源</td><td>无</td><td><span class="wave w0">W0</span></td></tr>
+        <tr data-w="w0" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">7</td><td>O-55</td><td>COMPLETED 章节寻址不变式（原“清空占位”已证伪）</td><td>✅ DONE <code>89f55b1</code>：保留占位 + 3 条不变式</td><td>无</td><td><span class="wave w0">W0</span></td></tr>
+        <tr data-w="w1" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">8</td><td>O-56</td><td>同毫秒排序不确定性（先归因后修复）</td><td>✅ DONE <code>0b1ee36</code>：夹具显式绑定 + Activity 改 rowid</td><td>无</td><td><span class="wave w1">W1</span></td></tr>
+        <tr data-w="w2" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">9</td><td>O-21</td><td>词库候选：桌面创建/确认/拒绝/编辑</td><td>✅ DONE（DoD）：分析→2 候选→确认入库→拒绝留痕；编辑/条目列表另立 O-71</td><td>#8（已满足）</td><td><span class="wave w2">W2</span></td></tr>
+        <tr data-w="w2" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">10</td><td>O-08</td><td>KU 独立桌面入口</td><td>✅ DONE：结果卡片 + 最近一次状态（COMPLETED · 采纳 6）</td><td>#2（已满足）</td><td><span class="wave w2">W2</span></td></tr>
+        <tr data-w="w2" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">11</td><td>O-06</td><td>World Model 冲突 → Human Gate</td><td>✅ DONE <code>eeb9eb1</code>：冲突建独立门（三外键 NULL）；采纳=同名并存，拒绝留痕</td><td>无</td><td><span class="wave w2">W2</span></td></tr>
+        <tr data-w="w3" class="done-row"><td class="check"><input type="checkbox" checked></td><td class="num">12</td><td>O-07</td><td>伏笔生命周期 UI + 生产 caller</td><td>✅ DONE <code>dfdbc4b</code>：Original 创建/推进/兑现（绑章节）/放弃；重启仍在；正文零写入</td><td>无</td><td><span class="wave w3">W3</span></td></tr>
+        <tr data-w="w3"><td class="check"><input type="checkbox"></td><td class="num">13</td><td>O-37</td><td>VocabularyRule 执行语义</td><td>T-O37-A 实现完成（20 用例、1856/0/0/4）待补 2 处：skipped 可见性 + GLOBAL/TASK 上报；T-O37-B 未开始</td><td>契约已定</td><td><span class="wave w3">W3</span></td></tr>
+        <tr data-w="w3"><td class="check"><input type="checkbox"></td><td class="num">14</td><td>O-05</td><td>多 TXT 全书章节顺序</td><td>NOT_STARTED</td><td>D-40 裁决</td><td><span class="wave w3">W3</span></td></tr>
+        <tr data-w="w3"><td class="check"><input type="checkbox"></td><td class="num">15</td><td>O-30/31/32/34/36</td><td>缺失输入可见 / 动作映射 / 失败注入缝 / 空 Pack 语义</td><td>OPEN</td><td>契约先行或 DB 故障注入</td><td><span class="wave w3">W3</span></td></tr>
+        <tr data-w="w4"><td class="check"><input type="checkbox"></td><td class="num">16</td><td>O-39b-FK</td><td>词库 Schema 外键</td><td>OPEN</td><td>migration 授权</td><td><span class="wave w4">W4</span></td></tr>
+        <tr data-w="w4"><td class="check"><input type="checkbox"></td><td class="num">17</td><td>O-23/24/25/29(2)/33</td><td>载体续篇 / 长文 E2E / token 预算 / Skill 限制</td><td>DEFERRED</td><td>产品排序</td><td><span class="wave w4">W4</span></td></tr>
+        <tr data-w="w4"><td class="check"><input type="checkbox"></td><td class="num">18</td><td>O-18</td><td>四棵工作树清理</td><td>OPEN</td><td>删除授权（先导出 bundle）</td><td><span class="wave w4">W4</span></td></tr>
+        <tr data-w="w5"><td class="check"><input type="checkbox"></td><td class="num">19</td><td>O-13 / O-14</td><td>DSH Adapter / Android 恢复</td><td>DEFERRED / PAUSED</td><td>产品排序决定</td><td><span class="wave w5">W5</span></td></tr>
+        <tr data-w="gov"><td class="check"><input type="checkbox"></td><td class="num">20</td><td>T-PUSH</td><td>推送本地 3 个提交（89f55b1/0b1ee36/7d45a8a）</td><td>待授权</td><td>全量绿（已满足）</td><td><span class="wave w0">治理</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">勾选状态由文件回写（规划层按完成报告维护）；本页临时勾选不回写，刷新后回到文件状态。</div>
+
+  <h2>一、逐项完成定义（DoD 摘要）</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:40px">#</th><th style="width:92px">ID</th><th>完成定义（DoD）</th><th style="width:210px">证据</th></tr></thead>
+      <tbody>
+        <tr><td class="num">1</td><td>O-61</td><td>生效模型与清单一致：配置已为 <code>deepseek-v4-flash</code>，默认清单含该条（<code>CustomModelCatalog.kt:91</code>）</td><td>配置文件 + 清单源码 + 矩阵 200；未截图（UI 暂停）</td></tr>
+        <tr><td class="num">2</td><td>O-58</td><td>网关 + 鉴权 + 思考参数 + usage 字段的真机矩阵（完整链路属 L-5）</td><td><code>7d45a8a</code>：9/9 200 + 脱敏报告</td></tr>
+        <tr><td class="num">3</td><td>J8/J9</td><td><code>usage.json</code> 出现桶；页面出现非零行；记录数 ≥1</td><td>真实 <code>%APPDATA%</code> 桶（calls=2/1,564）+ 页面截图（<code>backup/t-j89v-20261107/</code>）</td></tr>
+        <tr><td class="num">4</td><td>J7</td><td>成功记录币种/金额/时间；失败记录状态码（401/403 停手）</td><td>DeepSeek 200；MiMo 页面刷新成功（<code>backup/t-mimo-20261107/</code>）</td></tr>
+        <tr><td class="num">5</td><td>O-09</td><td>滚动 → 切章 → 重启 → 回原位</td><td>三段操作 + 截图（<code>backup/t-o09-20261107/</code>）；纯文本单块受限（O-68）</td></tr>
+        <tr><td class="num">6</td><td>O-50</td><td>与 Inspector 待审批数一致；无 Gate 时为 0</td><td>构造 1 个 Gate 的截图 + 单测</td></tr>
+        <tr><td class="num">7</td><td>O-55</td><td><b>已更正</b>：不清空 <code>activeChapterId</code>（唯一寻址键）；同章单占位由 startChapter 先查后建保证；重复触发 no-op</td><td><code>89f55b1</code> 三条不变式回归</td></tr>
+        <tr><td class="num">8</td><td>O-56</td><td><b>已更正</b>：先归因再最小修复；并列按 <code>rowid</code>/业务稳定键，禁用随机 ID</td><td><code>0b1ee36</code> + 2 条同毫秒回归；3 次 1773/0</td></tr>
+        <tr><td class="num">9</td><td>O-21</td><td>创建 → 确认 → 词库生效 → 归属校验；拒绝有文案</td><td>三轮操作 + 单测</td></tr>
+        <tr><td class="num">10</td><td>O-08</td><td>能查看最近 KU 结果与状态；重复触发幂等</td><td>截图 + 一轮真实运行</td></tr>
+        <tr><td class="num">11</td><td>O-06</td><td><b>已更正</b>：冲突产生待决独立 Gate；采纳=新增独立事实（<code>USER_CONFIRMED</code>，同名并存），拒绝=留痕不写事实；不 UPDATE/DELETE 既有事实，不旁路正文 Change Layer</td><td><code>eeb9eb1</code>（9 例 + UI 守卫 1 例）+ 真机采纳/拒绝 + 独立查库</td></tr>
+        <tr><td class="num">12</td><td>O-07</td><td><b>已更正</b>：伏笔可创建/可见/可推进；Original 生命周期=创作元数据（列级白名单），零正文写入；终态禁用并给原因；兑现必须绑章节</td><td><code>dfdbc4b</code>（11 作者用例 + 5 保护用例 + 2 守卫）+ 真机四步 + 重启 + 独立查库</td></tr>
+        <tr><td class="num">13</td><td>O-37</td><td><b>契约 A-19 已定</b>；T-O37-A 引擎+两路接线通过（20 用例）。<b>待补</b>：skipped 原因随候选可见、GLOBAL/TASK 上报；真机命中受阻于 O-78（Critic 输出失败）</td><td>T-O37-A2 单测 + 全量；O-78 诊断；T-O37-B 规则 tab</td></tr>
+        <tr><td class="num">14</td><td>O-05</td><td>多文件按裁决顺序入库；重复导入幂等；混排拒绝</td><td>D-40 文档 + 夹具测试</td></tr>
+        <tr><td class="num">15</td><td>O-30/31/32/34/36</td><td>逐条类型化错误或可注入点；不改成功路径</td><td>每条一个测试</td></tr>
+        <tr><td class="num">16</td><td>O-39b-FK</td><td><code>.sqm</code> 新增 + 断言升号 + 回归全绿</td><td>migration + XML</td></tr>
+        <tr><td class="num">17</td><td>O-23/24/25/29(2)/33</td><td>要么修，要么在任务树标「接受限制」</td><td>任务树对账</td></tr>
+        <tr><td class="num">18</td><td>O-18</td><td>副本归档（bundle）后删除</td><td>bundle + 目录清单</td></tr>
+        <tr><td class="num">19</td><td>O-13 / O-14</td><td>DSH 先答四问；Android 恢复排期</td><td>裁决文档</td></tr>
+        <tr><td class="num">20</td><td>T-PUSH</td><td>3 个提交（89f55b1/0b1ee36/7d45a8a）推送成功，远端对齐</td><td><code>git log</code> + 远端 ref</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>二、顺序链</h2>
+  <div class="chain"><span class="a">证据波（先做）</span>
+O-61 ─→ O-58 ─→ J8/J9
+J7（需 MiMo Key）
+O-09 ─ O-50 ─ O-55
+
+<span class="b">确定性</span>
+O-56
+
+<span class="c">接线（后端就绪）</span>
+O-21 ─→ O-06（需设计）
+O-08（依赖 #2 证据）
+
+<span class="d">裁决后</span>
+O-07（产品设计） · O-37（新契约） · O-05（D-40） · O-30/31/32/34/36（契约先行）
+
+<span class="d">治理（单独授权）</span>
+O-39b-FK（migration） · O-18（删除） · O-13/O-14（产品排序） · T-PUSH（推送）</div>
+
+  <h2>三、暂不做</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th style="width:260px">项</th><th>原因</th></tr></thead>
+      <tbody>
+        <tr><td>金额估算 / 价格表</td><td>A-14 设计禁令：只展示厂商原值</td></tr>
+        <tr><td>后台轮询余额</td><td>只做进页一次 + 手动刷新 + 60 秒缓存</td></tr>
+        <tr><td>Compose 组合级测试宿主</td><td>另立单元，不阻塞本清单</td></tr>
+        <tr><td>深色主题视觉走查</td><td>需要交互桌面，排到 UI 收口批次</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>四、起点</h2>
+  <div class="card" style="padding:14px 16px">
+    全量 <b>1856 / 0 / 0 / 4 skipped</b>（O-37-A 新增 20 条；4 条 skipped 均为门控探针）。HEAD <code>dfdbc4b</code>（ahead 16）。
+    <b>#13 O-37 进行中</b>：T-O37-A 待补 skipped 可见性 + GLOBAL/TASK 上报；<b>O-78</b>（Critic 输出失败）阻塞真机验收。
+  </div>
+</div>
+<script>
+  const waveButtons = [...document.querySelectorAll('#waveFilters button')];
+  const rows = [...document.querySelectorAll('#todo tbody tr')];
+  let wave = 'all';
+  function apply(){
+    rows.forEach(r => { r.style.display = (wave === 'all' || r.dataset.w === wave) ? '' : 'none'; });
+  }
+  function progress(){
+    const boxes = [...document.querySelectorAll('#todo tbody tr input[type=checkbox]')];
+    const done = boxes.filter(b => b.checked).length;
+    document.getElementById('pLabel').textContent = `已完成 ${done} / ${boxes.length}`;
+    document.getElementById('pBar').style.width = (done / boxes.length * 100) + '%';
+  }
+  waveButtons.forEach(b => b.addEventListener('click', () => {
+    waveButtons.forEach(x => x.classList.toggle('on', x === b));
+    wave = b.dataset.w; apply();
+  }));
+  rows.forEach(r => {
+    const box = r.querySelector('input[type=checkbox]');
+    box.addEventListener('change', () => {
+      r.classList.toggle('done-row', box.checked);
+      progress();
+    });
+  });
+  progress();
+</script>
+</body>
+</html>
