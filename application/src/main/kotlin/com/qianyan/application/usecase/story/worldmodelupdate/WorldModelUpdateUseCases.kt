@@ -60,6 +60,7 @@ class WorldModelUpdateUseCases(
     private val agent: WorldModelUpdateAgent,
     private val candidates: WorldModelCandidateRepository,
     private val storyState: StoryStateRepository,
+    private val conflicts: WorldModelConflictUseCases,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -123,6 +124,8 @@ class WorldModelUpdateUseCases(
                             "与既有同名事件冲突（${conflict.id.value}），不得覆盖，留待人审",
                             conflict.id.value, null,
                         )
+                        // T-O06：冲突入人工门（独立门，gate_key=wm-conflict:<candidateId>；不碰 workflow.pendingGateId）。
+                        conflicts.ensureGate(row.copy(status = CandidateFactStatus.CONFLICT, conflictWith = conflict.id.value))
                     }
                 }
             }

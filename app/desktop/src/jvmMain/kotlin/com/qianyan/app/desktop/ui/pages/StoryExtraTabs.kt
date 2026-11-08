@@ -3,6 +3,7 @@ package com.qianyan.app.desktop.ui.pages
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -23,7 +24,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.qianyan.app.desktop.ui.ActionButton
+import com.qianyan.app.desktop.ui.ActionLevel
 import com.qianyan.app.desktop.ui.DesktopAppState
+import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelConflictView
 import com.qianyan.app.desktop.ui.EmptyState
 import com.qianyan.app.desktop.ui.FieldRow
 import com.qianyan.app.desktop.ui.HLine
@@ -41,6 +45,7 @@ import com.qianyan.app.desktop.ui.theme.QianyanDimens
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.model.ChapterId
 import com.qianyan.model.story.Chapter
+import kotlinx.coroutines.launch
 
 /*
  * 故事页的扩展标签（真数据读取；写操作标注接入点）。
@@ -146,6 +151,7 @@ internal fun NarrativeLedgerTab(state: DesktopAppState) {
     val palette = QianyanTheme.palette
     var stateLine by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var deltas by remember { mutableStateOf<List<Triple<String, String, String>>>(emptyList()) }
+    var conflicts by remember { mutableStateOf<List<WorldModelConflictView>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
 
     val novelId = state.novel?.novelId
@@ -177,11 +183,20 @@ internal fun NarrativeLedgerTab(state: DesktopAppState) {
                     shortTime(d.createdAt),
                 )
             }
+            // T-O06：世界观冲突（独立人工门；只读列表 + 采纳/拒绝）。
+            conflicts = it.worldModelConflicts.listForNovel(novelId)
         }
         loading = false
     }
 
     Column(Modifier.fillMaxWidth()) {
+        // 无冲突时不渲染整节（不留空壳、不给假按钮）。
+        if (novelId != null && conflicts.isNotEmpty()) {
+            WorldModelConflictsSection(state, conflicts)
+            Spacer(Modifier.height(18.dp))
+            HLine()
+            Spacer(Modifier.height(14.dp))
+        }
         when {
             novelId == null -> EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
             loading -> LoadingState()
@@ -218,8 +233,79 @@ internal fun NarrativeLedgerTab(state: DesktopAppState) {
     }
 }
 
-/* ---------------- 章节上下文包（确定性、有界） ---------------- */
+/**
+ * T-O06 · 世界观冲突区块（故事 › 叙事账本顶部）。
+ *
+ * 只渲染 CONFLICT 候选；采纳 = 同名并存（新事实具 USER_CONFIRMED），拒绝 = 留痕不写事实。
+ * 裁决后刷新 `refreshKey`，列表与门状态同源更新。
+ */
+@Composable
+private fun WorldModelConflictsSection(
+    state: DesktopAppState,
+    conflicts: List<WorldModelConflictView>,
+) {
+    val palette = QianyanTheme.palette
+    var busyId by remember { mutableStateOf<String?>(null) }
 
+    fun resolve(candidateId: String, approve: Boolean) {
+        if (busyId != null) return
+        busyId = candidateId
+        state.scope.launch {
+            val ok = runCatching {
+                state.load { it.worldModelConflicts.resolve(candidateId, approve) }
+            }.isSuccess
+            busyId = null
+            state.toast(if (!ok) "冲突裁决失败" else if (approve) "已采纳为独立事实" else "已拒绝候选事实")
+            state.refreshKey++
+        }
+    }
+
+    SectionLabel("世界观冲突 · ${conflicts.size}")
+    conflicts.forEach { c ->
+        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            Text(
+                c.factName.ifBlank { "未命名事件" },
+                style = MaterialTheme.typography.bodyLarge,
+                color = palette.text,
+            )
+            if (c.summary.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
+                Text(c.summary, style = MaterialTheme.typography.bodySmall, color = palette.text2, maxLines = 2)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "来源片段：" + c.excerpt.replace('\n', ' ').take(80),
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.text3,
+                maxLines = 2,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "冲突对象 ${c.conflictWith?.take(8) ?: "—"} · 来源提交 ${c.commitId.take(8)} · ${shortTime(c.createdAt)}",
+                style = QianyanCodeStyle,
+                color = palette.text3,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ActionButton(
+                    "采纳为独立事实",
+                    ActionLevel.PRIMARY,
+                    enabled = busyId == null,
+                    onClick = { resolve(c.candidateId, true) },
+                )
+                ActionButton(
+                    "拒绝",
+                    ActionLevel.TEXT,
+                    enabled = busyId == null,
+                    onClick = { resolve(c.candidateId, false) },
+                )
+            }
+        }
+        HLine()
+    }
+}
+
+/* ---------------- 章节上下文包（确定性、有界） ---------------- */
 internal data class PackView(
     val packVersion: Long,
     val horizon: List<String>,

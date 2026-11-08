@@ -108,6 +108,7 @@ import com.qianyan.storage.repository.SqliteWorldModelCandidateRepository
 import com.qianyan.storage.repository.WorldModelCandidateRepository
 import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelUpdateAgent
 import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelUpdateUseCases
+import com.qianyan.application.usecase.story.worldmodelupdate.WorldModelConflictUseCases
 import com.qianyan.storage.repository.AuthorCoreRepository
 import com.qianyan.storage.repository.AuthorDnaRepository
 import com.qianyan.storage.repository.AuthorObservationRepository
@@ -365,10 +366,25 @@ class ApplicationContainer(
      * 经确定性校验与冲突分类后写入 World Model（只新增、零静默覆盖、来源可追溯）。
      * 由 [commits] 在提交事务成功后调用（唯一触发点）；本 Phase 不新增其他生产写入调用方。
      */
+    /**
+     * T-O06 · World Model 冲突人工门（独立 Gate；gate_key = `wm-conflict:<candidateId>`）。
+     * 建门由 Pipeline 在同一事务内调用；本入口供解决（采纳为独立事实 / 拒绝）与按作品读取。
+     */
+    val worldModelConflicts: WorldModelConflictUseCases =
+        WorldModelConflictUseCases(
+            candidates = worldModelCandidateRepository,
+            workflowRepository = workflowRepository,
+            storyState = storyStateRepository,
+            novels = novels,
+            actionPolicy = actionPolicy,
+            errorMapper = errorMapper,
+        )
+
     val worldModelUpdate: WorldModelUpdateUseCases = WorldModelUpdateUseCases(
         agent = WorldModelUpdateAgent(analysisGateway, analysisModel),
         candidates = worldModelCandidateRepository,
         storyState = storyStateRepository,
+        conflicts = worldModelConflicts,
         errorMapper = errorMapper,
     )
 

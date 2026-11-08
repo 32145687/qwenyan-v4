@@ -24,9 +24,11 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -512,6 +514,19 @@ private fun PendingGatesSection(
     count: Int,
     gates: List<com.qianyan.model.workspace.InspectorPendingGateView>,
 ) {
+    Column(Modifier.fillMaxWidth()) {
+        PendingGatesBlock(app, count, gates)
+        // T-O06：世界观冲突是独立门，不计入 O-50 的 Gate 计数与状态栏。
+        WorldModelConflictsHint(app)
+    }
+}
+
+@Composable
+private fun PendingGatesBlock(
+    app: DesktopAppState,
+    count: Int,
+    gates: List<com.qianyan.model.workspace.InspectorPendingGateView>,
+) {
     val palette = QianyanTheme.palette
     if (count == 0) {
         Text("没有待审批的修改", style = MaterialTheme.typography.bodySmall, color = palette.text3)
@@ -547,6 +562,27 @@ private fun PendingGatesSection(
             Text("另有 ${count - 1} 项待确认", style = MaterialTheme.typography.labelSmall, color = palette.text3)
         }
     }
+}
+
+/** T-O06：世界观冲突提示行（只在有冲突时出现；跳转「故事 › 叙事账本」）。 */
+@Composable
+private fun WorldModelConflictsHint(app: DesktopAppState) {
+    val palette = QianyanTheme.palette
+    val novelId = app.novel?.novelId ?: return
+    var count by remember(novelId, app.refreshKey) { mutableStateOf<Int?>(null) }
+    LaunchedEffect(novelId, app.refreshKey) {
+        count = runCatching { app.load { it.worldModelConflicts.pendingCountForNovel(novelId) } }.getOrNull()
+    }
+    val n = count ?: return
+    if (n == 0) return
+    Spacer(Modifier.height(8.dp))
+    Text(
+        "世界观冲突 $n 项 → 去处理",
+        style = MaterialTheme.typography.bodySmall,
+        color = palette.accent,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier.clickable { app.openWorkspace(com.qianyan.app.desktop.ui.Workspace.STORY, 6) },
+    )
 }
 
 /**

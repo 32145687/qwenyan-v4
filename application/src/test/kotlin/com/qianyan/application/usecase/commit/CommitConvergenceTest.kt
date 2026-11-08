@@ -52,27 +52,36 @@ class CommitConvergenceTest {
             val approval = approvedGate(f, w, gateId = "gate-converge-warning")
             val artifact = artifactFor(f, w, "后续更新失败正文")
 
+            val failingCandidates = object : WorldModelCandidateRepository {
+                override fun listByHistory(historyId: String): List<CandidateFact> =
+                    throw RuntimeException("world model store unavailable")
+
+                override fun save(candidate: CandidateFact) =
+                    throw RuntimeException("world model store unavailable")
+
+                override fun getById(candidateId: String): CandidateFact? = null
+                override fun listByStatus(status: CandidateFactStatus): List<CandidateFact> = emptyList()
+
+                override fun updateStatus(
+                    candidateId: String,
+                    status: CandidateFactStatus,
+                    decisionReason: String?,
+                    conflictWith: String?,
+                    resultingFactId: String?,
+                ) = throw RuntimeException("world model store unavailable")
+            }
             val failingPipeline = WorldModelUpdateUseCases(
                 agent = WorldModelUpdateAgent(MockLLMGateway()),
-                candidates = object : WorldModelCandidateRepository {
-                    override fun listByHistory(historyId: String): List<CandidateFact> =
-                        throw RuntimeException("world model store unavailable")
-
-                    override fun save(candidate: CandidateFact) =
-                        throw RuntimeException("world model store unavailable")
-
-                    override fun getById(candidateId: String): CandidateFact? = null
-                    override fun listByStatus(status: CandidateFactStatus): List<CandidateFact> = emptyList()
-
-                    override fun updateStatus(
-                        candidateId: String,
-                        status: CandidateFactStatus,
-                        decisionReason: String?,
-                        conflictWith: String?,
-                        resultingFactId: String?,
-                    ) = throw RuntimeException("world model store unavailable")
-                },
+                candidates = failingCandidates,
                 storyState = f.app.storyState,
+                conflicts = com.qianyan.application.usecase.story.worldmodelupdate.WorldModelConflictUseCases(
+                    candidates = failingCandidates,
+                    workflowRepository = f.app.workflowRepository,
+                    storyState = f.app.storyState,
+                    novels = f.app.novels,
+                    actionPolicy = f.app.actionPolicy,
+                    errorMapper = f.app.errorMapper,
+                ),
                 errorMapper = f.app.errorMapper,
             )
             val commits = CommitUseCases(

@@ -361,6 +361,14 @@ class WorldModelUpdatePipelineTest {
             ),
             candidates = flaky,
             storyState = storyState(c.f),
+            conflicts = WorldModelConflictUseCases(
+                candidates = flaky,
+                workflowRepository = c.f.app.workflowRepository,
+                storyState = storyState(c.f),
+                novels = c.f.app.novels,
+                actionPolicy = c.f.app.actionPolicy,
+                errorMapper = c.f.app.errorMapper,
+            ),
             errorMapper = c.f.app.errorMapper,
         )
 
