@@ -143,7 +143,8 @@ object DatabaseInitializer {
         //   · INSERT（overwrite）：本仓储写路径均为 INSERT OR REPLACE——在 recursive_triggers=OFF（默认）
         //     下 REPLACE 的隐式 DELETE 不触发 DELETE 触发器，故必须用 BEFORE INSERT + EXISTS 显式拦截
         //     "同 PK 已存在 Original 行"的覆盖；新 Original 行首插与 Variant 行按契约重存不受影响。
-        // Variant 行（含 Foreshadow 生命周期 transitionForeshadowState 的 UPDATE）不在保护范围。
+        // Variant 行（含 Foreshadow 生命周期 transitionForeshadowState 的 UPDATE）不在保护范围；
+        // O-07：Original Foreshadow 的**生命周期列**为唯一例外（列级白名单，见下方该触发器）。
         // Reveal / NarrativeState 不在本轮范围（Reveal 为 insert-only 运行时 fact，另裁决）。
         """
         CREATE TRIGGER IF NOT EXISTS character_original_update_protect
@@ -265,12 +266,26 @@ object DatabaseInitializer {
             SELECT RAISE(ABORT, 'Original TimelineEntry cannot be overwritten');
         END;
         """.trimIndent(),
+        // O-07（D-2=C-narrow）：原"整行禁改"收窄为**列级白名单**——Original 伏笔允许作者推进生命周期
+        // （state / resolved / updated_at / last_transition_reason / payoff_chapter_id），
+        // 内容与身份列（foreshadow_id / novel_id / variant_id / scope / chapter_id / content / created_at）
+        // 仍一律 ABORT。旧库靠同名 DROP 后重建一次完成替换；DELETE / 覆盖保护不变。
+        "DROP TRIGGER IF EXISTS foreshadow_original_update_protect",
         """
         CREATE TRIGGER IF NOT EXISTS foreshadow_original_update_protect
         BEFORE UPDATE ON Foreshadow
         WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL'
+         AND (
+            NEW.foreshadow_id IS NOT OLD.foreshadow_id OR
+            NEW.novel_id     IS NOT OLD.novel_id     OR
+            NEW.variant_id   IS NOT OLD.variant_id   OR
+            NEW.scope        IS NOT OLD.scope        OR
+            NEW.chapter_id   IS NOT OLD.chapter_id   OR
+            NEW.content      IS NOT OLD.content      OR
+            NEW.created_at   IS NOT OLD.created_at
+         )
         BEGIN
-            SELECT RAISE(ABORT, 'Original Foreshadow is immutable');
+            SELECT RAISE(ABORT, 'Original Foreshadow content/identity is immutable');
         END;
         """.trimIndent(),
         """

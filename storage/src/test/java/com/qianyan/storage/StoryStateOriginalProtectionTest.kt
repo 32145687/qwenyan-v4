@@ -231,6 +231,104 @@ class StoryStateOriginalProtectionTest {
         }
     }
 
+    /* ---------- 6（O-07）：Original 伏笔列级白名单 ---------- */
+
+    @Test
+    fun `original foreshadow lifecycle columns are writable while content and identity stay immutable`() {
+        val f = fixture()
+        seedNovel(f, "prot3")
+        seedAll(f, "prot3")
+
+        // 生命周期列：允许
+        f.driver.execute(
+            null,
+            "UPDATE Foreshadow SET state='ACTIVE', resolved=0, updated_at=1790000000000, " +
+                "last_transition_reason='推进' WHERE foreshadow_id = 'p-f'",
+            0,
+        )
+        f.driver.execute(
+            null,
+            "UPDATE Foreshadow SET state='RESOLVED', resolved=1, updated_at=1790000001000, " +
+                "last_transition_reason='兑现', payoff_chapter_id='p-ch' WHERE foreshadow_id = 'p-f'",
+            0,
+        )
+        val after = f.repo.getForeshadowById(ForeshadowingId("p-f"))!!
+        assertEquals(com.qianyan.model.story.ForeshadowLifecycleState.RESOLVED, after.state)
+        assertTrue(after.resolved)
+        assertEquals(ChapterId("p-ch"), after.payoffChapterId)
+        assertEquals("原著伏笔", after.content, "生命周期迁移不得改内容")
+
+        // 内容 / 身份列：仍拒绝
+        assertRejectedWith("Foreshadow content UPDATE", "is immutable") {
+            f.driver.execute(null, "UPDATE Foreshadow SET content='篡改' WHERE foreshadow_id='p-f'", 0)
+        }
+        assertRejectedWith("Foreshadow chapterId UPDATE", "is immutable") {
+            f.driver.execute(null, "UPDATE Foreshadow SET chapter_id='p-ch2' WHERE foreshadow_id='p-f'", 0)
+        }
+        assertRejectedWith("Foreshadow createdAt UPDATE", "is immutable") {
+            f.driver.execute(null, "UPDATE Foreshadow SET created_at=1 WHERE foreshadow_id='p-f'", 0)
+        }
+        assertRejectedWith("Foreshadow scope UPDATE", "is immutable") {
+            f.driver.execute(null, "UPDATE Foreshadow SET scope='VARIANT' WHERE foreshadow_id='p-f'", 0)
+        }
+        assertRejectedWith("Foreshadow novelId UPDATE", "is immutable") {
+            f.driver.execute(null, "UPDATE Foreshadow SET novel_id='prot3b' WHERE foreshadow_id='p-f'", 0)
+        }
+        assertRejectedWith("Foreshadow id UPDATE", "is immutable") {
+            f.driver.execute(null, "UPDATE Foreshadow SET foreshadow_id='p-f2' WHERE foreshadow_id='p-f'", 0)
+        }
+        assertEquals("原著伏笔", f.repo.getForeshadowById(ForeshadowingId("p-f"))!!.content)
+        f.close()
+    }
+
+    @Test
+    fun `legacy whole-row foreshadow trigger is replaced on initialize`() {
+        val file = java.nio.file.Files.createTempFile("qianyan_o07_legacy", ".db").toAbsolutePath()
+        try {
+            val h = QianyanDbFactory.open("jdbc:sqlite:$file")
+            val driver = h.driver as JdbcSqliteDriver
+            try {
+                // 模拟旧库：装回 O-07 之前的"整行禁改"触发器
+                driver.execute(null, "DROP TRIGGER IF EXISTS foreshadow_original_update_protect", 0)
+                driver.execute(
+                    null,
+                    "CREATE TRIGGER foreshadow_original_update_protect BEFORE UPDATE ON Foreshadow " +
+                        "WHEN OLD.variant_id IS NULL AND OLD.scope = 'ORIGINAL' " +
+                        "BEGIN SELECT RAISE(ABORT, 'Original Foreshadow is immutable'); END",
+                    0,
+                )
+                seedNovel(fixtureFor(driver), "legacy")
+                val fx = fixtureFor(driver)
+                fx.repo.saveForeshadow(
+                    Foreshadow(ForeshadowingId("p-f"), NovelId("legacy"), null, VariantScope.ORIGINAL, content = "旧伏笔", createdAt = now),
+                )
+                // 旧语义：生命周期 UPDATE 也被拒
+                assertRejectedWith("legacy lifecycle UPDATE", "is immutable") {
+                    driver.execute(null, "UPDATE Foreshadow SET state='ACTIVE' WHERE foreshadow_id='p-f'", 0)
+                }
+
+                DatabaseInitializer.initializeDatabase(driver)
+
+                // 新语义：生命周期放行、内容仍拒
+                driver.execute(null, "UPDATE Foreshadow SET state='ACTIVE', updated_at=2 WHERE foreshadow_id='p-f'", 0)
+                assertRejectedWith("new content UPDATE", "is immutable") {
+                    driver.execute(null, "UPDATE Foreshadow SET content='篡改' WHERE foreshadow_id='p-f'", 0)
+                }
+                assertEquals(
+                    com.qianyan.model.story.ForeshadowLifecycleState.ACTIVE,
+                    fx.repo.getForeshadowById(ForeshadowingId("p-f"))!!.state,
+                )
+            } finally {
+                driver.getConnection().close()
+            }
+        } finally {
+            java.nio.file.Files.deleteIfExists(file)
+        }
+    }
+
+    /** 复用同一 driver 的仓储包装（legacy 测试用）。 */
+    private fun fixtureFor(driver: JdbcSqliteDriver): F = F(QianyanDbHandle(QianyanDb(driver), driver))
+
     /* ---------- helpers ---------- */
 
     private fun pkOf(table: String) = when (table) {

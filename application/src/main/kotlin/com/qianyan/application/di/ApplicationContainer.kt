@@ -73,6 +73,7 @@ import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateAg
 import com.qianyan.application.usecase.writing.knowledgeupdate.KnowledgeUpdateExecutionUseCase
 import com.qianyan.application.usecase.story.StoryStateVariantUseCases
 import com.qianyan.application.usecase.story.WorldModelReadUseCases
+import com.qianyan.application.usecase.story.ForeshadowAuthoringUseCases
 import com.qianyan.application.usecase.story.ForeshadowLifecycleUseCases
 import com.qianyan.application.usecase.story.RevealUseCases
 import com.qianyan.application.usecase.writing.context.StoryWorldContextResolver
@@ -627,6 +628,15 @@ class ApplicationContainer(
     /** P13 LCL-C Foreshadow 生命周期（Variant-only 状态机迁移；不触碰 NarrativeState）。 */
     val foreshadowLifecycle: ForeshadowLifecycleUseCases
         get() = ForeshadowLifecycleUseCases(storyStateRepository, errorMapper)
+
+    /** T-O07-A · 作者伏笔入口（Original 生命周期元数据；零正文写入；触发器列级白名单兜底）。 */
+    val foreshadowAuthoring: ForeshadowAuthoringUseCases
+        get() = ForeshadowAuthoringUseCases(
+            storyState = storyStateRepository,
+            chapters = chapterRepository,
+            novels = novels,
+            errorMapper = errorMapper,
+        )
 
     /** P13 LCL-D Reveal（Reader-only Story State fact；Variant-only；不触碰 NarrativeState/ContextPack）。 */
     val reveals: RevealUseCases

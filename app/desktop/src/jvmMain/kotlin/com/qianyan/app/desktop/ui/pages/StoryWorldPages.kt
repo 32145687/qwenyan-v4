@@ -1,5 +1,6 @@
 package com.qianyan.app.desktop.ui.pages
 
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -17,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,11 +30,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.qianyan.app.desktop.ui.ActionButton
+import com.qianyan.app.desktop.ui.ActionLevel
 import com.qianyan.app.desktop.ui.DesktopAppState
 import com.qianyan.app.desktop.ui.EmptyState
 import com.qianyan.app.desktop.ui.HLine
@@ -46,10 +52,13 @@ import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanDimens
 import com.qianyan.app.desktop.ui.theme.QianyanShapes
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
+import com.qianyan.model.ChapterId
 import com.qianyan.model.ForeshadowingId
 import com.qianyan.model.TimelineEntryId
 import com.qianyan.model.WorldRuleId
+import com.qianyan.model.story.ForeshadowLifecycleState
 import com.qianyan.model.workspace.WorkspaceObjectKind
+import kotlinx.coroutines.launch
 import com.qianyan.model.workspace.WorkspaceSelection
 
 /* ---------------- 页内 Tab（下划线式，不是胶囊） ---------------- */
@@ -174,42 +183,7 @@ fun StoryPage(state: DesktopAppState) {
                     }
                 }
 
-                tab == 4 -> if (foreshadows.isEmpty()) {
-                    EmptyState("还没有伏笔", "Story State 里还没有伏笔记录")
-                } else {
-                    Column(Modifier.fillMaxWidth()) {
-                        foreshadows.forEach { row ->
-                            Row(
-                                Modifier.fillMaxWidth()
-                                    .clip(RoundedCornerShape(QianyanShapes.r))
-                                    .clickable {
-                                        state.workspace.select(
-                                            WorkspaceSelection(
-                                                projectId = state.novel!!.projectId,
-                                                kind = WorkspaceObjectKind.FORESHADOW,
-                                                novelId = state.novel!!.novelId,
-                                                foreshadowId = ForeshadowingId(row.id),
-                                            ),
-                                        )
-                                    }
-                                    .padding(vertical = 8.dp, horizontal = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(row.content.ifBlank { row.id }, style = MaterialTheme.typography.bodyLarge, color = palette.text, maxLines = 2)
-                                    val where = row.chapterLabel?.let { chapterTitles[it] }
-                                    if (where != null) {
-                                        Spacer(Modifier.height(2.dp))
-                                        Text(where, style = QianyanCodeStyle, color = palette.text3)
-                                    }
-                                }
-                                Spacer(Modifier.width(10.dp))
-                                Tag(foreshadowStateLabel(row.state), statusTintForForeshadow(row.state))
-                            }
-                            HLine()
-                        }
-                    }
-                }
+                tab == 4 -> ForeshadowLedgerTab(state, foreshadows, chapterTitles)
                 tab == 5 -> StoryDirectionTab(state)
                 tab == 6 -> NarrativeLedgerTab(state)
                 tab == 7 -> ContextPackTab(state)
@@ -338,6 +312,185 @@ private data class StoryFoundationView(
     val readerTone: String,
     val rules: List<String>,
 )
+
+/**
+ * T-O07-A · 伏笔账本（作者入口）：埋下 → 推进 → 兑现（绑章节）→ 放弃。
+ *
+ * 只写 Original 伏笔的生命周期元数据（`foreshadowAuthoring`，零正文写入）；终态不可再迁移。
+ */
+@Composable
+private fun ForeshadowLedgerTab(
+    state: DesktopAppState,
+    foreshadows: List<ForeshadowRow>,
+    chapterTitles: Map<String, String>,
+) {
+    val palette = QianyanTheme.palette
+    val novelId = state.novel?.novelId
+    var content by remember(novelId) { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var payoffFor by remember { mutableStateOf<String?>(null) }
+    val defaultChapterId = state.workspace.selection
+        ?.takeIf { it.kind == WorkspaceObjectKind.CHAPTER }
+        ?.chapterId
+
+    fun create() {
+        if (novelId == null || busy || content.isBlank()) return
+        busy = true
+        state.scope.launch {
+            val ok = runCatching {
+                state.load { it.foreshadowAuthoring.create(novelId, defaultChapterId, content) }
+            }.isSuccess
+            busy = false
+            if (ok) content = ""
+            state.toast(if (ok) "已埋下伏笔" else "埋下伏笔失败")
+            state.refreshKey++
+        }
+    }
+
+    fun transition(id: String, target: ForeshadowLifecycleState, payoff: ChapterId? = null) {
+        if (novelId == null || busy) return
+        busy = true
+        payoffFor = null
+        state.scope.launch {
+            val result = runCatching {
+                state.load {
+                    it.foreshadowAuthoring.transition(novelId, ForeshadowingId(id), target, null, payoff)
+                }
+            }
+            busy = false
+            state.toast(
+                result.fold(
+                    onSuccess = { when (target) {
+                        ForeshadowLifecycleState.ACTIVE -> "伏笔已推进"
+                        ForeshadowLifecycleState.RESOLVED -> "伏笔已兑现"
+                        else -> "伏笔已放弃"
+                    } },
+                    onFailure = { e -> e.message ?: "操作失败" },
+                ),
+            )
+            state.refreshKey++
+        }
+    }
+
+    Column(Modifier.fillMaxWidth()) {
+        SectionLabel("埋下伏笔")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.weight(1f)
+                    .clip(RoundedCornerShape(QianyanShapes.r3))
+                    .background(palette.soft)
+                    .padding(horizontal = 12.dp, vertical = 9.dp),
+            ) {
+                if (content.isEmpty()) {
+                    Text("一句话描述这条伏笔…", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+                }
+                BasicTextField(
+                    value = content,
+                    onValueChange = { content = it },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(color = palette.text),
+                    cursorBrush = SolidColor(palette.accent),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            ActionButton(
+                "埋下伏笔",
+                ActionLevel.PRIMARY,
+                enabled = !busy && content.isNotBlank(),
+                onClick = { create() },
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            if (defaultChapterId != null) "默认埋在当前章节" else "先在左侧选中章节，否则伏笔不绑定章节",
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.text3,
+        )
+
+        Spacer(Modifier.height(18.dp))
+        SectionLabel("伏笔 · ${foreshadows.size}")
+        if (foreshadows.isEmpty()) {
+            EmptyState("还没有伏笔", "在上方输入一条伏笔并埋下")
+        } else {
+            foreshadows.forEach { row ->
+                Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            row.content.ifBlank { row.id },
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = palette.text,
+                            maxLines = 2,
+                            modifier = Modifier.weight(1f).clickable {
+                                state.workspace.select(
+                                    WorkspaceSelection(
+                                        projectId = state.novel!!.projectId,
+                                        kind = WorkspaceObjectKind.FORESHADOW,
+                                        novelId = state.novel!!.novelId,
+                                        foreshadowId = ForeshadowingId(row.id),
+                                    ),
+                                )
+                            },
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Tag(foreshadowStateLabel(row.state), statusTintForForeshadow(row.state))
+                    }
+                    row.chapterLabel?.let { id -> chapterTitles[id] }?.let { where ->
+                        Spacer(Modifier.height(2.dp))
+                        Text(where, style = QianyanCodeStyle, color = palette.text3)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    when (row.state) {
+                        "PLANTED" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ActionButton("推进为进行中", ActionLevel.SECONDARY, enabled = !busy) {
+                                transition(row.id, ForeshadowLifecycleState.ACTIVE)
+                            }
+                            ActionButton("放弃", ActionLevel.TEXT, enabled = !busy) {
+                                transition(row.id, ForeshadowLifecycleState.ABANDONED)
+                            }
+                        }
+
+                        "ACTIVE" -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Box {
+                                ActionButton("兑现…", ActionLevel.SECONDARY, enabled = !busy && chapterTitles.isNotEmpty()) {
+                                    payoffFor = row.id
+                                }
+                                DropdownMenu(
+                                    expanded = payoffFor == row.id,
+                                    onDismissRequest = { payoffFor = null },
+                                ) {
+                                    chapterTitles.entries.forEach { (id, label) ->
+                                        DropdownMenuItem(
+                                            text = { Text(label, color = palette.text) },
+                                            onClick = { transition(row.id, ForeshadowLifecycleState.RESOLVED, ChapterId(id)) },
+                                        )
+                                    }
+                                }
+                            }
+                            ActionButton("放弃", ActionLevel.TEXT, enabled = !busy) {
+                                transition(row.id, ForeshadowLifecycleState.ABANDONED)
+                            }
+                        }
+
+                        else -> {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                ActionButton("推进为进行中", ActionLevel.SECONDARY, enabled = false) {}
+                                ActionButton("兑现…", ActionLevel.SECONDARY, enabled = false) {}
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                if (row.state == "RESOLVED") "已兑现，不可再迁移" else "已放弃，不可再迁移",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.text3,
+                            )
+                        }
+                    }
+                }
+                HLine()
+            }
+        }
+    }
+}
 
 private data class ForeshadowRow(
     val id: String,
