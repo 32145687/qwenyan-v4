@@ -131,6 +131,7 @@ internal fun novelImportErrorMessage(error: ApplicationError): String = when (er
     is ApplicationError.ProviderTimeout -> "分析服务响应超时，请稍后重试"
     is ApplicationError.ProviderRateLimited -> "分析调用过于频繁，请稍后再试"
     is ApplicationError.ProviderTokenLimit -> "内容过长，超出模型上下文限制，请缩短内容"
+    is ApplicationError.ProviderAuthFailed -> "API Key 无效或已过期，请到设置 › AI Provider 更新"
     is ApplicationError.ProviderUnavailable -> "分析服务不可用，请稍后重试"
     is ApplicationError.InvalidAnalysisOutput -> "分析结果无效，请重试"
     is ApplicationError.AnalysisFailed -> "分析失败，请重试"

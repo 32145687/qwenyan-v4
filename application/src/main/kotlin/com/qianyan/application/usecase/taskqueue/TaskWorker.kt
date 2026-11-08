@@ -102,7 +102,9 @@ class TaskWorker(
         -> AttemptErrorCategory.RETRYABLE
         // token 超限重试同一请求无意义；需用户缩短内容或换模型。
         is ApplicationError.ProviderTokenLimit -> AttemptErrorCategory.NON_RETRYABLE
-        is ApplicationError.ProviderCredentialMissing -> AttemptErrorCategory.NEEDS_HUMAN
+        is ApplicationError.ProviderCredentialMissing,
+        is ApplicationError.ProviderAuthFailed,
+        -> AttemptErrorCategory.NEEDS_HUMAN
         else -> AttemptErrorCategory.NON_RETRYABLE
     }
 

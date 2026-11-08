@@ -195,6 +195,7 @@ class WriterViewModel(
         is ApplicationError.ProviderTimeout -> "AI 服务响应超时，请检查网络后重试"
         is ApplicationError.ProviderRateLimited -> "AI 调用过于频繁，请稍后再试"
         is ApplicationError.ProviderTokenLimit -> "内容过长，超出模型上下文限制，请缩短内容或换用更大上下文的模型"
+        is ApplicationError.ProviderAuthFailed -> "API Key 无效或已过期，请到设置 › AI Provider 更新"
         is ApplicationError.ProviderUnavailable -> "AI 服务暂不可用"
         is ApplicationError.InvalidPlanningOutput -> "规划输出无效，请重试"
         is ApplicationError.PlanningFailed -> "规划失败，请重试"

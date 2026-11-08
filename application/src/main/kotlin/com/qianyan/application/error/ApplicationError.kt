@@ -68,6 +68,9 @@ sealed interface ApplicationError {
             /** 超出模型 token 上限（内容过长，重试同一请求无意义）。 */
             data class ProviderTokenLimit(val detail: String) : ApplicationError
 
+            /** 提供者鉴权失败（401/403）：API Key 无效 / 过期 / 无权限，需用户更新凭证。 */
+            data class ProviderAuthFailed(val detail: String) : ApplicationError
+
             /** AI 输出无法按结构解析或结构非法，无可用结构化结果。 */
             data class InvalidAnalysisOutput(val detail: String) : ApplicationError
 

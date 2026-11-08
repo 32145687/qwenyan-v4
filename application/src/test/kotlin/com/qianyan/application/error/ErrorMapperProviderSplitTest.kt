@@ -21,5 +21,8 @@ class ErrorMapperProviderSplitTest {
         assertIs<ApplicationError.ProviderUnavailable>(
             ErrorMapper.map(ProviderException.ProviderUnavailable("u")).error,
         )
+        assertIs<ApplicationError.ProviderAuthFailed>(
+            ErrorMapper.map(ProviderException.AuthenticationFailed("401")).error,
+        )
     }
 }

@@ -145,12 +145,12 @@ class MiMoLLMGatewayTest {
         assertTrue(ex.detail.contains("429"))
     }
 
-    /* 4xx 鉴权失败 */
+    /* 4xx 鉴权失败 → AuthenticationFailed（O-69） */
     @Test
-    fun `http 403 maps to provider unavailable`() {
+    fun `http 403 maps to authentication failed`() {
         val body = """{"error":{"message":"forbidden","code":"permission_denied"}}"""
         val gateway = MiMoLLMGateway(apiKey = "test-key", client = FakeLlmHttpClient { _, _, _ -> HttpResponse(403, body) })
-        val ex = assertFailsWith<ProviderException.ProviderUnavailable> { gateway.chat(request()) }
+        val ex = assertFailsWith<ProviderException.AuthenticationFailed> { gateway.chat(request()) }
         assertTrue(ex.detail.contains("403"))
     }
 

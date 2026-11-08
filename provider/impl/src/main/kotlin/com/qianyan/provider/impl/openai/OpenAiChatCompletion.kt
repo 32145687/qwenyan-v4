@@ -107,7 +107,7 @@ internal object OpenAiChatCompletion {
         val detail = "${request.model.label} HTTP ${response.statusCode}: ${truncate(response.body)}"
         return when (response.statusCode) {
             429 -> ProviderException.RateLimit(detail)
-            401, 403 -> ProviderException.ProviderUnavailable("$detail（鉴权失败）")
+            401, 403 -> ProviderException.AuthenticationFailed(detail)
             in 500..599 -> ProviderException.ProviderUnavailable(detail)
             else -> ProviderException.ProviderUnavailable(detail)
         }

@@ -15,11 +15,13 @@ class ProviderErrorMessageTest {
         val timeout = messageFor(ApplicationException(ApplicationError.ProviderTimeout("t")))
         val rate = messageFor(ApplicationException(ApplicationError.ProviderRateLimited("r")))
         val token = messageFor(ApplicationException(ApplicationError.ProviderTokenLimit("k")))
+        val auth = messageFor(ApplicationException(ApplicationError.ProviderAuthFailed("a")))
         val unavailable = messageFor(ApplicationException(ApplicationError.ProviderUnavailable("u")))
 
-        assertEquals(4, setOf(timeout, rate, token, unavailable).size, "四类文案不得相同")
+        assertEquals(5, setOf(timeout, rate, token, auth, unavailable).size, "五类文案不得相同")
         assertTrue("超时" in timeout, timeout)
         assertTrue("频繁" in rate, rate)
         assertTrue("过长" in token, token)
+        assertTrue("API Key 无效" in auth, auth)
     }
 }

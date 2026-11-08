@@ -13,7 +13,8 @@ import com.qianyan.provider.RetryConfig
  *
  * 只重试 [ProviderException.Timeout] / [ProviderException.RateLimit] / [ProviderException.ProviderUnavailable]；
  * [ProviderException.TokenLimit] / [ProviderException.CredentialMissing] /
- * [ProviderException.InvalidResponse] / [ProviderException.MalformedOutput] 一律不重试
+ * [ProviderException.AuthenticationFailed] / [ProviderException.InvalidResponse] /
+ * [ProviderException.MalformedOutput] 一律不重试
  * （同一请求重试无意义，或属配置 / 契约问题）。
  *
  * 总尝试次数 = `1 + retry.maxRetries`；退避采用**线性**：第 n 次重试前等待
@@ -54,6 +55,7 @@ class RetryingGateway(
 
         is ProviderException.TokenLimit,
         is ProviderException.CredentialMissing,
+        is ProviderException.AuthenticationFailed,
         is ProviderException.InvalidResponse,
         is ProviderException.MalformedOutput,
         -> false

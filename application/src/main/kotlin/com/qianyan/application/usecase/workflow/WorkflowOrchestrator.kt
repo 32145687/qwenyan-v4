@@ -1235,7 +1235,9 @@ class WorkflowOrchestrator(
         is ApplicationError.ProviderUnavailable,
         -> AttemptErrorCategory.RETRYABLE
         is ApplicationError.ProviderTokenLimit -> AttemptErrorCategory.NON_RETRYABLE
-        is ApplicationError.ProviderCredentialMissing -> AttemptErrorCategory.NEEDS_HUMAN
+        is ApplicationError.ProviderCredentialMissing,
+        is ApplicationError.ProviderAuthFailed,
+        -> AttemptErrorCategory.NEEDS_HUMAN
         is ApplicationError.InvalidWritingOutput -> AttemptErrorCategory.NON_RETRYABLE
         else -> null
     }
@@ -1245,7 +1247,9 @@ class WorkflowOrchestrator(
         is ProviderException.RateLimit,
         is ProviderException.ProviderUnavailable,
         -> AttemptErrorCategory.RETRYABLE
-        is ProviderException.CredentialMissing -> AttemptErrorCategory.NEEDS_HUMAN
+        is ProviderException.CredentialMissing,
+        is ProviderException.AuthenticationFailed,
+        -> AttemptErrorCategory.NEEDS_HUMAN
         else -> AttemptErrorCategory.NON_RETRYABLE
     }
 

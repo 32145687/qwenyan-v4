@@ -86,6 +86,19 @@ class RetryingGatewayTest {
     }
 
     @Test
+    fun `authentication failure is not retried and never sleeps`() {
+        val fake = FakeGateway { throw ProviderException.AuthenticationFailed("HTTP 401") }
+        val delays = mutableListOf<Long>()
+
+        assertFailsWith<ProviderException.AuthenticationFailed> {
+            RetryingGateway(fake, RetryConfig(maxRetries = 2, backoffMillis = 500)) { delays += it }.chat(request)
+        }
+
+        assertEquals(1, fake.calls, "鉴权失败只尝试 1 次（O-69）")
+        assertTrue(delays.isEmpty(), "鉴权失败不得进入退避等待")
+    }
+
+    @Test
     fun `provider unavailable is retried`() {
         val fake = FakeGateway { throw ProviderException.ProviderUnavailable("503") }
 

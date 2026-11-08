@@ -17,6 +17,10 @@ sealed class ProviderException(message: String, cause: Throwable? = null) : Exce
     class RateLimit(val detail: String) :
         ProviderException("Provider rate limit: $detail")
 
+    /** 鉴权失败（401 / 403）：API Key 无效 / 过期 / 无权限；重试同一请求无意义。 */
+    class AuthenticationFailed(val detail: String) :
+        ProviderException("Provider authentication failed: $detail")
+
     /** 服务不可用 / 网关错误 / 连接失败。 */
     class ProviderUnavailable(val detail: String, cause: Throwable? = null) :
         ProviderException("Provider unavailable: $detail", cause)
