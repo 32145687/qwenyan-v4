@@ -184,7 +184,7 @@ class PostRevisionReviewTest {
             assertNull(result.postRevisionAnalysis)
             assertEquals(NovelAgentPostRevisionFailureCodes.INVALID_OUTPUT, result.postRevisionCheckFailure)
 
-            assertEquals(2, s.criticCalls, "失败复评也只调用 2 次 critique")
+            assertEquals(3, s.criticCalls, "失败复评 = 2 次复评 + 1 次纠正重试，共 3 次 critique")
             assertEquals(1, s.revisionCalls)
             assertNotNull(result.workingDraftId)
             assertNotNull(result.artifactId)

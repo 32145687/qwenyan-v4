@@ -62,28 +62,41 @@ class CritiqueAgent(
     ): ValidationResult = runCritique(renderInput(content, planId, sourceModel, vocabulary), content, vocabulary)
 
     private fun runCritique(input: String, content: String, vocabulary: List<VocabularyLite>): ValidationResult {
-        return try {
-            val result = runtime.run(CRITIC_AGENT, input)
-            val raw = result.answer
-                ?: throw CritiqueException.InvalidOutput("critic returned no answer")
-            val parsed = CritiqueParser.parse(raw)
-            val warnings = aliasWarnings(content, vocabulary)
-            if (warnings.isEmpty()) parsed else parsed.copy(issues = parsed.issues + warnings)
-        } catch (e: ApplicationException) {
-            throw e
-        } catch (e: CritiqueException) {
-            throw errorMapper.map(e)
-        } catch (e: ProviderException) {
-            throw when (e) {
-                is ProviderException.InvalidResponse,
-                is ProviderException.MalformedOutput,
-                -> ApplicationException(ApplicationError.InvalidCritiqueOutput(e.message ?: "critique output malformed"))
-                else -> errorMapper.map(e)
+        var correction: String? = null
+        var attempt = 0
+        while (true) {
+            val effectiveInput = correction?.let { detail ->
+                input + "\n\n【修正】上一次输出无法解析为评审 JSON：$detail。" +
+                    "请只输出合法 JSON 对象（顶层 passed 与 issues），不要 Markdown 代码围栏或前后缀。"
+            } ?: input
+            try {
+                val result = runtime.run(CRITIC_AGENT, effectiveInput)
+                val raw = result.answer
+                    ?: throw CritiqueException.InvalidOutput("critic returned no answer")
+                val parsed = CritiqueParser.parse(raw)
+                val warnings = aliasWarnings(content, vocabulary)
+                return if (warnings.isEmpty()) parsed else parsed.copy(issues = parsed.issues + warnings)
+            } catch (e: ApplicationException) {
+                throw e
+            } catch (e: CritiqueException.InvalidOutput) {
+                // T-O78-F：只有解析失败才做有界纠正重试（总尝试 ≤ MAX_CORRECTION_RETRIES + 1）。
+                if (attempt >= MAX_CORRECTION_RETRIES) throw errorMapper.map(e)
+                correction = e.message.orEmpty()
+                attempt += 1
+            } catch (e: CritiqueException) {
+                throw errorMapper.map(e)
+            } catch (e: ProviderException) {
+                throw when (e) {
+                    is ProviderException.InvalidResponse,
+                    is ProviderException.MalformedOutput,
+                    -> ApplicationException(ApplicationError.InvalidCritiqueOutput(e.message ?: "critique output malformed"))
+                    else -> errorMapper.map(e)
+                }
+            } catch (e: AgentException) {
+                throw ApplicationException(ApplicationError.CritiqueFailed(e.message ?: "agent runtime failed"))
+            } catch (e: ToolException) {
+                throw ApplicationException(ApplicationError.CritiqueFailed(e.message ?: "tool failed"))
             }
-        } catch (e: AgentException) {
-            throw ApplicationException(ApplicationError.CritiqueFailed(e.message ?: "agent runtime failed"))
-        } catch (e: ToolException) {
-            throw ApplicationException(ApplicationError.CritiqueFailed(e.message ?: "tool failed"))
         }
     }
 
@@ -139,6 +152,8 @@ class CritiqueAgent(
         appendLine()
         appendLine("请按 JSON 输出评审结果：" +
             "{\"passed\":<true|false>,\"issues\":[{\"field\":\"...\",\"severity\":\"ERROR|WARNING|INFO\",\"message\":\"...\"}]}")
+        // T-O78-F：输出契约（针对真实模型偶发 ```json 围栏 / 前言）。
+        appendLine("只输出该 JSON 对象本身；不要 Markdown 代码围栏、不要解释或前后缀；字符串内的英文双引号必须转义（或改用「」）")
     }.trimEnd()
 
     private fun StringBuilder.appendVocabularyPrompt(vocabulary: List<VocabularyLite>) {
@@ -171,5 +186,8 @@ class CritiqueAgent(
         /** D-38：词库 prompt 最多 50 条；别名 WARNING 最多 20 条。 */
         const val VOCABULARY_PROMPT_LIMIT: Int = 50
         const val ALIAS_WARNING_LIMIT: Int = 20
+
+        /** T-O78-F：解析失败时的纠正重试次数（总尝试 = 1 + 本值 = 2）。 */
+        const val MAX_CORRECTION_RETRIES: Int = 1
     }
 }

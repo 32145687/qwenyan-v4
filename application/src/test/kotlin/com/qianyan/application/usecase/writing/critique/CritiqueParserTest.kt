@@ -75,4 +75,60 @@ class CritiqueParserTest {
         assertTrue(result.passed)
         assertEquals(0, result.issues.size)
     }
+
+    /* --- T-O78-F：仅剥一层完整 Markdown 围栏（其余严格不变） --- */
+
+    @Test
+    fun `json fenced critique output parses`() {
+        val result = CritiqueParser.parse(
+            "```json\n{\"passed\":false,\"issues\":[{\"field\":\"逻辑\",\"severity\":\"ERROR\",\"message\":\"前后矛盾\"}]}\n```",
+        )
+        assertEquals(false, result.passed)
+        assertEquals(1, result.issues.size)
+        assertEquals("前后矛盾", result.issues.single().message)
+        assertEquals(IssueSeverity.ERROR, result.issues.single().severity)
+    }
+
+    @Test
+    fun `bare fenced critique output parses`() {
+        val result = CritiqueParser.parse(
+            "```\n{\"passed\":true,\"issues\":[{\"field\":\"x\",\"severity\":\"INFO\",\"message\":\"可读\"}]}\n```",
+        )
+        assertTrue(result.passed)
+        assertEquals("可读", result.issues.single().message)
+    }
+
+    @Test
+    fun `fenced illegal json still fails`() {
+        assertFailsWith<CritiqueException.InvalidOutput> {
+            CritiqueParser.parse("```json\n{\"issues\":[]}\n```")
+        }
+    }
+
+    @Test
+    fun `fenced prose still fails`() {
+        val ex = assertFailsWith<CritiqueException.InvalidOutput> {
+            CritiqueParser.parse("```json\n这段写得不好\n```")
+        }
+        assertTrue(ex.message!!.contains("无法解析"))
+    }
+
+    @Test
+    fun `prose before fenced json still fails`() {
+        assertFailsWith<CritiqueException.InvalidOutput> {
+            CritiqueParser.parse("结果如下：\n```json\n{\"passed\":false,\"issues\":[]}\n```")
+        }
+    }
+
+    @Test
+    fun `unfenced valid json is unchanged`() {
+        val result = CritiqueParser.parse(
+            """{"passed":false,"issues":[{"field":"逻辑","severity":"ERROR","message":"前后矛盾"}]}""",
+        )
+        assertEquals(false, result.passed)
+        assertEquals(1, result.issues.size)
+        assertEquals("逻辑", result.issues.single().field)
+        assertEquals(IssueSeverity.ERROR, result.issues.single().severity)
+        assertEquals("前后矛盾", result.issues.single().message)
+    }
 }

@@ -31,16 +31,37 @@ object CritiqueParser {
     }
 
     private fun decode(raw: String): CritiqueDto {
-        if (raw.isBlank()) {
+        // T-O78-F：仅剥**一层**完整 Markdown 围栏（首行 ```/```json + 末行 ```），其余原样严格解码。
+        val text = stripSingleMarkdownFence(raw)
+        if (text.isBlank()) {
             throw CritiqueException.InvalidOutput("empty critique output")
         }
         return try {
-            json.decodeFromString<CritiqueDto>(raw)
+            json.decodeFromString<CritiqueDto>(text)
         } catch (e: Exception) {
             // 非 JSON / 缺 passed / passed 类型错误 / issues 类型错误 统一走类型化解析错误。
             throw CritiqueException.InvalidOutput("illegal json or wrong field type: ${e.message}")
         }
     }
+
+    /**
+     * 仅当整段被**一层** Markdown 围栏包裹时剥离：首行为 ``` 或 ```json 等语言标记，末行为 ```。
+     *
+     * 不做"取首个 { 到末个 }"，不容忍围栏之外的散文/前言，不做贪婪匹配；不符合条件时返回原文（逐字节不变）。
+     */
+    private fun stripSingleMarkdownFence(raw: String): String {
+        val trimmed = raw.trim()
+        if (!trimmed.startsWith("```") || !trimmed.endsWith("```")) return raw
+        val lines = trimmed.split('\n')
+        if (lines.size < 3) return raw
+        val first = lines.first().trim()
+        // 首行只能是围栏本身（可带语言标记），不能与正文同处一行。
+        if (!FENCE_OPEN.matches(first)) return raw
+        if (lines.last().trim() != "```") return raw
+        return lines.subList(1, lines.size - 1).joinToString("\n").trim()
+    }
+
+    private val FENCE_OPEN = Regex("^```[A-Za-z0-9_+\\-]*$")
 
     private val json = Json { ignoreUnknownKeys = true }
 

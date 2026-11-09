@@ -32,6 +32,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * P11.4 Critique 测试（Agent 级 + Use Case 集成）。
@@ -53,6 +54,22 @@ class CritiqueExecutionTest {
             failure?.let { throw it }
             return ProviderResponse(
                 message = ChatMessage(ChatRole.ASSISTANT, content!!),
+                usage = Usage(10, 10, 20),
+                finishReason = FinishReason.STOP,
+            )
+        }
+    }
+
+    /** T-O78-F：按调用序号返回脚本化响应（String = content；ProviderException = 抛出）。 */
+    private class ScriptedGateway(private val script: List<Any>) : LLMGateway {
+        val requests = mutableListOf<ProviderRequest>()
+
+        override fun chat(request: ProviderRequest): ProviderResponse {
+            requests += request
+            val step = script[minOf(requests.size - 1, script.lastIndex)]
+            if (step is ProviderException) throw step
+            return ProviderResponse(
+                message = ChatMessage(ChatRole.ASSISTANT, step as String),
                 usage = Usage(10, 10, 20),
                 finishReason = FinishReason.STOP,
             )
@@ -111,6 +128,43 @@ class CritiqueExecutionTest {
             critic(MockGateway(null, failure = ProviderException.Timeout("timeout"))).critique(draft())
         }
         assertIs<ApplicationError.ProviderTimeout>(ex.error)
+    }
+
+    /* --- T-O78-F：有界纠正重试（仅解析失败，总尝试 ≤2） --- */
+
+    @Test
+    fun `fenced invalid then valid retries once with correction`() {
+        val fencedInvalid = "```json\n{\"issues\":[]}\n```"
+        val gateway = ScriptedGateway(listOf(answer(fencedInvalid), answer(validCritiqueJson())))
+
+        val result = critic(gateway).critique(draft())
+
+        assertEquals(2, gateway.requests.size, "第 1 次解析失败 → 恰 1 次纠正重试")
+        val secondInput = gateway.requests[1].messages.joinToString("\n") { it.content }
+        assertTrue(secondInput.contains("【修正】"), "第 2 次输入必须携带【修正】")
+        assertTrue(secondInput.contains("上一次输出无法解析"), "必须携带上一次 detail")
+        assertTrue(secondInput.contains("passed"), "detail 应包含缺 passed 的解析错误")
+        assertEquals(1, result.issues.size, "第 2 次合法输出应直接返回")
+    }
+
+    @Test
+    fun `two invalid outputs fail after exactly two calls`() {
+        val gateway = ScriptedGateway(listOf(answer("```json\n{\"issues\":[]}\n```"), answer("不是 JSON")))
+
+        val ex = assertFailsWith<ApplicationException> { critic(gateway).critique(draft()) }
+
+        assertIs<ApplicationError.InvalidCritiqueOutput>(ex.error)
+        assertEquals(2, gateway.requests.size, "不得出现第 3 次调用")
+    }
+
+    @Test
+    fun `provider failure is not retried`() {
+        val gateway = ScriptedGateway(listOf(ProviderException.Timeout("timeout")))
+
+        val ex = assertFailsWith<ApplicationException> { critic(gateway).critique(draft()) }
+
+        assertIs<ApplicationError.ProviderTimeout>(ex.error)
+        assertEquals(1, gateway.requests.size, "Provider 故障一律不重试")
     }
 
     /* --- Use Case 级（经 ApplicationContainer）--- */
