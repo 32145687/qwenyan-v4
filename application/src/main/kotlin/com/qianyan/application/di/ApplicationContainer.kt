@@ -35,6 +35,7 @@ import com.qianyan.application.usecase.taskqueue.TaskQueueUseCases
 import com.qianyan.application.usecase.taskqueue.TaskWorker
 import com.qianyan.application.usecase.workspace.WorkspaceUseCases
 import com.qianyan.model.taskqueue.TaskKind
+import com.qianyan.application.usecase.vocabulary.VocabularyRuleUseCases
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.workflow.ChapterWorkflowFacade
@@ -534,6 +535,9 @@ class ApplicationContainer(
     val genres: GenreTaxonomyUseCases get() = GenreTaxonomyUseCases(errorMapper)
     val overrides: OverrideUseCases get() = OverrideUseCases(novelRepository, errorMapper)
     val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, novelRepository, errorMapper)
+
+    /** T-O37-A：词库替换规则的只读入口（作用域/归属过滤；执行语义在 VocabularyRuleEngine）。 */
+    val vocabularyRules: VocabularyRuleUseCases get() = VocabularyRuleUseCases(vocabularyRepository, errorMapper)
     val memories: MemoryUseCases get() = MemoryUseCases(memoryRepository, errorMapper)
     /**
      * P5 演进 + Phase 1 follow-up F1 闭环装配：导入成功后立即初始化 Canonical（分阶段、独立事务；
@@ -775,6 +779,7 @@ class ApplicationContainer(
             taskManager = tasks,
             commits = commits,
             workingDrafts = workingDrafts,
+            vocabularyRules = vocabularyRules,
             errorMapper = errorMapper,
         )
 
@@ -789,6 +794,7 @@ class ApplicationContainer(
             projects = projects,
             contextEngine = contextEngine,
             continuationResolver = continuationResolver,
+            vocabularyRules = vocabularyRules,
             errorMapper = errorMapper,
         )
 

@@ -67,6 +67,8 @@ import com.qianyan.application.usecase.writing.knowledgeupdate.LatestKnowledgeUp
 import com.qianyan.model.change.DiffLineKind
 import com.qianyan.model.story.Chapter
 import com.qianyan.model.task.TaskStatus
+import com.qianyan.model.vocabulary.VocabularyRuleSkip
+import com.qianyan.model.vocabulary.VocabularyRuleSkipReason
 import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
 
@@ -308,6 +310,34 @@ fun WritePage(state: DesktopAppState) {
 }
 
 /**
+ * T-O37-A2：把"未执行"规则按原因汇总为**一行**（按规则条数计数，不按命中次数）。
+ * 顺序固定：已停用 → 非确定性 → 链式风险 → 超出作用域，其余按枚举声明顺序。
+ */
+private fun ruleSkipSummary(skips: List<VocabularyRuleSkip>): String {
+    val preferred = listOf(
+        VocabularyRuleSkipReason.DISABLED,
+        VocabularyRuleSkipReason.NON_DETERMINISTIC,
+        VocabularyRuleSkipReason.CHAIN_RISK,
+        VocabularyRuleSkipReason.OUT_OF_SCOPE,
+    )
+    val order = preferred + VocabularyRuleSkipReason.entries.filterNot { it in preferred }
+    return order.mapNotNull { reason ->
+        val count = skips.count { it.reason == reason }
+        if (count == 0) null else "${ruleSkipLabel(reason)} ×$count"
+    }.joinToString("、")
+}
+
+private fun ruleSkipLabel(reason: VocabularyRuleSkipReason): String = when (reason) {
+    VocabularyRuleSkipReason.DISABLED -> "已停用"
+    VocabularyRuleSkipReason.NON_DETERMINISTIC -> "非确定性"
+    VocabularyRuleSkipReason.CHAIN_RISK -> "链式风险"
+    VocabularyRuleSkipReason.OUT_OF_SCOPE -> "超出作用域"
+    VocabularyRuleSkipReason.EMPTY_FROM -> "空匹配词"
+    VocabularyRuleSkipReason.NO_OP -> "无变化"
+    VocabularyRuleSkipReason.NON_IDEMPOTENT -> "非幂等"
+}
+
+/**
  * 审批前的只读审查区：原文 / 候选稿 / 行级 Diff。
  *
  * 不提供编辑与保存入口 —— 未批准的 AI 候选只能经「通过确认」进入现有 Commit，或经「拒绝」结束当前 Gate。
@@ -328,6 +358,35 @@ private fun PendingProposalReview(proposal: WriterPendingProposal) {
             color = palette.text3,
         )
         Spacer(Modifier.height(20.dp))
+
+        if (proposal.ruleHits.isNotEmpty() || proposal.ruleSkips.isNotEmpty()) {
+            ReviewSection("词库规则已替换") {
+                if (proposal.ruleHits.isNotEmpty()) {
+                    val total = proposal.ruleHits.sumOf { it.count }
+                    Text(
+                        "词库规则已替换 $total 处：" +
+                            proposal.ruleHits.joinToString("、") { "${it.from}→${it.to} ×${it.count}" },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.text2,
+                    )
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        "替换已包含在候选稿与 Diff 中，批准前不会写入正文。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.text3,
+                    )
+                }
+                if (proposal.ruleSkips.isNotEmpty()) {
+                    if (proposal.ruleHits.isNotEmpty()) Spacer(Modifier.height(6.dp))
+                    Text(
+                        "另有 ${proposal.ruleSkips.size} 条规则未执行：${ruleSkipSummary(proposal.ruleSkips)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.text2,
+                    )
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+        }
 
         ReviewSection("原文（已提交）") {
             Text(

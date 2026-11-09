@@ -8,6 +8,8 @@ import com.qianyan.application.usecase.context.ContextEngineUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
+import com.qianyan.application.usecase.vocabulary.VocabularyRuleEngine
+import com.qianyan.application.usecase.vocabulary.VocabularyRuleUseCases
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.model.TaskId
@@ -52,6 +54,7 @@ class WritingExecutionUseCase(
     private val projects: ProjectUseCases,
     private val contextEngine: ContextEngineUseCases,
     private val continuationResolver: ContinuationResolver,
+    private val vocabularyRules: VocabularyRuleUseCases,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -110,13 +113,20 @@ class WritingExecutionUseCase(
             val context = contextAssembly.assemble(request, pack, continuationReference, resolved)
             // writer 产出仍是内存 Draft 值（正文来源），**不落 DraftRepository**（P1-02c+d）。
             val produced = writer.write(context, plan, decisionPolicies)
+            // T-O37-A：AI 产出先应用词库替换规则（确定性、无 LLM），命中随候选进入人工门。
+            val applied = VocabularyRuleEngine.apply(
+                produced.content,
+                vocabularyRules.activeFor(plan.novelId, plan.variantId),
+            )
             val baseDraftId = guard { draftRepository.latestByChapter(chapterId) }?.draftId
             val working = guard {
                 workingDrafts.create(
                     projectId = project.projectId,
                     target = WorkingDraftTarget(plan.novelId, chapterId, plan.variantId),
-                    content = produced.content,
+                    content = applied.content,
                     baseDraftId = baseDraftId,
+                    ruleHits = applied.hits,
+                    ruleSkips = applied.skipped,
                 )
             }
             taskManager.saveCheckpoint(

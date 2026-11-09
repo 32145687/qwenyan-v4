@@ -66,6 +66,47 @@ data class VocabularyRule(
     val deterministicOnly: Boolean = true, // 替换规则必须确定性，不调用 LLM
 )
 
+/**
+ * T-O37-A：一次确定性替换的命中记录（只读投影；随候选携带，供人工门审查）。
+ *
+ * [firstIndex] 使用**输入文本**坐标（替换前）；[count] 为该规则本次命中的替换处数。
+ */
+@Serializable
+data class VocabularyRuleHit(
+    val ruleId: VocabularyRuleId,
+    val from: String,
+    val to: String,
+    val count: Int,
+    val firstIndex: Int,
+)
+
+/**
+ * T-O37-A2：一条被跳过的规则及原因（确定性枚举；不静默忽略）。
+ *
+ * 随候选（[com.qianyan.model.workingdraft.WorkingDraft]）携带，供人工门审查时说明"为何未执行"；
+ * 只记录**规则条数**，不记录命中次数。
+ */
+@Serializable
+data class VocabularyRuleSkip(
+    val ruleId: VocabularyRuleId,
+    val reason: VocabularyRuleSkipReason,
+)
+
+/** 跳过原因（引擎判定；审核侧仅按枚举展示，不参与执行）。 */
+@Serializable
+enum class VocabularyRuleSkipReason {
+    /** GLOBAL / TASK 作用域不在本单元执行范围。 */
+    OUT_OF_SCOPE,
+    DISABLED,
+    NON_DETERMINISTIC,
+    EMPTY_FROM,
+    NO_OP,
+    /** `to` 包含 `from`：重复执行会继续变化。 */
+    NON_IDEMPOTENT,
+    /** `to` 命中另一条活跃规则的 `from`：跨次执行级联风险。 */
+    CHAIN_RISK,
+}
+
 /** 候选词条（AI 提取/用户创建的未审核项）；须用户确认后才转正式词条。 */
 @Serializable
 data class VocabularyCandidate(

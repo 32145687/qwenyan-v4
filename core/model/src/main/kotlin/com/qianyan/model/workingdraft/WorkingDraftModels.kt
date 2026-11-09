@@ -108,6 +108,10 @@ data class WorkingDraft(
     val activityId: ActivityId? = null,
     val createdAt: Instant,
     val updatedAt: Instant,
+    /** T-O37-A：本候选正文应用过的词库规则命中（空 = 未命中/无规则；仅供审查展示，不参与提交）。 */
+    val ruleHits: List<com.qianyan.model.vocabulary.VocabularyRuleHit> = emptyList(),
+    /** T-O37-A2：本次候选可见但**未执行**的规则（规则条数；仅供审查展示，不参与提交）。 */
+    val ruleSkips: List<com.qianyan.model.vocabulary.VocabularyRuleSkip> = emptyList(),
 )
 
 /** Validation 结果码（稳定契约；`ValidationIssue.field` 承载本码 —— 见 `WorkingDraftValidator`）。 */

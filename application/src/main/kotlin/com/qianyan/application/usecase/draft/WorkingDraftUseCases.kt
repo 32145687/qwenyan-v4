@@ -72,6 +72,8 @@ class WorkingDraftUseCases(
         sessionId: AgentSessionId? = null,
         activityId: ActivityId? = null,
         baseDraftId: DraftId? = null,
+        ruleHits: List<com.qianyan.model.vocabulary.VocabularyRuleHit> = emptyList(),
+        ruleSkips: List<com.qianyan.model.vocabulary.VocabularyRuleSkip> = emptyList(),
     ): WorkingDraft {
         val project = guard { projects.projectOf(projectId) }
         if (project == null || project.novelId != target.novelId) {
@@ -106,6 +108,8 @@ class WorkingDraftUseCases(
             activityId = activityId,
             createdAt = now,
             updatedAt = now,
+            ruleHits = ruleHits,
+            ruleSkips = ruleSkips,
         )
         store[draft.workingDraftId] = draft
         return draft
@@ -122,11 +126,26 @@ class WorkingDraftUseCases(
         .filter { it.projectId == projectId }
         .sortedBy { it.workingDraftId.value }
 
-    /** 整体替换正文（状态回到 `WORKING`：内容变化即需重新校验）。 */
+    /**
+     * 整体替换正文（状态回到 `WORKING`：内容变化即需重新校验）。
+     *
+     * `ruleSkips` 默认为空 = **清掉旧的跳过记录**，避免沿用上一轮候选的陈旧数据。
+     */
     @Synchronized
-    fun replace(workingDraftId: WorkingDraftId, content: String): WorkingDraft {
+    fun replace(
+        workingDraftId: WorkingDraftId,
+        content: String,
+        ruleHits: List<com.qianyan.model.vocabulary.VocabularyRuleHit> = emptyList(),
+        ruleSkips: List<com.qianyan.model.vocabulary.VocabularyRuleSkip> = emptyList(),
+    ): WorkingDraft {
         val current = requireMutable(workingDraftId)
-        val updated = current.copy(content = content, status = WorkingDraftStatus.WORKING, updatedAt = now())
+        val updated = current.copy(
+            content = content,
+            status = WorkingDraftStatus.WORKING,
+            updatedAt = now(),
+            ruleHits = ruleHits,
+            ruleSkips = ruleSkips,
+        )
         store[workingDraftId] = updated
         return updated
     }

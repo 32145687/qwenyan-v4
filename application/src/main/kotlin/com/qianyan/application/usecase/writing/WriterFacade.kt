@@ -7,6 +7,8 @@ import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.commit.CommitUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
+import com.qianyan.application.usecase.vocabulary.VocabularyRuleEngine
+import com.qianyan.application.usecase.vocabulary.VocabularyRuleUseCases
 import com.qianyan.application.usecase.workflow.ChapterPhase
 import com.qianyan.application.usecase.workflow.ChapterWorkflowGateway
 import com.qianyan.application.usecase.workflow.ChapterWorkflowProgress
@@ -53,6 +55,7 @@ class WriterFacade(
     private val taskManager: TaskManagerUseCases,
     private val commits: CommitUseCases,
     private val workingDrafts: com.qianyan.application.usecase.draft.WorkingDraftUseCases,
+    private val vocabularyRules: VocabularyRuleUseCases,
     errorMapper: ErrorMapper,
 ) : WriterGateway, UseCase(errorMapper) {
 
@@ -95,6 +98,8 @@ class WriterFacade(
             baseContent = baseContent,
             candidateContent = working.content,
             diff = TextDiffer.diff(baseContent, working.content),
+            ruleHits = working.ruleHits,
+            ruleSkips = working.ruleSkips,
         )
     }
 
@@ -175,9 +180,15 @@ class WriterFacade(
             verdict,
             novelId,
         )
-        workingDrafts.replace(working.workingDraftId, revised)
+        // T-O37-A：改写路径与继续写共用同一引擎/同一规则读取（不复制实现）。
+        val applied = VocabularyRuleEngine.apply(
+            revised,
+            vocabularyRules.activeFor(novelId, variantId),
+        )
+        workingDrafts.replace(working.workingDraftId, applied.content, applied.hits, applied.skipped)
         // 无实际变化 ⇒ 不建立无法提交的 Human Gate（Commit 会以 NO_CHANGES 拒绝）。
-        if (revised == current.content) {
+        // 无实际变化以**规则应用后**的候选为准（规则命中也是真实变化）。
+        if (applied.content == current.content) {
             workingDrafts.discard(working.workingDraftId)
             throw ApplicationException(
                 ApplicationError.InvalidOperation("AI 改写未产生实际变化，未进入人工确认"),
@@ -199,6 +210,10 @@ data class WriterPendingProposal(
     val baseContent: String,
     val candidateContent: String,
     val diff: TextDiff,
+    /** T-O37-A：候选正文应用过的词库规则命中（空 = 未命中）；仅供审查展示。 */
+    val ruleHits: List<com.qianyan.model.vocabulary.VocabularyRuleHit> = emptyList(),
+    /** T-O37-A2：本次候选可见但未执行的规则（与对应 WorkingDraft 一致）；仅供审查展示。 */
+    val ruleSkips: List<com.qianyan.model.vocabulary.VocabularyRuleSkip> = emptyList(),
 )
 
 /** Writer 用户层上下文（章节信息 + 最新 Draft + 阶段投影；不含 Repository / Agent / Workflow 内部对象）。 */

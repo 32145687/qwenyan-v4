@@ -162,6 +162,8 @@ class AnalysisViewModelTest {
         override fun findEntriesByVariant(novelId: NovelId, variantId: VariantId): List<VocabularyEntry> = TODO()
         override fun findEntriesByNovel(novelId: NovelId): List<VocabularyEntry> = TODO()
         override fun saveRule(rule: VocabularyRule) = TODO()
+        // T-O37-A 只读接口：本测试不覆盖词库规则执行，保持空桩。
+        override fun listRules(): List<VocabularyRule> = emptyList()
     }
 
     /** 固定 JSON 输出的网关（覆盖 warning / empty 场景）。 */
