@@ -159,6 +159,12 @@ class CommitUseCases(
         projectId: ProjectId,
         artifactId: ChangeArtifactId,
         approval: CommitApproval? = null,
+        /**
+         * T-O108（A-32）：true = 只做 Canonical 事务（+ WorkingDraft 收尾），**延后** World Model Update，
+         * 由 [com.qianyan.application.usecase.workflow.PostCommitFinalizer] 在后台执行。
+         * 默认 false 保持既有同步语义（作者保存 / TXT 导入 / Revert / 旧调用方）。
+         */
+        deferWorldModelUpdate: Boolean = false,
     ): CommitResult {
         val artifact = changes.get(artifactId)
         val draft = validateForCommit(projectId, artifact)
@@ -225,8 +231,11 @@ class CommitUseCases(
         runCatching { discardWorkingDraft(draft.workingDraftId) }
             .onFailure { warnings.add("WorkingDraft 收尾失败: ${it.message ?: it::class.simpleName}") }
         // Phase 3：Commit 已持久化 → World Model Update Pipeline（唯一合法触发点在事务成功之后）
-        runCatching { runWorldModelUpdate(result.historyEntry) }
-            .onFailure { warnings.add("World Model 更新失败: ${it.message ?: it::class.simpleName}") }
+        // T-O108（A-32）：批准快路径延后该旁路，由后台 PostCommitFinalizer 幂等执行（historyId 去重）。
+        if (!deferWorldModelUpdate) {
+            runCatching { runWorldModelUpdate(result.historyEntry) }
+                .onFailure { warnings.add("World Model 更新失败: ${it.message ?: it::class.simpleName}") }
+        }
         return if (warnings.isEmpty()) result else result.copy(postCommitWarning = warnings.joinToString("; "))
     }
 

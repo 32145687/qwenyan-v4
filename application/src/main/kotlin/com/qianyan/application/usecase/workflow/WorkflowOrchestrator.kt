@@ -455,14 +455,16 @@ class WorkflowOrchestrator(
         val attemptNo = (workflowRepository.listAttempts(step.stepId).size) + 1
         val attempt = createAttempt(step, attemptNo)
         val chapterId = step.chapterId
-        val restored = requirePlanContextFor(wf, step, chapterId)
-        val plan = restored.plan
-        val request = buildRequest(wf.novelId, wf.variantId)
-        // 与 executePlanning 同源：续篇来源来自 durable WorkflowContinuation（首章 → null）。
-        val continuationRef = workflowRepository.getContinuationByTargetChapter(chapterId)?.let {
-            ContinuationReference(sourceChapterId = it.sourceChapterId ?: chapterId, sourceDraftId = it.sourceDraftId)
-        }
+        // O-25（A-33 D10）：plan 恢复与续篇查询同属本次 attempt 的前置读取——必须在 try 内，
+        // 失败时落到该 attempt（FAILED + 原始文本 + NonRetryable），不得穿出 runForward 留 RUNNING。
         return try {
+            val restored = requirePlanContextFor(wf, step, chapterId)
+            val plan = restored.plan
+            val request = buildRequest(wf.novelId, wf.variantId)
+            // 与 executePlanning 同源：续篇来源来自 durable WorkflowContinuation（首章 → null）。
+            val continuationRef = workflowRepository.getContinuationByTargetChapter(chapterId)?.let {
+                ContinuationReference(sourceChapterId = it.sourceChapterId ?: chapterId, sourceDraftId = it.sourceDraftId)
+            }
             val taskId = taskManager.create(TaskType.WRITING)
             // P20-P5-fix（FD-4）：Writing 使用与 Planning **同一份** DecisionPolicy（旧 PLANJSON 无政策 → 空）；
             // Writer 不拥有 DecisionModel，绝不重新 Decision。
@@ -480,10 +482,10 @@ class WorkflowOrchestrator(
             advance(wf.workflowId, step)
             WorkflowRunResult(status = wf.status, stepCompleted = true, retried = attemptNo > 1)
         } catch (e: ApplicationException) {
-            markAttemptFailed(attempt, classify(e))
+            markAttemptFailed(attempt, classify(e), e)
             WorkflowRunResult(status = wf.status, stepCompleted = false, retried = false, failed = true)
         } catch (t: Throwable) {
-            markAttemptFailed(attempt, errorMapperToCategory(t))
+            markAttemptFailed(attempt, errorMapperToCategory(t), t)
             WorkflowRunResult(status = wf.status, stepCompleted = false, retried = false, failed = true)
         }
     }
@@ -498,8 +500,26 @@ class WorkflowOrchestrator(
      */
     private fun executeCritique(wf: Workflow, step: WorkflowStep): WorkflowRunResult {
         val subject = requireChapterWorking(wf, step)
+        // O-76（A-26）：Task 生命周期归创建方——create → start → 成功 complete（try 外）/ 失败 fail。
+        // O-92：start 单独 try——start 抛错时任务仍为 PENDING，只能 cancel（状态机禁止 PENDING→FAILED）。
         val cTaskId = taskManager.create(TaskType.WRITING)
-        val result = critique.execute(cTaskId, subject.content)
+        try {
+            taskManager.start(cTaskId)
+        } catch (t: Throwable) {
+            runCatching { taskManager.cancel(cTaskId) }
+            throw t
+        }
+        val result = try {
+            critique.execute(cTaskId, subject.content)
+        } catch (e: ApplicationException) {
+            runCatching { taskManager.fail(cTaskId, e.error.toString()) }
+            throw e
+        } catch (t: Throwable) {
+            val mapped = errorMapper.map(t)
+            runCatching { taskManager.fail(cTaskId, mapped.error.toString()) }
+            throw mapped
+        }
+        taskManager.complete(cTaskId)
         val ref = critiqueRef(cTaskId, workingRef(subject.workingDraftId), result.passed)
         finishStep(wf, step, ref)
         // 若 REVISION 分支触发终止（revision 达上限），以最新状态返回。
@@ -531,7 +551,25 @@ class WorkflowOrchestrator(
                 ?: throw ApplicationException(ApplicationError.RestoreFailure("无法恢复 CRITIQUE 结果（ValidationResult）"))
 
             val taskId = taskManager.create(TaskType.WRITING)
-            val revisedContent = revision.reviseWorking(taskId, subject.workingDraftId.value, subject.content, critiqueResult, wf.novelId)
+            // O-76（A-26）：Task 生命周期归创建方——create → start → 成功 complete（try 外）/ 失败 fail。
+            // O-92：start 单独 try——start 抛错时任务仍为 PENDING，只能 cancel（状态机禁止 PENDING→FAILED）。
+            try {
+                taskManager.start(taskId)
+            } catch (t: Throwable) {
+                runCatching { taskManager.cancel(taskId) }
+                throw t
+            }
+            val revisedContent = try {
+                revision.reviseWorking(taskId, subject.workingDraftId.value, subject.content, critiqueResult, wf.novelId)
+            } catch (e: ApplicationException) {
+                runCatching { taskManager.fail(taskId, e.error.toString()) }
+                throw e
+            } catch (t: Throwable) {
+                val mapped = errorMapper.map(t)
+                runCatching { taskManager.fail(taskId, mapped.error.toString()) }
+                throw mapped
+            }
+            taskManager.complete(taskId)
             val updated = workingDrafts.replace(subject.workingDraftId, revisedContent)
             val resultRef = workingRef(updated.workingDraftId)
 
@@ -545,10 +583,10 @@ class WorkflowOrchestrator(
             advance(wf.workflowId, step)
             WorkflowRunResult(status = wf.status, stepCompleted = true, retried = attemptNo > 1)
         } catch (e: ApplicationException) {
-            markAttemptFailed(attempt, classify(e))
+            markAttemptFailed(attempt, classify(e), e)
             WorkflowRunResult(status = wf.status, stepCompleted = false, retried = false, failed = true)
         } catch (t: Throwable) {
-            markAttemptFailed(attempt, errorMapperToCategory(t))
+            markAttemptFailed(attempt, errorMapperToCategory(t), t)
             WorkflowRunResult(status = wf.status, stepCompleted = false, retried = false, failed = true)
         }
     }
@@ -698,6 +736,42 @@ class WorkflowOrchestrator(
         return GateOutcome.Approved
     }
 
+    /**
+     * T-O108（A-32）：**只做决议 + Canonical 提交**（不调用 [runForward]，不跑 WMU 同步 LLM）。
+     *
+     * 幂等：Gate 已 RESOLVED+APPROVED ⇒ 只做收敛（可能补提交），不再改决议；
+     * 已拒绝 / 请求修订 ⇒ 与 [approveGate] 相同的类型化错误。
+     * World Model Update 由 [com.qianyan.application.usecase.workflow.PostCommitFinalizer] 后台执行。
+     */
+    fun approveDecisionOnly(gateId: com.qianyan.model.workflow.WorkflowHumanGateId): GateOutcome {
+        val gate = requireGate(gateId)
+        if (gate.status == HumanGateStatus.RESOLVED) {
+            when (gate.decision) {
+                HumanDecision.APPROVED -> {
+                    convergeApprovedGate(gate, deferWorldModelUpdate = true)
+                    return GateOutcome.AlreadyApproved
+                }
+                HumanDecision.REJECTED, HumanDecision.REQUEST_REVISION -> throw ApplicationException(
+                    ApplicationError.InvalidOperation(
+                        "Gate ${gate.gateId.value} 已 ${gate.decision.name}，不能批准；如需新轮次请显式推进 Workflow",
+                    ),
+                )
+                else -> throw ApplicationException(
+                    ApplicationError.InvalidOperation("Gate ${gate.gateId.value} 决议状态异常"),
+                )
+            }
+        }
+        val gateWorkflowId = gate.workflowId
+            ?: throw ApplicationException(
+                ApplicationError.InvalidOperation("Gate ${gate.gateId.value} 是独立 Human Gate（未绑定 Workflow），不能经 WorkflowOrchestrator 批准"),
+            )
+        requireWorkflow(gateWorkflowId)
+        val target = resolveApprovalTarget(gate)
+        val resolved = resolveGatePending(gate)
+        if (resolved) commitApproval(requireGate(gateId), target, deferWorldModelUpdate = true)
+        return GateOutcome.Approved
+    }
+
     /** 本次批准的可收敛目标（只读判定 + 确定性派生；判定失败 → 类型化错误，且**不写任何业务状态**）。 */
     private sealed interface ApprovalTarget {
         /** 正式提交事实已存在（Canonical 已等于该工作产物正文）⇒ 复用该载体，不重复提交。 */
@@ -748,12 +822,12 @@ class WorkflowOrchestrator(
     }
 
     /** 已批准 Gate 的自愈收敛：重新判定目标（可能明确失败），成功则幂等收敛。 */
-    private fun convergeApprovedGate(gate: WorkflowHumanGate) {
+    private fun convergeApprovedGate(gate: WorkflowHumanGate, deferWorldModelUpdate: Boolean = false) {
         val step = gate.stepId?.let { workflowRepository.getStep(it) } ?: return
         val wf = workflowRepository.getWorkflow(step.workflowId) ?: return
         // 已收敛（已推进 / 已被其它 Gate 接管）→ no-op（不得在成功之后抛错）
         if (wf.status != WorkflowStatus.WAITING_HUMAN || wf.pendingGateId != gate.gateId) return
-        commitApproval(gate, resolveApprovalTarget(gate))
+        commitApproval(gate, resolveApprovalTarget(gate), deferWorldModelUpdate)
     }
 
     /**
@@ -763,13 +837,18 @@ class WorkflowOrchestrator(
      * 覆盖中断窗口：`resolveGatePending` 与 `commit` 之间（P1-02f A）、`commit` 与状态更新之间（P1-02f B）。
      * 幂等边界：仅当 Workflow 处于 `WAITING_HUMAN` 且 `pendingGateId` 为本 Gate（= 批准后尚未推进）才执行。
      */
-    private fun commitApproval(gate: WorkflowHumanGate, target: ApprovalTarget) {
+    private fun commitApproval(gate: WorkflowHumanGate, target: ApprovalTarget, deferWorldModelUpdate: Boolean = false) {
         val step = gate.stepId?.let { workflowRepository.getStep(it) } ?: return
         // 1) 载体：已提交 ⇒ 复用正式记录；未提交 ⇒ 经既有 I9/I10 流程提交（保留 stale/并发/事务内重检）
         val carrierId = when (target) {
             is ApprovalTarget.Committed -> target.carrierId
             is ApprovalTarget.Ready ->
-                commits.commit(target.artifact.projectId, target.artifact.artifactId, CommitApproval(gate.gateId)).resultingDraftId
+                commits.commit(
+                    target.artifact.projectId,
+                    target.artifact.artifactId,
+                    CommitApproval(gate.gateId),
+                    deferWorldModelUpdate = deferWorldModelUpdate,
+                ).resultingDraftId
         }
 
         // 2) 载体状态补齐（幂等；只补 CONFIRMED，不改内容 / format）
@@ -934,7 +1013,8 @@ class WorkflowOrchestrator(
 
     /**
      * 依据已完成 Step 的 phase+resultReference 创建（幂等）其 business 后继。
-     * CRITIQUE 依据 decision 分支：PASS→FINALIZE；REVISION→（<max）REVISION:Rn 否则 Workflow FAILED（明确终止）。
+     * CRITIQUE 依据 decision 分支：PASS→FINALIZE；REVISION→（<max）REVISION:Rn，
+     * 否则转入 FINALIZE（修订预算耗尽仍交人工门裁决，不终止 Workflow）。
      * REVISION → 对新 Draft 的 CRITIQUE:Rn。KNOOWLEDGE_UPDATE 为叶，不建后继。
      */
     private fun createSuccessor(step: WorkflowStep) {
@@ -952,7 +1032,9 @@ class WorkflowOrchestrator(
                     CritiqueDecision.REVISION -> {
                         // P1-02j.2：预算按**创作轮次**判定；key 用**跨轮累计序号**保证唯一。
                         if (countRevisions(wfId, ch, round) >= MAX_REVISIONS) {
-                            termFailed(wfId, "第 $round 轮达到最大修订次数 $MAX_REVISIONS，修订后仍不通过，终止")
+                            // T-O83-F：预算耗尽不再 `termFailed` —— 转 FINALIZE → CONFIRMATION → 人工门，
+                            // 由作者对"修订后仍不通过"的候选做批准/拒绝，避免整条链在无提示下 FAILED。
+                            createStepIfMissing(wfId, ch, WorkflowStepPhase.FINALIZE, round)
                         } else {
                             createStepIfMissingKey(
                                 wfId, ch, WorkflowStepPhase.REVISION,
@@ -1051,8 +1133,19 @@ class WorkflowOrchestrator(
         return a
     }
 
-    private fun markAttemptFailed(attempt: WorkflowStepAttempt, category: AttemptErrorCategory?) {
-        updateAttempt(attempt.copy(status = WorkflowAttemptStatus.FAILED, errorCategory = category, errorMessage = "attempt ${attempt.attemptNo} 失败", completedAt = Clock.System.now()))
+    private fun markAttemptFailed(attempt: WorkflowStepAttempt, category: AttemptErrorCategory?, error: Throwable? = null) {
+        val detail = error?.message
+            ?.replace('\r', ' ')
+            ?.replace('\n', ' ')
+            ?.trim()
+            ?.take(ATTEMPT_ERROR_DETAIL_LIMIT)
+            .orEmpty()
+        val message = if (detail.isEmpty()) {
+            "attempt ${attempt.attemptNo} 失败"
+        } else {
+            "attempt ${attempt.attemptNo} 失败: $detail"
+        }
+        updateAttempt(attempt.copy(status = WorkflowAttemptStatus.FAILED, errorCategory = category, errorMessage = message, completedAt = Clock.System.now()))
     }
 
     /* ---------- AI 工作产物引用（P1-02c+d） ---------- */
@@ -1253,7 +1346,8 @@ class WorkflowOrchestrator(
         is ApplicationError.ProviderAuthFailed,
         -> AttemptErrorCategory.NEEDS_HUMAN
         is ApplicationError.InvalidWritingOutput -> AttemptErrorCategory.NON_RETRYABLE
-        else -> null
+        // O-25（A-33 D9）：其余业务拒绝（plan seam 缺失 / 恢复失败 / 非法操作…）一律不可自动重试。
+        else -> AttemptErrorCategory.NON_RETRYABLE
     }
 
     private fun errorMapperToCategory(t: Throwable): AttemptErrorCategory = when (t) {
@@ -1340,6 +1434,9 @@ class WorkflowOrchestrator(
 
         /** 与 RevisionGate.MAX_REVISIONS 对齐：修订上限 3。 */
         const val MAX_REVISIONS = 3
+
+        /** T-O79-F1：失败 attempt 保留的原始错误文本上限（只留 message，不含堆栈）。 */
+        const val ATTEMPT_ERROR_DETAIL_LIMIT = 500
 
         /** 产生 / 更新 AI 工作产物的 phase（用于按章节解析"当前工作产物"）。 */
         val WORKING_PHASES = setOf(WorkflowStepPhase.WRITING, WorkflowStepPhase.REVISION)

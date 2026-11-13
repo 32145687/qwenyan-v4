@@ -155,7 +155,8 @@ class VocabularyAliasDriftTest {
         val prompt = prompts.single()
         assertTrue("【词库规范】" !in prompt, prompt)
         assertFalse("优先使用规范词" in prompt, prompt)
-        assertTrue("请依据上述评审意见对【原草稿】进行修订，按 JSON 输出新正文" in prompt, prompt)
+        assertTrue("直接输出修订后的完整正文" in prompt, prompt)
+        assertFalse("按 JSON 输出新正文" in prompt, prompt)
     }
 
     /* ---------------- NovelAgent 接线 ---------------- */

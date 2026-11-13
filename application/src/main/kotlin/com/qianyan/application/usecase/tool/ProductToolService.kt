@@ -13,6 +13,7 @@ import com.qianyan.model.ActivityId
 import com.qianyan.model.ToolCallId
 import com.qianyan.model.action.ActionDecision
 import com.qianyan.model.action.AgentAction
+import com.qianyan.model.action.AgentActionKind
 import com.qianyan.model.agent.ToolName
 import com.qianyan.model.tool.ToolDefinition
 import com.qianyan.model.tool.ToolRequest
@@ -55,6 +56,13 @@ class ProductToolService(
 
     /** 按注册名查找（不存在返回 null，与 [ToolRegistry.find] 语义一致）。 */
     fun find(toolName: ToolName): Tool? = registry.find(toolName)
+
+    /**
+     * O-31：工具名 → 动作类别（只读查询；不改变注册表语义）。
+     *
+     * 未注册工具返回 null —— 调用方（Agent 的 action 级 observed 校验）按 D8 fail-closed 处理。
+     */
+    fun actionKindOf(toolName: ToolName): AgentActionKind? = byName[toolName]?.actionKind
 
     /**
      * 执行一次 Product Tool 调用。

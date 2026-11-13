@@ -197,9 +197,9 @@ class WorkflowRevisionBranchTest {
         assertEquals(WorkingDraftStatus.VALIDATED, working.status)
     }
 
-    /** R4 — Revision 上限：3 次修订后再 NEED_REVISION → 无第 4 次修订 / 不无限循环，Workflow 进入 FAILED（明确终止）。 */
+    /** R4 — Revision 上限：3 次修订后再 NEED_REVISION → 无第 4 次修订 / 不无限循环，转入 FINALIZE→CONFIRMATION 人工门（T-O83-F）。 */
     @Test
-    fun `R4 revision limit terminates workflow`() {
+    fun `R4 revision limit opens human gate instead of failing`() {
         var revisionCalls = 0
         val app = ApplicationContainer.open(analysisGateway = ScriptedGateway(
             criticPass = { false }, // 永远 NEED_REVISION
@@ -211,16 +211,29 @@ class WorkflowRevisionBranchTest {
         val wfId = createWorkflow(app, novelId, ch.chapterId, "W-R4")
 
         val r = app.workflowOrchestrator.runForward(wfId)
-        assertEquals(WorkflowStatus.FAILED, r.status)
-        assertEquals(WorkflowStatus.FAILED, app.workflowRepository.getWorkflow(wfId)!!.status)
+        assertEquals(WorkflowStatus.WAITING_HUMAN, r.status)
+        val wf = app.workflowRepository.getWorkflow(wfId)!!
+        assertEquals(WorkflowStatus.WAITING_HUMAN, wf.status, "预算耗尽不再 FAILED，改停人工门")
+        assertTrue(wf.pendingGateId != null, "预算耗尽必须落一个人工门")
 
         assertEquals(3, revisionCalls) // 恰好 3 次修订，无第 4 次
-        assertEquals(3, app.workflowRepository.listSteps(wfId).count { it.phase == WorkflowStepPhase.REVISION })
+        val steps = app.workflowRepository.listSteps(wfId)
+        assertEquals(3, steps.count { it.phase == WorkflowStepPhase.REVISION })
+        assertEquals(
+            WorkflowStepStatus.COMPLETED,
+            steps.last { it.phase == WorkflowStepPhase.FINALIZE }.status,
+            "预算耗尽后应成稿到 FINALIZE",
+        )
+        assertEquals(
+            WorkflowStepStatus.PENDING,
+            steps.last { it.phase == WorkflowStepPhase.CONFIRMATION }.status,
+            "CONFIRMATION 在 Gate 待决期间保持 PENDING，决议后才收敛",
+        )
 
-        // 再次 runForward 不无限循环、不新增修订
+        // 再次 runForward：人工门待决，不无限循环、不新增修订、保持等待
         revisionCalls = 0
         val r2 = app.workflowOrchestrator.runForward(wfId)
-        assertEquals(WorkflowStatus.FAILED, r2.status)
+        assertEquals(WorkflowStatus.WAITING_HUMAN, r2.status)
         assertEquals(0, revisionCalls)
         assertEquals(3, app.workflowRepository.listSteps(wfId).count { it.phase == WorkflowStepPhase.REVISION })
     }

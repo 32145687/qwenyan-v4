@@ -160,7 +160,10 @@ class WritingExecutionTest {
             app.writingExecution.executeIntoWorkingDraft(id, request(novelId), plan(app, novelId))
         }
         assertIs<ApplicationError.InvalidOperation>(ex.error)
-        assertEquals(TaskStatus.PENDING, app.tasks.findById(id).status)
+        // O-76（A-26）：start 提前到校验之前，非法类型同样以 RUNNING→FAILED 收敛（不再停在 PENDING）。
+        val rejected = app.tasks.findById(id)
+        assertEquals(TaskStatus.FAILED, rejected.status)
+        assertNotNull(rejected.error)
     }
 
     /* 缺失 Task → TaskNotFound */

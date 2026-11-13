@@ -65,13 +65,14 @@ class RevisionAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(REVISION_AGENT, renderInput(currentDraft.draftId.value, currentDraft.content, critique, vocabulary))
-            val raw = result.answer
-                ?: throw RevisionException.InvalidOutput("revision returned no answer")
-            val parsed = parseRevisionDraft(raw, structure)
-            // DraftParser 固定产出 WRITTEN；修订产物显式标记 REVISED，draftId 已是新 id（原 Draft 保留）；
-            // P1-1：previousDraftId = 当前 Draft，建立 A→B→C 版本链（不新增第二套 revision counter）。
-            parsed.copy(status = DraftStatus.REVISED, previousDraftId = currentDraft.draftId)
+            runParsed(
+                render = { correction -> renderInput(currentDraft.draftId.value, currentDraft.content, critique, vocabulary, correction) },
+                parse = { raw -> parseRevisionDraft(raw, structure) },
+            ).let { parsed ->
+                // DraftParser 固定产出 WRITTEN；修订产物显式标记 REVISED，draftId 已是新 id（原 Draft 保留）；
+                // P1-1：previousDraftId = 当前 Draft，建立 A→B→C 版本链（不新增第二套 revision counter）。
+                parsed.copy(status = DraftStatus.REVISED, previousDraftId = currentDraft.draftId)
+            }
         } catch (e: ApplicationException) {
             throw e
         } catch (e: RevisionException) {
@@ -118,10 +119,10 @@ class RevisionAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(REVISION_AGENT, renderInput(workingRef, content, critique, vocabulary))
-            val raw = result.answer
-                ?: throw RevisionException.InvalidOutput("revision returned no answer")
-            parseRevisionDraft(raw, scaffold).content
+            runParsed(
+                render = { correction -> renderInput(workingRef, content, critique, vocabulary, correction) },
+                parse = { raw -> parseRevisionDraft(raw, scaffold) },
+            ).content
         } catch (e: ApplicationException) {
             throw e
         } catch (e: RevisionException) {
@@ -140,6 +141,38 @@ class RevisionAgent(
         }
     }
 
+    /**
+     * T-O81-F：执行 Agent 并解析；**仅**解析失败（[RevisionException.InvalidOutput]）有界纠正重试 ≤1 次
+     * （总尝试 ≤2，O-78 同型）。Provider / Agent / Tool 失败一律不重试（原样上抛）。
+     * 最终仍失败时，detail 末尾附「原文前 300 字」便于取证（单行、去换行）。
+     */
+    private fun runParsed(
+        render: (correction: String?) -> String,
+        parse: (raw: String) -> Draft,
+    ): Draft {
+        var correction: String? = null
+        var attempt = 0
+        while (true) {
+            val raw = runtime.run(REVISION_AGENT, render(correction)).answer
+                ?: throw RevisionException.InvalidOutput("revision returned no answer")
+            try {
+                return parse(raw)
+            } catch (e: RevisionException.InvalidOutput) {
+                if (attempt >= MAX_CORRECTION_RETRIES) {
+                    throw RevisionException.InvalidOutput(
+                        "${e.message ?: "revision output malformed"}；原文前 $EXCERPT_LIMIT 字：${excerpt(raw)}",
+                    )
+                }
+                correction = e.message.orEmpty()
+                attempt += 1
+            }
+        }
+    }
+
+    /** T-O81-F：失败原文摘要（单行、去换行、截断 300 字）。 */
+    private fun excerpt(raw: String): String =
+        raw.replace('\r', ' ').replace('\n', ' ').trim().take(EXCERPT_LIMIT)
+
     /** 复用 [DraftParser] 严格解析；其 [WritingException] 翻译为 [RevisionException.InvalidOutput]，由外层归一。 */
     private fun parseRevisionDraft(raw: String, structure: com.qianyan.application.usecase.writing.DraftStructure): Draft =
         try {
@@ -154,6 +187,7 @@ class RevisionAgent(
         content: String,
         critique: ValidationResult,
         vocabulary: List<VocabularyLite>,
+        correction: String? = null,
     ): String = buildString {
         appendLine("【原草稿】$sourceRef")
         if (content.isNotBlank()) {
@@ -177,12 +211,14 @@ class RevisionAgent(
         }
 
         appendLine()
-        if (vocabulary.isEmpty()) {
-            appendLine("请依据上述评审意见对【原草稿】进行修订，按 JSON 输出新正文：" +
-                "{\"content\":\"修订后的完整正文\"}")
-        } else {
-            appendLine("请依据上述评审意见对【原草稿】进行修订：优先使用规范词；不得机械替换作者原句。" +
-                "按 JSON 输出新正文：{\"content\":\"修订后的完整正文\"}")
+        if (vocabulary.isNotEmpty()) {
+            appendLine("请依据上述评审意见对【原草稿】进行修订：优先使用规范词；不得机械替换作者原句。")
+        }
+        // T-O81-F：与 O-75「正文即语义」对齐（DraftParser 仍兼容 {"content":…}，无需改解析器）。
+        appendLine("请依据上述评审意见修订【原草稿】，直接输出修订后的完整正文：不要 JSON、不要 Markdown 围栏、不要解释或前后缀。")
+        if (correction != null) {
+            appendLine()
+            appendLine("【修正】上次输出无法解析：$correction；只输出正文")
         }
     }.trimEnd()
 
@@ -215,5 +251,11 @@ class RevisionAgent(
 
         /** D-38：词库 prompt 最多 50 条。 */
         const val VOCABULARY_PROMPT_LIMIT: Int = 50
+
+        /** T-O81-F：解析失败最多纠正 1 次（总尝试 ≤2；区别于 Planner 的 2 次）。 */
+        const val MAX_CORRECTION_RETRIES: Int = 1
+
+        /** T-O81-F：最终失败时附带的原文摘要字数上限。 */
+        const val EXCERPT_LIMIT: Int = 300
     }
 }

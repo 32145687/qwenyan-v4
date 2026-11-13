@@ -39,6 +39,7 @@ import com.qianyan.application.usecase.vocabulary.VocabularyRuleUseCases
 import com.qianyan.application.usecase.vocabulary.VocabularyUseCases
 import com.qianyan.application.usecase.chapter.ChapterUseCases
 import com.qianyan.application.usecase.workflow.ChapterWorkflowFacade
+import com.qianyan.application.usecase.workflow.PostCommitFinalizer
 import com.qianyan.application.usecase.workflow.WorkflowOrchestrator
 import com.qianyan.application.usecase.workflow.WorkflowService
 import com.qianyan.application.usecase.foundation.FoundationDecisionFacade
@@ -536,8 +537,9 @@ class ApplicationContainer(
     val overrides: OverrideUseCases get() = OverrideUseCases(novelRepository, errorMapper)
     val vocabularies: VocabularyUseCases get() = VocabularyUseCases(vocabularyRepository, novelRepository, errorMapper)
 
-    /** T-O37-A：词库替换规则的只读入口（作用域/归属过滤；执行语义在 VocabularyRuleEngine）。 */
-    val vocabularyRules: VocabularyRuleUseCases get() = VocabularyRuleUseCases(vocabularyRepository, errorMapper)
+    /** T-O37-A：词库替换规则的入口（作用域/归属过滤 + T-O37-B 管理；执行语义在 VocabularyRuleEngine）。 */
+    val vocabularyRules: VocabularyRuleUseCases
+        get() = VocabularyRuleUseCases(vocabularyRepository, vocabularies, errorMapper)
     val memories: MemoryUseCases get() = MemoryUseCases(memoryRepository, errorMapper)
     /**
      * P5 演进 + Phase 1 follow-up F1 闭环装配：导入成功后立即初始化 Canonical（分阶段、独立事务；
@@ -596,8 +598,24 @@ class ApplicationContainer(
             draftRepository = draftRepository,
             orchestrator = workflowOrchestrator,
             workflowService = workflowService,
+            postCommitFinalizerProvider = { postCommitFinalizer },
             errorMapper = errorMapper,
         )
+
+    /**
+     * T-O108（A-32）· 提交后收尾器：WMU + runForward 转后台，持久化在 `Task(BACKGROUND)` + Checkpoint。
+     * 单例（惰性）：进程内串行（`@Synchronized`），避免同一提交被两次收尾。
+     */
+    private val postCommitFinalizerInstance: PostCommitFinalizer by lazy {
+        PostCommitFinalizer(
+            tasks = tasks,
+            taskRepository = taskRepository,
+            history = commitHistoryRepository,
+            worldModel = worldModelUpdate,
+            orchestrator = workflowOrchestrator,
+        )
+    }
+    val postCommitFinalizer: PostCommitFinalizer get() = postCommitFinalizerInstance
 
     /** P12.2 薄 Orchestrator：runForward 驱动 LogicalStep（WRITING + Attempt/retry），复用既有 UseCases。 */
     val workflowOrchestrator: WorkflowOrchestrator

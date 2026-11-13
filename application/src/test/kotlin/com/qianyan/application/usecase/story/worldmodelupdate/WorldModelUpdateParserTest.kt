@@ -97,4 +97,35 @@ class WorldModelUpdateParserTest {
         )
         assertEquals(listOf("f1", "f2"), facts.map { it.factId })
     }
+
+    /* ---------- T-O109：单层 Markdown 围栏 ---------- */
+
+    @Test
+    fun `json fenced output is parsed after stripping one fence`() {
+        val f = parse(
+            "```json\n" +
+                """{"facts":[{"factId":"f1","kind":"EVENT","operation":"ADD","name":"N","summary":"S"}]}""" +
+                "\n```",
+        ).single()
+        assertEquals("f1", f.factId)
+    }
+
+    @Test
+    fun `bare fenced output is parsed`() {
+        val f = parse(
+            "```\n" +
+                """{"facts":[{"factId":"f1","operation":"ADD","name":"N","summary":"S"}]}""" +
+                "\n```",
+        ).single()
+        assertEquals("f1", f.factId)
+    }
+
+    @Test
+    fun `double fenced output stays invalid because only one fence layer is stripped`() {
+        invalid(
+            "```json\n```json\n" +
+                """{"facts":[{"factId":"f1","operation":"ADD","name":"N","summary":"S"}]}""" +
+                "\n```\n```",
+        )
+    }
 }

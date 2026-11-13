@@ -107,7 +107,7 @@ class PlanningContextAssemblyTest {
         val vocabId = VocabularyId("vocab-v")
         app.vocabularyRepository.saveVocabulary(Vocabulary(vocabularyId = vocabId, variantId = variantId, scopeLevel = VocabularyScopeLevel.VARIANT, name = "VARIANT词库"))
         app.vocabularyRepository.saveEntry(
-            VocabularyEntry(entryId = VocabularyEntryId("ve2"), vocabularyId = vocabId, variantId = variantId, scopeLevel = VocabularyScopeLevel.VARIANT, canonical = "星石"),
+            VocabularyEntry(entryId = VocabularyEntryId("ve2"), vocabularyId = vocabId, novelId = novelId, variantId = variantId, scopeLevel = VocabularyScopeLevel.VARIANT, canonical = "星石"),
         )
 
         val ctx = app.planningContextAssembly.assemble(request(novelId, variantId))

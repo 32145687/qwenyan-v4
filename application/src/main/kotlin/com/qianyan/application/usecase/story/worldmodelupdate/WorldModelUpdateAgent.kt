@@ -30,22 +30,46 @@ class WorldModelUpdateAgent(
 
     /**
      * 从 Commit 前后正文 + 现有事实引用提议候选事实（同步）。失败抛类型化 [WorldModelUpdateException]。
+     *
+     * T-O109：仅当解析失败（[WorldModelUpdateException.InvalidOutput]）时做**恰好 1 次**纠正重试
+     * （把上次拒绝原因追加给模型）；第二次仍失败 ⇒ 抛 [WorldModelUpdateException.InvalidOutput]，
+     * detail 带两次摘要。Provider / Agent / 网络类失败**不重试**，维持既有失败语义。
      */
     fun propose(context: WorldModelUpdateContext, existingEventNames: List<String>): List<ExtractedFact> {
-        return try {
-            val result = runtime.run(WORLD_MODEL_UPDATE_AGENT, renderInput(context, existingEventNames))
-            val raw = result.answer
-                ?: throw WorldModelUpdateException.InvalidOutput("world model update returned no answer")
-            WorldModelUpdateParser.parse(raw)
-        } catch (e: WorldModelUpdateException) {
-            throw e
-        } catch (e: ProviderException) {
-            throw WorldModelUpdateException.Failed(e.message ?: "provider failed")
-        } catch (e: AgentException) {
-            throw WorldModelUpdateException.Failed(e.message ?: "agent runtime failed")
-        } catch (e: ToolException) {
-            throw WorldModelUpdateException.Failed(e.message ?: "tool failed")
+        val input = renderInput(context, existingEventNames)
+        val first = request(input)
+        try {
+            return WorldModelUpdateParser.parse(first)
+        } catch (e: WorldModelUpdateException.InvalidOutput) {
+            val retryInput = buildString {
+                appendLine(input)
+                appendLine()
+                appendLine("上一次输出被系统拒绝：${e.message}")
+                appendLine("请只输出 JSON 对象，kind 必须为 EVENT，operation 必须为 ADD/UPDATE/REMOVE。")
+            }
+            val second = request(retryInput)
+            return try {
+                WorldModelUpdateParser.parse(second)
+            } catch (e2: WorldModelUpdateException.InvalidOutput) {
+                throw WorldModelUpdateException.InvalidOutput(
+                    "纠正重试后仍无法解析（首次：${e.message}；第二次：${e2.message}）",
+                )
+            }
         }
+    }
+
+    /** 单次 LLM 调用：统一把 Provider / Agent / Tool 异常映射为类型化 [WorldModelUpdateException.Failed]。 */
+    private fun request(input: String): String = try {
+        runtime.run(WORLD_MODEL_UPDATE_AGENT, input).answer
+            ?: throw WorldModelUpdateException.InvalidOutput("world model update returned no answer")
+    } catch (e: WorldModelUpdateException) {
+        throw e
+    } catch (e: ProviderException) {
+        throw WorldModelUpdateException.Failed(e.message ?: "provider failed")
+    } catch (e: AgentException) {
+        throw WorldModelUpdateException.Failed(e.message ?: "agent runtime failed")
+    } catch (e: ToolException) {
+        throw WorldModelUpdateException.Failed(e.message ?: "tool failed")
     }
 
     /** 构造 LLM 输入：Commit 前后正文 + 现有事实身份引用（Index；不把整个世界模型塞给 LLM）。 */
@@ -69,6 +93,15 @@ class WorldModelUpdateAgent(
                     "\"reason\":\"依据\"}]}",
             )
             appendLine("只输出候选；是否可写入 / 是否冲突由系统裁决。excerpt 必须是提交后正文的逐字子串。")
+            appendLine()
+            appendLine("输出契约（必须严格遵守）：")
+            appendLine("- 只输出一个 JSON 对象，不要 Markdown 代码围栏，不要任何解释文字。")
+            appendLine(
+                "- kind 只能是 EVENT（当前唯一合法值）：人物状态、关系、时间线、场景等一律归入 EVENT；" +
+                    "禁止输出 STATE / CHARACTER / RELATION / TIMELINE / PLACE 等其它值。",
+            )
+            appendLine("- operation 只能是 ADD / UPDATE / REMOVE。")
+            appendLine("- factId / name / summary 不得为空；excerpt 必须是提交后正文的逐字子串。")
         }.trimEnd()
 
     private val runtime: AgentRuntime = AgentRuntime(

@@ -151,7 +151,21 @@ class WorkflowService(
             // 仅 resolve 成功者执行 Knowledge Update（同一 Gate+Draft 只一次 KU）。
             val confirmed = draftRepository.getById(draftId)
                 ?: throw ApplicationException(ApplicationError.EntityNotFound("Confirmed Draft 消失: ${draftId.value}"))
-            knowledgeUpdate.execute(taskManager.create(com.qianyan.model.task.TaskType.KNOWLEDGE_UPDATE), confirmed)
+            // O-76（A-26）：KU 生命周期归创建方——create → start → 成功 complete（try 外）/ 失败 fail，
+            // 与 WorkflowOrchestrator.executeKnowledgeUpdate 同一结构（O-72）。
+            val kuTaskId = taskManager.create(com.qianyan.model.task.TaskType.KNOWLEDGE_UPDATE)
+            taskManager.start(kuTaskId)
+            try {
+                knowledgeUpdate.execute(kuTaskId, confirmed)
+            } catch (e: ApplicationException) {
+                taskManager.fail(kuTaskId, e.error.toString())
+                throw e
+            } catch (t: Throwable) {
+                val mapped = errorMapper.map(t)
+                taskManager.fail(kuTaskId, mapped.error.toString())
+                throw mapped
+            }
+            taskManager.complete(kuTaskId)
         }
         return GateOutcome.Approved
     }

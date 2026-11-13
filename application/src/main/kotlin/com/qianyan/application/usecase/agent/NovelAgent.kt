@@ -59,10 +59,12 @@ import com.qianyan.model.commit.CommitId
 import com.qianyan.model.commit.CommitHistoryId
 import com.qianyan.model.context.ContextPack
 import com.qianyan.model.context.ContextRequest
+import com.qianyan.model.context.ContextSourceKind
 import com.qianyan.model.context.TargetKind
 import com.qianyan.model.context.TargetRef
 import com.qianyan.model.context.TargetRefId
 import com.qianyan.model.context.UserWritingRequest
+import com.qianyan.model.novelagent.ContextCoverage
 import com.qianyan.model.novelagent.NovelAgentAnalysisSummary
 import com.qianyan.model.novelagent.NovelAgentApprovalState
 import com.qianyan.model.novelagent.NovelAgentContinuationReasons
@@ -235,8 +237,12 @@ class NovelAgent internal constructor(
                 null
             }
             builtPack = pack
+            // O-30（D4）：Pack 构建完成后、EXECUTE 之前把"声明来源是否真的进入输入"固化到 RunState；
+            // 统一由 result(...) 读取，失败路径（MISSING_CONTEXT_INPUT / Provider 失败）同样携带。
+            if (pack != null) state.contextCoverage = packCoverage(skill, pack)
 
             var outcome = step(sessionId, OrchestrationPhase.EXECUTE, NovelAgentErrorCodes.EXECUTION_FAILED, state, "执行 Skill") { activityId ->
+                requireDeclaredContextSource(skill, pack)
                 executeSkill(skill, request, project, intent, activityId, pack, state)
             }
 
@@ -996,8 +1002,10 @@ class NovelAgent internal constructor(
     }
 
     /**
-     * T-2C-2 / D-27：本 Skill 本次执行期实际调用的工具集合（来自 I4 ToolCallLog，工具级）必须
-     * ⊆ `Skill.allowedTools`。零调用 = 空集，天然通过。
+     * T-2C-2 / D-27 / O-31：本 Skill 本次执行期实际调用的工具集合（来自 I4 ToolCallLog）必须
+     * ①工具级 ⊆ `Skill.allowedTools`（`TOOL_NOT_ALLOWED`）；
+     * ②经工具 → 动作类别折算后 ⊆ `Skill.expectedActions`（`ACTION_NOT_DECLARED`；无法映射 = fail-closed）。
+     * 零调用 = 空集，天然通过。
      */
     private fun verifyObservedTools(skill: Skill, activityId: ActivityId) {
         val observed = toolCallLogs.listByActivity(activityId).map { it.toolName }.toSet()
@@ -1007,6 +1015,28 @@ class NovelAgent internal constructor(
                 NovelAgentErrorCodes.TOOL_NOT_ALLOWED,
                 "Skill ${skill.skillId.value} 执行期调用了 allowedTools 之外的工具: " +
                     disallowed.joinToString(", ") { it.value },
+            )
+        }
+        // O-31（D7/D8）：action 级 observed ⊆ expectedActions（工具 → AgentActionKind）。
+        // 工具级已通过 ⇒ observed 全部在 allowedTools 内；此处只补"动作类别是否声明"的判定。
+        val unmapped = observed.filter { productTools.actionKindOf(it) == null }.sortedBy { it.value }
+        if (unmapped.isNotEmpty()) {
+            throw RunAbort(
+                NovelAgentErrorCodes.ACTION_NOT_DECLARED,
+                "Skill ${skill.skillId.value} 执行期调用了无法映射动作类别的工具: " +
+                    unmapped.joinToString(", ") { it.value },
+            )
+        }
+        val expected = skill.expectedActions.toSet()
+        val undeclared = observed
+            .mapNotNull { name -> productTools.actionKindOf(name)?.let { name to it } }
+            .filter { (_, kind) -> kind !in expected }
+            .sortedBy { (name, _) -> name.value }
+        if (undeclared.isNotEmpty()) {
+            throw RunAbort(
+                NovelAgentErrorCodes.ACTION_NOT_DECLARED,
+                "Skill ${skill.skillId.value} 执行期调用了未声明的动作类别: " +
+                    undeclared.joinToString(", ") { (name, kind) -> "${name.value}(${kind.name})" },
             )
         }
     }
@@ -1025,6 +1055,62 @@ class NovelAgent internal constructor(
         NovelAgentErrorCodes.CONTEXT_BUILD_FAILED,
         "该 Skill 需要 ContextPack，但本次任务未构建",
     )
+
+    /**
+     * O-34（A-33 D1/D2）：Skill 声明需要 NOVEL 来源，但本次 Pack 未包含 NOVEL payload。
+     *
+     * 语义 = "缺输入"（`MISSING_CONTEXT_INPUT`），不是执行失败；D2 要求不新增 ApplicationError 子类型，
+     * 故在 EXECUTE 相位、`executeSkill` 之前以 RunAbort 直接中止（code 由外层原样保留）。
+     * `pack == null` 的 Skill（REWRITE / ANALYSIS / CHARACTER_CONSISTENCY）不受影响。
+     */
+    private fun requireDeclaredContextSource(skill: Skill, pack: ContextPack?) {
+        if (pack == null) return
+        if (ContextSourceKind.NOVEL !in skill.requiredContext) return
+        if (pack.items.any { it.source == ContextSourceKind.NOVEL }) return
+        throw RunAbort(
+            NovelAgentErrorCodes.MISSING_CONTEXT_INPUT,
+            "缺少来源 NOVEL（pack=${pack.packId}）",
+        )
+    }
+
+    /** O-30（D4）：Pack Skill 的覆盖事实来自冻结的 `pack.items`（unverified 恒空）。 */
+    private fun packCoverage(skill: Skill, pack: ContextPack): ContextCoverage {
+        val declared = skill.requiredContext.distinct().sortedBy { it.ordinal }
+        val present = pack.items.map { it.source }.distinct().sortedBy { it.ordinal }
+        val presentSet = present.toSet()
+        return ContextCoverage(
+            declared = declared,
+            present = present,
+            absent = declared.filter { it !in presentSet }.sortedBy { it.ordinal },
+            unverified = emptyList(),
+            omittedItemCount = pack.budgetGuard.omittedItemIds.size,
+        )
+    }
+
+    /**
+     * O-30（D6）：非 Pack Skill 的轻量覆盖——只对 DRAFT / VOCABULARY 做真实判定（每 Skill 至多一次
+     * `approvedVocabulary` 读），其余声明来源进 [ContextCoverage.unverified]（不得谎报缺失）。
+     *
+     * [vocabularyPresent] = null 表示本次未查询词库（如基线正文缺失的提前返回）。
+     */
+    private fun nonPackCoverage(
+        skill: Skill,
+        draftPresent: Boolean,
+        vocabularyPresent: Boolean?,
+    ): ContextCoverage {
+        val declared = skill.requiredContext.distinct().sortedBy { it.ordinal }
+        val checked = buildMap {
+            put(ContextSourceKind.DRAFT, draftPresent)
+            if (vocabularyPresent != null) put(ContextSourceKind.VOCABULARY, vocabularyPresent)
+        }
+        return ContextCoverage(
+            declared = declared,
+            present = declared.filter { checked[it] == true },
+            absent = declared.filter { checked[it] == false },
+            unverified = declared.filter { it !in checked },
+            omittedItemCount = 0,
+        )
+    }
 
     /** 写作（CONTINUE / EXPAND / CUSTOM）：既有 Planner + Writer 产出正文 → Working Draft；不落 Canonical。 */
     private fun generateNewContent(
@@ -1135,11 +1221,23 @@ class NovelAgent internal constructor(
     ): SkillOutcome {
         val chapter = requireFocusChapter(request)
         val baseDraftId = latestCanonicalDraftId(skill, request, chapter.chapterId, activityId, state)
-            ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "改写需要章节已有 Canonical 正文：${chapter.chapterId.value}")
+        if (baseDraftId == null) {
+            // O-30：DRAFT 已检查且缺失（词库本次未查询 ⇒ unverified，不得报 absent）。
+            state.contextCoverage = nonPackCoverage(skill, draftPresent = false, vocabularyPresent = null)
+            throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "改写需要章节已有 Canonical 正文：${chapter.chapterId.value}")
+        }
         val current = reader.draft(baseDraftId)
-            ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "Canonical Draft 不存在: ${baseDraftId.value}")
+        if (current == null) {
+            state.contextCoverage = nonPackCoverage(skill, draftPresent = false, vocabularyPresent = null)
+            throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "Canonical Draft 不存在: ${baseDraftId.value}")
+        }
         val vocabulary = planningContexts.approvedVocabulary(chapter.novelId, chapter.variantId)
         state.reviewVocabulary = vocabulary
+        state.contextCoverage = nonPackCoverage(
+            skill,
+            draftPresent = true,
+            vocabularyPresent = vocabulary.isNotEmpty(),
+        )
         // T-43：analysis 续步时复用初次 critique（同一基线），避免重复评审；其他入口仍按既有路径。
         val critique = critiqueOverride ?: critic.critique(current, vocabulary)
         val revised = rewriter.revise(current, critique, vocabulary)
@@ -1171,11 +1269,22 @@ class NovelAgent internal constructor(
     ): SkillOutcome {
         val chapter = requireFocusChapter(request)
         val baseDraftId = latestCanonicalDraftId(skill, request, chapter.chapterId, activityId, state)
-            ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "分析需要章节已有 Canonical 正文：${chapter.chapterId.value}")
+        if (baseDraftId == null) {
+            state.contextCoverage = nonPackCoverage(skill, draftPresent = false, vocabularyPresent = null)
+            throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "分析需要章节已有 Canonical 正文：${chapter.chapterId.value}")
+        }
         val current = reader.draft(baseDraftId)
-            ?: throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "Canonical Draft 不存在: ${baseDraftId.value}")
+        if (current == null) {
+            state.contextCoverage = nonPackCoverage(skill, draftPresent = false, vocabularyPresent = null)
+            throw RunAbort(NovelAgentErrorCodes.BASE_DRAFT_NOT_FOUND, "Canonical Draft 不存在: ${baseDraftId.value}")
+        }
         val vocabulary = planningContexts.approvedVocabulary(chapter.novelId, chapter.variantId)
         state.reviewVocabulary = vocabulary
+        state.contextCoverage = nonPackCoverage(
+            skill,
+            draftPresent = true,
+            vocabularyPresent = vocabulary.isNotEmpty(),
+        )
         val critique = critic.critique(current, vocabulary)
         return SkillOutcome.Analysis(
             passed = critique.passed,
@@ -1554,6 +1663,7 @@ class NovelAgent internal constructor(
         skillId = skill?.skillId,
         contextPackId = state.contextPackId ?: pack?.packId,
         contextPackVersion = state.contextPackVersion ?: pack?.packVersion,
+        contextCoverage = state.contextCoverage,
         activityIds = state.activityIds.toList(),
         toolCallCount = state.toolCallCount,
         planChapterId = state.planChapterId,
@@ -1595,6 +1705,8 @@ class NovelAgent internal constructor(
         var continuationIncluded: Boolean = false
         var continuationSourceChapterId: ChapterId? = null
         var continuationAbsentReason: String? = null
+        /** O-30（D4）：声明来源覆盖；Pack Skill 由 pack.items 计算，非 Pack Skill 由轻量统计计算。 */
+        var contextCoverage: ContextCoverage? = null
     }
 
     /** 编排中止（内部信号；统一转成稳定 [NovelAgentFailure]，不向调用方抛业务异常）。 */

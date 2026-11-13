@@ -12,9 +12,11 @@ import com.qianyan.model.VariantId
 import com.qianyan.model.workflow.HumanDecision
 import com.qianyan.model.workflow.HumanGateStatus
 import com.qianyan.model.workflow.Workflow
+import com.qianyan.model.workflow.WorkflowAttemptStatus
 import com.qianyan.model.workflow.WorkflowId
 import com.qianyan.model.workflow.WorkflowKind
 import com.qianyan.model.workflow.WorkflowStatus
+import com.qianyan.model.workflow.WorkflowStep
 import com.qianyan.model.workflow.WorkflowStepPhase
 import com.qianyan.model.workflow.WorkflowStepStatus
 import com.qianyan.model.workingdraft.WorkingDraftId
@@ -45,8 +47,12 @@ class ChapterWorkflowFacade(
     private val draftRepository: DraftRepository,
     private val orchestrator: WorkflowOrchestrator,
     private val workflowService: WorkflowService,
+    private val postCommitFinalizerProvider: () -> PostCommitFinalizer,
     errorMapper: ErrorMapper,
 ) : ChapterWorkflowGateway, UseCase(errorMapper) {
+
+    /** 延迟解析（容器初始化期间 facade 可能先于 finalizer 被引用）。 */
+    private val postCommitFinalizer: PostCommitFinalizer get() = postCommitFinalizerProvider()
 
     /* ---------- 用户意图 → 现有 Application API（薄转换） ---------- */
 
@@ -80,8 +86,8 @@ class ChapterWorkflowFacade(
      */
     override fun advance(chapterId: ChapterId): ChapterWorkflowProgress {
         val wf = requireWorkflowByChapter(chapterId)
-        orchestrator.runForward(wf.workflowId, allowReentryAfterReject = true)
-        return getChapterProgress(chapterId)
+        guard { orchestrator.runForward(wf.workflowId, allowReentryAfterReject = true) }
+        return projectAfterRun(wf, chapterId)
     }
 
     /**
@@ -90,8 +96,8 @@ class ChapterWorkflowFacade(
      */
     override fun resume(chapterId: ChapterId): ChapterWorkflowProgress {
         val wf = requireWorkflowByChapter(chapterId)
-        orchestrator.runForward(wf.workflowId)
-        return getChapterProgress(chapterId)
+        guard { orchestrator.runForward(wf.workflowId) }
+        return projectAfterRun(wf, chapterId)
     }
 
     /** 只读进度投影（不推进、不改变任何 durable 状态）。 */
@@ -117,6 +123,55 @@ class ChapterWorkflowFacade(
         guard { orchestrator.runForward(wf.workflowId) }
         return getChapterProgress(chapterId)
     }
+
+    /**
+     * T-O108（A-32）· **批准快路径**：决议 + Canonical 提交 + 投递后台收尾，**不**执行 runForward。
+     *
+     * 调用返回时：Gate 已 RESOLVED、CommitHistory 已落、后台任务已入队 —— UI 可立即恢复按钮行与新正文；
+     * WMU 与 KNOWLEDGE_UPDATE 由 [PostCommitFinalizer] 在后台完成（失败可见、可手动重试）。
+     */
+    override fun approveDecision(chapterId: ChapterId): ChapterWorkflowProgress {
+        val wf = requireWorkflowByChapter(chapterId)
+        val gateId = wf.pendingGateId
+        if (gateId == null) {
+            if (wf.status != WorkflowStatus.RUNNING && wf.status != WorkflowStatus.COMPLETED) {
+                throw ApplicationException(ApplicationError.InvalidOperation("chapter $chapterId 无待确认闸门"))
+            }
+        } else {
+            guard { orchestrator.approveDecisionOnly(gateId) }
+        }
+        ensurePostCommitJob(chapterId)
+        return getChapterProgress(chapterId)
+    }
+
+    /** 幂等投递后台收尾（不推进、不提交）：仅 RUNNING 且仍有 pendingGateId（= 已批准未收尾）时入队。 */
+    override fun ensurePostCommitJob(chapterId: ChapterId) {
+        val wf = findWorkflowByChapter(chapterId) ?: return
+        if (wf.status != WorkflowStatus.RUNNING) return
+        val gateId = wf.pendingGateId ?: return
+        postCommitFinalizer.enqueue(
+            historyId = null,
+            gateId = gateId.value,
+            workflowId = wf.workflowId.value,
+            chapterId = chapterId.value,
+        )
+    }
+
+    /** 异步启动该章节的后台收尾（不阻塞调用方；调用方须在 IO 线程/协程调用本方法）。 */
+    override fun runPostCommit(chapterId: ChapterId) {
+        ensurePostCommitJob(chapterId)
+        postCommitFinalizer.runPending(chapterId.value)
+    }
+
+    /** 手动重试：按该章节最近一次收尾负载新建后台任务并立即执行（失败会再次可见，不静默）。 */
+    override fun retryPostCommit(chapterId: ChapterId): ChapterWorkflowProgress {
+        postCommitFinalizer.retryChapter(chapterId.value)
+        postCommitFinalizer.runPending(chapterId.value)
+        return getChapterProgress(chapterId)
+    }
+
+    override fun postCommitState(chapterId: ChapterId): PostCommitStage =
+        postCommitFinalizer.stateOf(chapterId.value)
 
     /**
      * HITL：拒绝当前待确认闸门（幂等）。复用既有 [WorkflowService.rejectGate]：
@@ -195,6 +250,12 @@ class ChapterWorkflowFacade(
         }
         // P0-3B D6：当前 Gate 的决议（PENDING/APPROVED/REJECTED/REQUEST_REVISION；无 Gate → null）。
         val pendingGateDecision = gate?.decision
+        // T-O82b-F：FAILED/CANCELLED 时暴露**最近一个 failed attempt** 的真实错误摘要（只读投影）。
+        val failureMessage = if (wf.status == WorkflowStatus.FAILED || wf.status == WorkflowStatus.CANCELLED) {
+            lastFailedAttemptMessage(steps)
+        } else {
+            null
+        }
 
         return ChapterWorkflowProgress(
             chapterId = chapterId,
@@ -206,8 +267,35 @@ class ChapterWorkflowFacade(
             draftId = draftId,
             pendingWorkingRef = pendingWorkingRef,
             pendingGateDecision = pendingGateDecision,
+            failureMessage = failureMessage,
         )
     }
+
+    /**
+     * T-O82b-F：推进后的投影。成功 / 等待人工门时与 [getChapterProgress] 等价；
+     * FAILED/CANCELLED 时 Orchestrator 会清空 `activeChapterId`（释放章节占位），
+     * 按 chapter 反查只能得到 blank —— 这里用**本次调用已知的 chapterId** 补回，保证失败原因可见。
+     */
+    private fun projectAfterRun(before: Workflow, chapterId: ChapterId): ChapterWorkflowProgress {
+        val current = requireWorkflow(before.workflowId)
+        val restored = if (current.activeChapterId == null) current.copy(activeChapterId = chapterId) else current
+        return project(restored)
+    }
+
+    /**
+     * 取该 Workflow **最近一个 failed attempt** 的 `error_message`（Step 倒序 → Attempt 倒序），
+     * 单行化 + trim + 截断 ≤[FAILURE_MESSAGE_LIMIT]；无 attempt / 无 message → null。
+     * 只读，不改状态机 / 重试策略。
+     */
+    private fun lastFailedAttemptMessage(steps: List<WorkflowStep>): String? =
+        steps.asReversed().asSequence()
+            .flatMap { step -> guard { workflowRepository.listAttempts(step.stepId) }.asReversed().asSequence() }
+            .firstOrNull { it.status == WorkflowAttemptStatus.FAILED && !it.errorMessage.isNullOrBlank() }
+            ?.errorMessage
+            ?.let(::normalizeAttemptMessage)
+
+    private fun normalizeAttemptMessage(text: String): String =
+        text.replace('\r', ' ').replace('\n', ' ').trim().take(FAILURE_MESSAGE_LIMIT)
 
     /** 用户层阶段：仅把 durable Workflow/Step 状态投影为可理解阶段（不在此做任何状态迁移）。 */
     private fun derivePhase(wf: Workflow, steps: List<com.qianyan.model.workflow.WorkflowStep>): ChapterPhase = when (wf.status) {
@@ -253,6 +341,11 @@ class ChapterWorkflowFacade(
         revisionCount = 0,
         draftId = null,
     )
+
+    private companion object {
+        /** T-O82b-F：失败摘要上限（attempt 原文可能很长，UI 只展示这一段）。 */
+        const val FAILURE_MESSAGE_LIMIT: Int = 200
+    }
 }
 
 /** 用户可读章节阶段（Facade 投影；外部为 Android/Desktop 消费，非 WorkflowStepPhase）。 */
@@ -279,6 +372,11 @@ data class ChapterWorkflowProgress(
      * 供 Agent 侧收敛判断"正式 Gate 是否已拒绝/已批准"；不改变 Gate 状态。
      */
     val pendingGateDecision: HumanDecision? = null,
+    /**
+     * T-O82b-F · FAILED/CANCELLED 时的**失败原因摘要**（该 Workflow 最近一个 failed attempt 的
+     * `error_message`，单行化 + trim + ≤200 字）；成功 / 进行中 / 无 attempt 文本 → null。
+     */
+    val failureMessage: String? = null,
 ) {
     companion object {
         fun blank(chapterId: ChapterId): ChapterWorkflowProgress = ChapterWorkflowProgress(
@@ -299,6 +397,19 @@ interface ChapterWorkflowGateway {
     fun resume(chapterId: ChapterId): ChapterWorkflowProgress
     fun getChapterProgress(chapterId: ChapterId): ChapterWorkflowProgress
     fun approve(chapterId: ChapterId): ChapterWorkflowProgress
+    /**
+     * T-O108（A-32）：批准快路径（决议 + 提交 + 投递后台收尾，不 runForward）。
+     * 默认实现仅供既有测试替身兼容（委托整链 [approve]）；生产实现由 [ChapterWorkflowFacade] 覆盖。
+     */
+    fun approveDecision(chapterId: ChapterId): ChapterWorkflowProgress = approve(chapterId)
+    /** 幂等投递后台收尾（补偿 / 启动恢复使用）。 */
+    fun ensurePostCommitJob(chapterId: ChapterId) {}
+    /** 异步启动后台收尾（ui 调用后立即返回）。 */
+    fun runPostCommit(chapterId: ChapterId) { ensurePostCommitJob(chapterId) }
+    /** 手动重试后台收尾。 */
+    fun retryPostCommit(chapterId: ChapterId): ChapterWorkflowProgress = approveDecision(chapterId)
+    /** 后台收尾阶段投影（NONE / PENDING / FAILED）。 */
+    fun postCommitState(chapterId: ChapterId): PostCommitStage = PostCommitStage.NONE
     /** P0-2.1：拒绝当前待决 Gate（幂等；旧 Gate 复用禁止；Canonical 不变）。 */
     fun reject(chapterId: ChapterId): ChapterWorkflowProgress
     /** P0-2.1：把 AI 改写产生的 WorkingDraft 送入既有章节 Workflow 的人工门。 */

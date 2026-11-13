@@ -25,6 +25,8 @@ import com.qianyan.model.workingdraft.WorkingDraft
 import com.qianyan.model.workingdraft.WorkingDraftTarget
 import com.qianyan.model.workflow.WorkflowKind
 import com.qianyan.model.writing.Draft
+import com.qianyan.model.writing.DraftStatus
+import kotlinx.datetime.Clock
 import com.qianyan.storage.repository.NovelRepository
 
 /**
@@ -113,6 +115,43 @@ class WriterFacade(
     }
 
     /**
+     * **空章节作者首稿**（O-84）：章节尚无 Draft 时，作者手写正文直接建立首稿并写入 Canonical。
+     *
+     * 语义与 TXT 导入初始化一致：`DraftId("${chapterId}#author-first")` 确定性 ID（重复调用不产生第二行）、
+     * status=WRITTEN、format=null、planId/previousDraftId=null；正文 trim 后落库。
+     * 正典写入**复用**既有 [CommitUseCases.commitAuthorSave]（same-row，summary 仍为「作者手动保存（保存即批准）」），
+     * 不新增 Commit 入口、不改 Schema / 枚举。
+     */
+    override fun saveFirstDraft(chapterId: ChapterId, content: String): Draft {
+        val body = content.trim()
+        if (body.isBlank()) {
+            throw ApplicationException(ApplicationError.InvalidOperation("正文为空，无法保存首稿：chapter ${chapterId.value}"))
+        }
+        val chapter = guard { chapters.findById(chapterId) }
+            ?: throw ApplicationException(ApplicationError.EntityNotFound("Chapter 不存在: ${chapterId.value}"))
+        val draftId = DraftId("${chapterId.value}#author-first")
+        val existing = guard { drafts.draft(draftId) }
+        val now = Clock.System.now()
+        val draft = Draft(
+            draftId = draftId,
+            novelId = chapter.novelId,
+            variantId = chapter.variantId,
+            scope = chapter.scope,
+            chapterId = chapter.chapterId,
+            planId = null,
+            previousDraftId = null,
+            content = body,
+            format = null,
+            status = DraftStatus.WRITTEN,
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
+        )
+        drafts.save(draft)
+        commits.commitAuthorSave(draftId, body)
+        return drafts.draft(draftId) ?: draft
+    }
+
+    /**
      * AI 继续写：驱动既有章节 Workflow 前进（PLANNING → WRITING → …），返回进度投影。
      * 尚无 Workflow 时先创建骨架（与既有 ChapterWorkflowGateway 语义一致），不由 UI 决定步骤。
      */
@@ -172,14 +211,48 @@ class WriterFacade(
             content = current.content,
             baseDraftId = current.draftId,
         )
-        val verdict = critique.execute(taskManager.create(TaskType.WRITING), current)
-        val revised = revision.reviseWorking(
-            taskManager.create(TaskType.WRITING),
-            working.workingDraftId.value,
-            current.content,
-            verdict,
-            novelId,
-        )
+        // O-76（A-26）：Task 生命周期归创建方——create → start → 成功 complete / 失败 fail。
+        // 两个任务都成功才 complete；任一阶段失败，另一任务按当前状态补偿（RUNNING→fail，PENDING→cancel）。
+        // O-92：start 单独 try——start 抛错时新任务仍停在 PENDING，只能 cancel（状态机禁止 PENDING→FAILED）。
+        val critiqueTaskId = taskManager.create(TaskType.WRITING)
+        try {
+            taskManager.start(critiqueTaskId)
+        } catch (t: Throwable) {
+            runCatching { taskManager.cancel(critiqueTaskId) }
+            throw t
+        }
+        val revisionTaskId = taskManager.create(TaskType.WRITING)
+        try {
+            taskManager.start(revisionTaskId)
+        } catch (t: Throwable) {
+            failOrCancel(critiqueTaskId, describeFailure(t))
+            runCatching { taskManager.cancel(revisionTaskId) }
+            throw t
+        }
+        val verdict = try {
+            critique.execute(critiqueTaskId, current)
+        } catch (t: Throwable) {
+            val reason = describeFailure(t)
+            failOrCancel(critiqueTaskId, reason)
+            failOrCancel(revisionTaskId, reason)
+            throw t
+        }
+        val revised = try {
+            revision.reviseWorking(
+                revisionTaskId,
+                working.workingDraftId.value,
+                current.content,
+                verdict,
+                novelId,
+            )
+        } catch (t: Throwable) {
+            val reason = describeFailure(t)
+            failOrCancel(revisionTaskId, reason)
+            failOrCancel(critiqueTaskId, reason)
+            throw t
+        }
+        taskManager.complete(critiqueTaskId)
+        taskManager.complete(revisionTaskId)
         // T-O37-A：改写路径与继续写共用同一引擎/同一规则读取（不复制实现）。
         val applied = VocabularyRuleEngine.apply(
             revised,
@@ -201,6 +274,25 @@ class WriterFacade(
             // 提案失败不得留下无 Gate 的孤儿候选污染后续投影。
             runCatching { workingDrafts.discard(working.workingDraftId) }
             throw t
+        }
+    }
+
+    /** 失败原因文本：类型化错误取 error 描述，其余取 message（保证 Task.error 非空）。 */
+    private fun describeFailure(t: Throwable): String =
+        (t as? ApplicationException)?.error?.toString() ?: (t.message ?: t.toString())
+
+    /**
+     * 任务补偿：已 start（RUNNING）→ fail；仍在 PENDING → cancel（状态机禁止 PENDING→FAILED）。
+     * 补偿本身失败不覆盖原始异常（调用方仍抛原异常）。
+     */
+    private fun failOrCancel(taskId: com.qianyan.model.TaskId, reason: String) {
+        val status = runCatching { taskManager.findById(taskId).status }.getOrNull() ?: return
+        runCatching {
+            if (status == com.qianyan.model.task.TaskStatus.PENDING) {
+                taskManager.cancel(taskId)
+            } else {
+                taskManager.fail(taskId, reason)
+            }
         }
     }
 }
@@ -246,6 +338,8 @@ data class WriterChapterContext(
 interface WriterGateway {
     fun loadContext(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): WriterChapterContext
     fun saveContent(draftId: DraftId, content: String): Draft
+    /** 空章节首稿：章节尚无 Draft 时由作者手写正文建立首稿并写 Canonical（O-84）。 */
+    fun saveFirstDraft(chapterId: ChapterId, content: String): Draft
     fun continueWriting(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress
     /** AI 改写 ⇒ WorkingDraft + Human Gate（批准前不产生 Draft / Canonical）。 */
     fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress

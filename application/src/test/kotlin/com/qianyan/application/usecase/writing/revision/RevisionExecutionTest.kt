@@ -4,6 +4,7 @@ import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.qianyan.application.di.ApplicationContainer
 import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
+import com.qianyan.application.error.ErrorMapper
 import com.qianyan.model.ActId
 import com.qianyan.model.ArcId
 import com.qianyan.model.BaseNovelId
@@ -22,6 +23,9 @@ import com.qianyan.model.task.TaskType
 import com.qianyan.provider.ChatMessage
 import com.qianyan.provider.ChatRole
 import com.qianyan.provider.FinishReason
+import com.qianyan.provider.LLMGateway
+import com.qianyan.provider.ModelProfile
+import com.qianyan.provider.ProviderRequest
 import com.qianyan.provider.ProviderResponse
 import com.qianyan.provider.Usage
 import com.qianyan.provider.impl.MockLLMGateway
@@ -35,6 +39,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /**
  * P11.4 Revision 测试（manifest：WorkingDraft 正文 → Critique → Gate → Revision 闭环）。
@@ -203,5 +208,73 @@ class RevisionExecutionTest {
         assertIs<ApplicationError.InvalidRevisionOutput>(ex.error)
         // 失败不产生 REVISION checkpoint
         assertEquals(0, app.tasks.findCheckpoints(id).size)
+    }
+
+    /* ---------- T-O81-F：正文契约 + 有界纠正重试 + 失败摘要 ---------- */
+
+    /** 按调用序号返回脚本化 answer（原始字符串会按 Agent 协议包成 {"answer": …}）。 */
+    private class ScriptedGateway(private val script: List<String>) : LLMGateway {
+        val requests = mutableListOf<ProviderRequest>()
+
+        override fun chat(request: ProviderRequest): ProviderResponse {
+            requests += request
+            val body = script[minOf(requests.size - 1, script.lastIndex)]
+            return ProviderResponse(
+                message = ChatMessage(ChatRole.ASSISTANT, buildJsonObject { put("answer", body) }.toString()),
+                usage = Usage(10, 10, 20),
+                finishReason = FinishReason.STOP,
+            )
+        }
+    }
+
+    private fun agent(gateway: LLMGateway): RevisionAgent = RevisionAgent(gateway, ErrorMapper, ModelProfile.MOCK)
+
+    private fun reviseOnce(gateway: LLMGateway): String =
+        agent(gateway).reviseContent(
+            workingRef = "wd-rev",
+            content = originalContent,
+            critique = ValidationResult(passed = false),
+            novelId = NovelId("novel-rev"),
+        )
+
+    @Test
+    fun `prose output is accepted without retry`() {
+        val prose = "女主推开古碑，雷劫降临。"
+        val gateway = ScriptedGateway(listOf(prose))
+
+        assertEquals(prose, reviseOnce(gateway))
+        assertEquals(1, gateway.requests.size, "自由正文即语义：不应重试")
+    }
+
+    @Test
+    fun `json without content triggers one correction retry`() {
+        val prose = "女主推开古碑，雷劫降临。"
+        val gateway = ScriptedGateway(listOf("""{"revised":"女主角推开古碑"}""", prose))
+
+        assertEquals(prose, reviseOnce(gateway))
+        assertEquals(2, gateway.requests.size, "解析失败 → 恰 1 次纠正重试")
+        val secondInput = gateway.requests[1].messages.joinToString("\n") { it.content }
+        assertTrue(secondInput.contains("【修正】"), "第 2 次输入必须携带【修正】")
+        assertTrue(secondInput.contains("上次输出无法解析"), "必须携带上一次的解析 detail")
+    }
+
+    @Test
+    fun `two invalid outputs fail with excerpt`() {
+        val gateway = ScriptedGateway(listOf("""{"content":123}""", """{"content":456}"""))
+
+        val ex = assertFailsWith<ApplicationException> { reviseOnce(gateway) }
+
+        assertIs<ApplicationError.InvalidRevisionOutput>(ex.error)
+        assertEquals(2, gateway.requests.size, "不得出现第 3 次调用")
+        assertTrue(ex.message!!.contains("原文前 300 字"), "最终失败需附原文摘要：${ex.message}")
+        assertTrue(ex.message!!.contains("content"), "摘要应包含原始输出：${ex.message}")
+    }
+
+    @Test
+    fun `json content is still accepted`() {
+        val gateway = ScriptedGateway(listOf("""{"content":"女主推开古碑，雷劫降临。"}"""))
+
+        assertEquals("女主推开古碑，雷劫降临。", reviseOnce(gateway))
+        assertEquals(1, gateway.requests.size, "兼容 {\"content\":…}：一次成功不重试")
     }
 }

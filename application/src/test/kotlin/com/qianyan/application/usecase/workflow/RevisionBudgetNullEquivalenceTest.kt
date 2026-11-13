@@ -54,19 +54,32 @@ class RevisionBudgetNullEquivalenceTest {
             assertEquals(3, revisions(app, wfId).size, "前置：应有 3 个 REVISION Step")
             assertTrue(revisions(app, wfId).all { it.roundNo == null }, "前置：历史行 round_no 在库中必须仍是 NULL")
 
-            app.workflowOrchestrator.runForward(wfId)
+            // T-O83-F：预算耗尽不再 FAILED —— 转 FINALIZE（人工门）。本 fixture 无真实工作产物，
+            // FINALIZE 执行会失败，故只断言"后继选择"：不新建第 4 个修订、且已建 FINALIZE、状态非 FAILED。
+            runCatching { app.workflowOrchestrator.runForward(wfId) }
 
             assertEquals(3, revisions(app, wfId).size, "round 0 已有 3 个（NULL）修订 ⇒ 第 4 次被预算阻止，不新增")
-            assertEquals(WorkflowStatus.FAILED, app.workflowRepository.getWorkflow(wfId)!!.status, "达到轮内上限 ⇒ FAILED")
+            assertTrue(
+                app.workflowRepository.listSteps(wfId).any { it.phase == WorkflowStepPhase.FINALIZE },
+                "预算耗尽应转 FINALIZE（人工门）",
+            )
+            assertTrue(
+                app.workflowRepository.getWorkflow(wfId)!!.status != WorkflowStatus.FAILED,
+                "预算耗尽不再终止 Workflow",
+            )
         }
     }
 
     @Test
     fun `roundNo zero revision steps count as round 0 and block the cap`() {
         withCraftedBudget(roundNos = listOf(0, 0, 0), critiqueRoundNo = 0) { app, wfId, _ ->
-            app.workflowOrchestrator.runForward(wfId)
+            runCatching { app.workflowOrchestrator.runForward(wfId) }
             assertEquals(3, revisions(app, wfId).size, "round 0 已有 3 个（0）修订 ⇒ 第 4 次被阻止")
-            assertEquals(WorkflowStatus.FAILED, app.workflowRepository.getWorkflow(wfId)!!.status)
+            assertTrue(
+                app.workflowRepository.listSteps(wfId).any { it.phase == WorkflowStepPhase.FINALIZE },
+                "预算耗尽应转 FINALIZE（人工门）",
+            )
+            assertTrue(app.workflowRepository.getWorkflow(wfId)!!.status != WorkflowStatus.FAILED)
         }
     }
 
@@ -74,9 +87,13 @@ class RevisionBudgetNullEquivalenceTest {
     fun `NULL and zero mix counts together in round 0`() {
         withCraftedBudget(roundNos = listOf(null, 0, null), critiqueRoundNo = 0) { app, wfId, _ ->
             assertEquals(3, revisions(app, wfId).size)
-            app.workflowOrchestrator.runForward(wfId)
+            runCatching { app.workflowOrchestrator.runForward(wfId) }
             assertEquals(3, revisions(app, wfId).size, "NULL 与 0 混合后合计 3 ⇒ 第 4 次被阻止")
-            assertEquals(WorkflowStatus.FAILED, app.workflowRepository.getWorkflow(wfId)!!.status)
+            assertTrue(
+                app.workflowRepository.listSteps(wfId).any { it.phase == WorkflowStepPhase.FINALIZE },
+                "预算耗尽应转 FINALIZE（人工门）",
+            )
+            assertTrue(app.workflowRepository.getWorkflow(wfId)!!.status != WorkflowStatus.FAILED)
         }
     }
 

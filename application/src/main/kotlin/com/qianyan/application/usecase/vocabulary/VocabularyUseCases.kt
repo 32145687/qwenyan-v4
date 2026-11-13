@@ -54,6 +54,14 @@ class VocabularyUseCases(
     fun findCandidatesByNovel(novelId: NovelId): List<VocabularyCandidate> = guard { repo.findCandidatesByNovel(novelId) }
 
     /**
+     * T-O71（O-71②）· QueryVocabularyEntries：某 Novel（scope=NOVEL）的已确认词条只读投影。
+     *
+     * 纯委托既有仓储查询（`findEntriesByNovel`：`variant_id IS NULL AND novel_id = ?`），
+     * 不做状态/排序过滤，也不顺带创建词库容器 —— 桌面「词条」tab 的唯一数据源。
+     */
+    fun listEntries(novelId: NovelId): List<VocabularyEntry> = guard { repo.findEntriesByNovel(novelId) }
+
+    /**
      * GetOrCreateNovelVocabulary（P7.6 最小 UI 查询入口）：为某 Original 找到或创建其 NOVEL 作用域词库容器。
      *  - 复用：先按 NOVEL scope 查询现有词库，匹配确定性 id 或 novelId，避免重复创建；
      *  - 创建：不存在时以确定性 id（"novel-vocab-<novelId>"）创建并保存；

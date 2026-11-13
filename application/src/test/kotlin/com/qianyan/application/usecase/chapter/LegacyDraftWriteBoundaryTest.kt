@@ -92,6 +92,7 @@ class LegacyDraftWriteBoundaryTest {
         ),
         "$applicationMain/usecase/writing/WriterFacade.kt" to setOf(
             "continueWriting", // Commit 后新载体的受控 Markdown 标记
+            "saveFirstDraft", // O-84：空章节作者首稿（确定性 ID + commitAuthorSave same-row）
         ),
         "app/desktop/src/jvmMain/kotlin/com/qianyan/app/desktop/ui/write/WriterController.kt" to setOf(
             "save", // 作者保存（经 WriterGateway）

@@ -162,6 +162,13 @@ class WorkflowOrchestratorTest {
             assertEquals(2, attempts.size)
             assertEquals(WorkflowAttemptStatus.FAILED, attempts[0].status)
             assertEquals(AttemptErrorCategory.RETRYABLE, attempts[0].errorCategory)
+            // T-O79-F1：失败 attempt 必须保留原始错误文本（不再只有 "attempt N 失败"）。
+            val failedMessage = attempts[0].errorMessage.orEmpty()
+            assertTrue(
+                failedMessage.startsWith("attempt 1 失败: ") && failedMessage.length > "attempt 1 失败: ".length,
+                "失败 attempt 必须携带真实错误文本：$failedMessage",
+            )
+            assertTrue(failedMessage.length <= "attempt 1 失败: ".length + 500, "错误文本需截断 ≤500 字符：${failedMessage.length}")
             assertEquals(WorkflowAttemptStatus.COMPLETED, attempts[1].status)
             assertEquals(WorkflowStepStatus.COMPLETED, app.workflowRepository.getStep(step.stepId)!!.status)
             assertNotNull(step.resultReference)

@@ -79,23 +79,24 @@ class WritingExecutionUseCase(
         decisionPolicies: List<DecisionPolicy> = emptyList(),
         continuationReference: ContinuationReference? = null,
     ): WorkingDraft {
-        val task = taskManager.findById(taskId)
-        if (task.type != TaskType.WRITING) {
-            throw ApplicationException(
-                ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行写作"),
-            )
-        }
-        requirePlanMatchesRequest(request, plan)
-        // P1-02c+d：AI 工作产物必须落到具体章节（WorkingDraft.target.chapterId 非空）；未绑定 → 类型化拒绝（不伪造）。
-        val chapterId = plan.chapterId
-            ?: throw ApplicationException(
-                ApplicationError.InvalidOperation(
-                    "ChapterPlan ${plan.chapterPlanId.value} 未绑定 Chapter，无法建立 AI 工作产物（WorkingDraft）",
-                ),
-            )
-
+        // O-76（A-26）：start 提前到全部前置校验之前——校验失败也能以 RUNNING→FAILED 记录原因
+        // （状态机禁止 PENDING→FAILED，且 cancel 无 error 参数会丢失失败原因）。
         taskManager.start(taskId)
-        try {
+        val working = try {
+            val task = taskManager.findById(taskId)
+            if (task.type != TaskType.WRITING) {
+                throw ApplicationException(
+                    ApplicationError.InvalidOperation("Task ${taskId.value} 类型 ${task.type} 不是 WRITING，无法执行写作"),
+                )
+            }
+            requirePlanMatchesRequest(request, plan)
+            // P1-02c+d：AI 工作产物必须落到具体章节（WorkingDraft.target.chapterId 非空）；未绑定 → 类型化拒绝（不伪造）。
+            val chapterId = plan.chapterId
+                ?: throw ApplicationException(
+                    ApplicationError.InvalidOperation(
+                        "ChapterPlan ${plan.chapterPlanId.value} 未绑定 Chapter，无法建立 AI 工作产物（WorkingDraft）",
+                    ),
+                )
             // 续篇：在产生任何 AI 产出之前解析/校验；失败 → Task FAILED，不调用 LLM。
             val resolved = continuationReference?.let { continuationResolver.resolve(request, it) }
             // 工作产物归属需要 Project 运行态（WorkingDraftUseCases.create 按 ProjectId 校验 Project）；
@@ -119,7 +120,7 @@ class WritingExecutionUseCase(
                 vocabularyRules.activeFor(plan.novelId, plan.variantId),
             )
             val baseDraftId = guard { draftRepository.latestByChapter(chapterId) }?.draftId
-            val working = guard {
+            val created = guard {
                 workingDrafts.create(
                     projectId = project.projectId,
                     target = WorkingDraftTarget(plan.novelId, chapterId, plan.variantId),
@@ -132,10 +133,9 @@ class WritingExecutionUseCase(
             taskManager.saveCheckpoint(
                 taskId,
                 WritingSnapshot.STAGE,
-                WritingSnapshot.encodeWorking(working, decisionPolicies),
+                WritingSnapshot.encodeWorking(created, decisionPolicies),
             )
-            taskManager.complete(taskId)
-            return working
+            created
         } catch (e: ApplicationException) {
             taskManager.fail(taskId, describe(e.error))
             throw e
@@ -144,6 +144,9 @@ class WritingExecutionUseCase(
             taskManager.fail(taskId, describe(mapped.error))
             throw mapped
         }
+        // O-72：complete 放在 try 之外，避免 complete 自身失败时 catch 对终态再 fail（非法转换）。
+        taskManager.complete(taskId)
+        return working
     }
 
     /**

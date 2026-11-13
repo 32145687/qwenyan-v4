@@ -56,6 +56,7 @@ class VocabularyConfirmationTest {
         val repo = SqliteVocabularyRepository(db)
         novels = SqliteNovelRepository(db)
         val uc = VocabularyUseCases(repo, novels, com.qianyan.application.error.ErrorMapper)
+        novels.createOriginal(novel("n1"))
         // FK：先建词库容器，候选/词条才能落库
         repo.saveVocabulary(
             Vocabulary(

@@ -20,11 +20,12 @@ object WorldModelUpdateParser {
     private val json = Json { ignoreUnknownKeys = true }
 
     fun parse(raw: String): List<ExtractedFact> {
-        if (raw.isBlank()) {
+        val body = stripSingleFence(raw)
+        if (body.isBlank()) {
             throw WorldModelUpdateException.InvalidOutput("empty world model update output")
         }
         val dto = try {
-            json.decodeFromString(ExtractedFact.BatchDto.serializer(), raw)
+            json.decodeFromString(ExtractedFact.BatchDto.serializer(), body)
         } catch (e: Exception) {
             throw WorldModelUpdateException.InvalidOutput("illegal json or wrong field type: ${e.message}")
         }
@@ -52,4 +53,19 @@ object WorldModelUpdateParser {
         } catch (e: IllegalArgumentException) {
             throw WorldModelUpdateException.InvalidOutput("$field 非法: $raw")
         }
+
+    /**
+     * T-O109：剥掉**单层** Markdown 代码围栏（```json / ```）。
+     *
+     * 只在首尾**同时**是围栏时剥一层：不递归（双层围栏剥完仍非法，交由 JSON 解析拒绝）、
+     * 不猜内容（围栏之间的文本原样交给 JSON 解析）。这是结构归一化，不是"容错猜测"。
+     */
+    private fun stripSingleFence(raw: String): String {
+        val trimmed = raw.trim()
+        if (!trimmed.startsWith("```")) return trimmed
+        if (!trimmed.endsWith("```") || trimmed.length < 6) return trimmed
+        val firstBreak = trimmed.indexOf('\n')
+        if (firstBreak < 0) return trimmed
+        return trimmed.substring(firstBreak + 1, trimmed.length - 3).trim()
+    }
 }
