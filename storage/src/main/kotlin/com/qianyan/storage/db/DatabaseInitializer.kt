@@ -304,6 +304,51 @@ object DatabaseInitializer {
             SELECT RAISE(ABORT, 'Original Foreshadow cannot be overwritten');
         END;
         """.trimIndent(),
+        // A-36 a2=B（O-39b-FK）：VocabularyEntry 的数据库级归属守卫。
+        // 目的：直接调用 `repo.saveEntry` 也不能写入孤儿 novel / 不存在或跨作品的 variant（应用层守卫之外的兜底）。
+        // 语义（fail-closed）：variant 非空但 novel 为空同样被 variant 守卫拒绝（`novel_id = NULL` 永不成立）。
+        // 注意：本组单独成表（VOCABULARY_ENTRY_GUARD_DDL），仅在 VocabularyEntry 表存在时安装——
+        // 兼容历史上尚未包含该表的旧库 / 迁移夹具（否则 CREATE TRIGGER 会因缺表失败）。
+    )
+
+    /** A-36：VocabularyEntry 归属守卫（表存在时安装；`IF NOT EXISTS` 保证重开幂等）。 */
+    private val VOCABULARY_ENTRY_GUARD_DDL: List<String> = listOf(
+        """
+        CREATE TRIGGER IF NOT EXISTS vocabulary_entry_novel_insert_guard
+        BEFORE INSERT ON VocabularyEntry
+        WHEN NEW.novel_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Novel WHERE novel_id = NEW.novel_id)
+        BEGIN
+            SELECT RAISE(ABORT, 'VocabularyEntry.novel_id 不存在');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS vocabulary_entry_novel_update_guard
+        BEFORE UPDATE OF novel_id ON VocabularyEntry
+        WHEN NEW.novel_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM Novel WHERE novel_id = NEW.novel_id)
+        BEGIN
+            SELECT RAISE(ABORT, 'VocabularyEntry.novel_id 不存在');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS vocabulary_entry_variant_insert_guard
+        BEFORE INSERT ON VocabularyEntry
+        WHEN NEW.variant_id IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM NovelVariant WHERE variant_id = NEW.variant_id AND novel_id = NEW.novel_id
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'VocabularyEntry.variant_id 不存在或不属于该作品');
+        END;
+        """.trimIndent(),
+        """
+        CREATE TRIGGER IF NOT EXISTS vocabulary_entry_variant_update_guard
+        BEFORE UPDATE OF variant_id ON VocabularyEntry
+        WHEN NEW.variant_id IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM NovelVariant WHERE variant_id = NEW.variant_id AND novel_id = NEW.novel_id
+        )
+        BEGIN
+            SELECT RAISE(ABORT, 'VocabularyEntry.variant_id 不存在或不属于该作品');
+        END;
+        """.trimIndent(),
     )
 
     /**
@@ -503,6 +548,10 @@ object DatabaseInitializer {
             }
         }
         GUARD_DDL.forEach { driver.execute(null, it, 0) }
+        // A-36：VocabularyEntry 归属守卫仅在表存在时安装（旧库 / 部分迁移夹具可能尚无该表）。
+        if (tableExists(driver, "VocabularyEntry")) {
+            VOCABULARY_ENTRY_GUARD_DDL.forEach { driver.execute(null, it, 0) }
+        }
     }
 
     /** 单事务执行建表/迁移 + 版本簿记，任一步失败整体回滚，不留半成品 schema。 */

@@ -111,8 +111,11 @@ SELECT * FROM WorkflowStep WHERE step_id = :step_id;
 getStepByKey:
 SELECT * FROM WorkflowStep WHERE workflow_id = :workflow_id AND logical_step_key = :logical_step_key;
 
+-- 工作流内步骤（时序升序）。
+-- T-O67-F：调用方 lastOrNull() 取“当前步” ⇒ 同毫秒并列必须用插入序（rowid）兜底；
+-- 禁止改用随机 step_id 排序，否则同一毫秒内“计划 → 写作”会被任意倒置。
 listStepsByWorkflow:
-SELECT * FROM WorkflowStep WHERE workflow_id = :workflow_id ORDER BY created_at;
+SELECT * FROM WorkflowStep WHERE workflow_id = :workflow_id ORDER BY created_at ASC, rowid ASC;
 
 getCurrentStep:
 SELECT * FROM WorkflowStep WHERE step_id = :step_id;

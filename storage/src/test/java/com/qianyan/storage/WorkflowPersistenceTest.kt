@@ -150,4 +150,42 @@ class WorkflowPersistenceTest {
         assertEquals("d2", repo.latestByChapter(ch1)!!.draftId.value)
         assertEquals(0, repo.listByChapter(com.qianyan.model.ChapterId("c9")).size)
     }
+
+    /* T-O67-F：同毫秒并列按插入序（rowid）兜底——调用方 lastOrNull() 取“当前步”必须看到后插入者。 */
+    @Test
+    fun `same-millisecond steps keep insertion order`() {
+        val repo = newRepo()
+        val wfId = WorkflowId("W-order")
+        val now = Clock.System.now()
+        repo.createWorkflow(
+            Workflow(
+                WorkflowId("W-order"), NovelId("n1"), null, WorkflowKind.WRITE_NOVEL,
+                status = WorkflowStatus.CREATED, createdAt = now, updatedAt = now,
+            ),
+        )
+
+        // 同一 created_at；step_id 字典序故意与插入序相反（真实 UUID 也会出现这种顺序）。
+        repo.createStep(
+            WorkflowStep(
+                stepId = WorkflowStepId("S-zzzz"), workflowId = wfId, chapterId = com.qianyan.model.ChapterId("C1"),
+                phase = WorkflowStepPhase.PLANNING, logicalStepKey = "W1:C1:PLANNING",
+                status = WorkflowStepStatus.COMPLETED, createdAt = now,
+            ),
+        )
+        repo.createStep(
+            WorkflowStep(
+                stepId = WorkflowStepId("S-aaaa"), workflowId = wfId, chapterId = com.qianyan.model.ChapterId("C1"),
+                phase = WorkflowStepPhase.WRITING, logicalStepKey = "W1:C1:WRITING",
+                status = WorkflowStepStatus.PENDING, createdAt = now,
+            ),
+        )
+
+        val steps = repo.listSteps(wfId)
+        assertEquals(
+            listOf(WorkflowStepId("S-zzzz"), WorkflowStepId("S-aaaa")),
+            steps.map { it.stepId },
+            "同毫秒并列必须按插入序（rowid），不得按随机 step_id 排序",
+        )
+        assertEquals(WorkflowStepId("S-aaaa"), steps.lastOrNull()?.stepId, "lastOrNull() = 后插入者（当前步语义）")
+    }
 }

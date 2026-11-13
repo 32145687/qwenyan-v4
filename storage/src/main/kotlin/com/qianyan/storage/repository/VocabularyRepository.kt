@@ -36,6 +36,9 @@ interface VocabularyRepository {
     /** T-O37-A：读取全部规则（只读；作用域/归属过滤在 Application 层；不加表/不迁移）。 */
     fun listRules(): List<VocabularyRule>
 
+    /** T-O37-B：切换规则启用状态（只改 enabled，不动其余字段）。 */
+    fun updateRuleEnabled(ruleId: com.qianyan.model.VocabularyRuleId, enabled: Boolean)
+
     /** 保存候选词条。 */
     fun saveCandidate(candidate: VocabularyCandidate)
 

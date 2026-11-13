@@ -147,6 +147,22 @@ class ActivityRepositoryTest {
         driver.getConnection().close()
     }
 
+    /** T-O67-F：项目内活动列表的同毫秒并列同样按插入序（rowid），不得按随机 activity_id 倒置。 */
+    @Test
+    fun `same-millisecond project activities keep insertion order`() {
+        val (repo, _, driver) = repos()
+        // 插入序 = 真实发生时序：先“分析”，后“续步”；activity_id 故意与插入序相反。
+        repo.save(activity("zzzz-analysis", kind = "EXECUTE", status = AgentLogStatus.COMPLETED, summary = "分析"))
+        repo.save(activity("aaaa-followup", kind = "EXECUTE", status = AgentLogStatus.COMPLETED, summary = "续步"))
+
+        assertEquals(
+            listOf("zzzz-analysis", "aaaa-followup"),
+            repo.listByProject(ProjectId("p-i4")).map { it.activityId.value },
+            "项目内同毫秒并列必须按插入序（rowid），与 listBySession 同口径",
+        )
+        driver.getConnection().close()
+    }
+
     @Test
     fun `project isolation never leaks across projects`() {
         val (repo, _, driver) = repos()

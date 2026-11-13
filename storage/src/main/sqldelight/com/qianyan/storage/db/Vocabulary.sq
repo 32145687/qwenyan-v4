@@ -43,5 +43,8 @@ SELECT * FROM VocabularyEntry;
 getAllRules:
 SELECT * FROM VocabularyRule;
 
+updateRuleEnabled:
+UPDATE VocabularyRule SET enabled = :enabled WHERE rule_id = :rule_id;
+
 getAllCandidates:
 SELECT * FROM VocabularyCandidate;

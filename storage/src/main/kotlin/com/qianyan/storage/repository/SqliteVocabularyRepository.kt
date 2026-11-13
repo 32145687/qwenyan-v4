@@ -50,6 +50,10 @@ class SqliteVocabularyRepository(private val db: QianyanDb) : VocabularyReposito
     override fun listRules(): List<VocabularyRule> =
         db.vocabularyQueries.getAllRules().executeAsList().map { StorageMappers.dbVocabularyRule(it) }
 
+    override fun updateRuleEnabled(ruleId: com.qianyan.model.VocabularyRuleId, enabled: Boolean) {
+        db.vocabularyQueries.updateRuleEnabled(enabled, ruleId.value)
+    }
+
     override fun saveCandidate(candidate: VocabularyCandidate) {
         val row = StorageMappers.domainVocabularyCandidate(candidate)
         db.vocabularyQueries.insertCandidate(

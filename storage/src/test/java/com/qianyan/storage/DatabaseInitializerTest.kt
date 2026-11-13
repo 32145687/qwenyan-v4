@@ -42,7 +42,8 @@ class DatabaseInitializerTest {
         ).value
 
         // 3 个既有守卫（Novel ×2 + NovelVariant ×1）+ P2 收口新增 18 个（Story State 六表 × UPDATE/DELETE/OVERWRITE）
-        assertEquals(21L, triggerCount, "应创建 3 个既有守卫触发器 + 18 个 Story State Original 写保护触发器")
+        // + A-36 新增 4 个（VocabularyEntry × novel/variant × INSERT/UPDATE）
+        assertEquals(25L, triggerCount, "应创建 3 + 18 + A-36 的 4 个 VocabularyEntry 归属守卫触发器")
     }
 
     @Test

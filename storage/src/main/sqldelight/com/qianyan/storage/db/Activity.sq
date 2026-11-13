@@ -37,5 +37,7 @@ SELECT * FROM Activity WHERE activity_id = :activity_id;
 listActivitiesBySession:
 SELECT * FROM Activity WHERE session_id = :session_id ORDER BY started_at ASC, rowid ASC;
 
+-- 项目内活动（时序升序）。同毫秒并列口径与 :34-38 的会话版一致：
+-- 按插入序（rowid）兜底 = 真实发生顺序；不得用随机 activity_id 排序。
 listActivitiesByProject:
-SELECT * FROM Activity WHERE project_id = :project_id ORDER BY started_at ASC, activity_id ASC;
+SELECT * FROM Activity WHERE project_id = :project_id ORDER BY started_at ASC, rowid ASC;

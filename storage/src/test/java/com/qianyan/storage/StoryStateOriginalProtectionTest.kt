@@ -217,6 +217,9 @@ class StoryStateOriginalProtectionTest {
                     "world_rule_original_update_protect", "world_rule_original_delete_protect", "world_rule_original_overwrite_protect",
                     "timeline_entry_original_update_protect", "timeline_entry_original_delete_protect", "timeline_entry_original_overwrite_protect",
                     "foreshadow_original_update_protect", "foreshadow_original_delete_protect", "foreshadow_original_overwrite_protect",
+                    // A-36 新增 4 个（VocabularyEntry 归属守卫）
+                    "vocabulary_entry_novel_insert_guard", "vocabulary_entry_novel_update_guard",
+                    "vocabulary_entry_variant_insert_guard", "vocabulary_entry_variant_update_guard",
                 )
                 val present = triggerNames(driver)
                 expected.forEach { name ->

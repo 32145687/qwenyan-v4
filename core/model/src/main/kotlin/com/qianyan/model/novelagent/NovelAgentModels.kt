@@ -13,6 +13,7 @@ import com.qianyan.model.characterconsistency.CharacterConsistencyResult
 import com.qianyan.model.commit.CommitHistoryId
 import com.qianyan.model.commit.CommitId
 import com.qianyan.model.context.ContextBudget
+import com.qianyan.model.context.ContextSourceKind
 import com.qianyan.model.skill.SkillId
 import com.qianyan.model.workingdraft.WorkingDraftId
 import com.qianyan.model.workflow.WorkflowHumanGateId
@@ -167,6 +168,25 @@ data class NovelAgentAnalysisSummary(
 )
 
 /**
+ * O-30（A-33 D4/D5/D6）：本次运行对 Skill 声明 Context 来源的覆盖情况。
+ *
+ * - [present]：已证实进入本次输入；
+ * - [absent]：已检查且确认缺失（新章无 DRAFT、无已确认 Foundation 属合法状态，不构成失败）；
+ * - [unverified]：本 Skill 本次未做检查（不得谎报缺失）；
+ * - [omittedItemCount]：Pack 预算淘汰条目数（非 Pack Skill 恒 0）。
+ *
+ * 四个来源列表均去重并按 [ContextSourceKind] ordinal 排序，保证确定性。
+ */
+@Serializable
+data class ContextCoverage(
+    val declared: List<ContextSourceKind> = emptyList(),
+    val present: List<ContextSourceKind> = emptyList(),
+    val absent: List<ContextSourceKind> = emptyList(),
+    val unverified: List<ContextSourceKind> = emptyList(),
+    val omittedItemCount: Int = 0,
+)
+
+/**
  * 一次 Novel Agent run 的结果（**ID + status + summary**，不复制 ContextPack / Draft / Artifact 大对象）。
  *
  * @param activityIds 本次 run 每个编排相位的事实记录（复用 I4 Activity；顺序 = 执行顺序）。
@@ -183,6 +203,8 @@ data class NovelAgentResult(
     val skillId: SkillId? = null,
     val contextPackId: String? = null,
     val contextPackVersion: Long? = null,
+    /** O-30（D4）：本次运行对 Skill 声明 Context 来源的覆盖（Pack Skill 与轻量统计的 Skill 均填）。 */
+    val contextCoverage: ContextCoverage? = null,
     val activityIds: List<ActivityId> = emptyList(),
     val toolCallCount: Int = 0,
     val planChapterId: ChapterId? = null,
@@ -278,8 +300,14 @@ object NovelAgentErrorCodes {
     /** Context 构建失败（越界 / 非法预算等；复用 I6 的类型化拒绝）。 */
     const val CONTEXT_BUILD_FAILED: String = "CONTEXT_BUILD_FAILED"
 
+    /** O-34（D1）：Skill 声明需要的 Context 来源在本次 Pack 中缺失（"缺输入"，不是执行失败）。 */
+    const val MISSING_CONTEXT_INPUT: String = "MISSING_CONTEXT_INPUT"
+
     /** 请求的工具不在该 Skill 的 `allowedTools` 内（禁止 Skill 任意调用 Tool）。 */
     const val TOOL_NOT_ALLOWED: String = "TOOL_NOT_ALLOWED"
+
+    /** O-31（D7/D8）：执行期实际动作类别超出 `expectedActions`，或工具无法映射动作类别（fail-closed）。 */
+    const val ACTION_NOT_DECLARED: String = "ACTION_NOT_DECLARED"
 
     /** 工具调用失败（拒绝执行之外的业务 / 输出解析失败）。 */
     const val TOOL_FAILED: String = "TOOL_FAILED"

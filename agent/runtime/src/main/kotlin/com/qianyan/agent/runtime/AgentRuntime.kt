@@ -131,7 +131,10 @@ class AgentRuntime(
             .filter { agent.allowedTools.isEmpty() || agent.allowedTools.contains(it.toolName) }
         return buildString {
             appendLine("你是 ${agent.name}。请严格按以下 JSON 协议单步作答：")
-            appendLine("- 需要调用工具时返回 {\"tool\":\"<名称>\",\"arguments\":{...}}")
+            // A-25：无工具时不得广播 tool 协议（否则模型会反复请求工具直至耗尽步数）。
+            if (tools.isNotEmpty()) {
+                appendLine("- 需要调用工具时返回 {\"tool\":\"<名称>\",\"arguments\":{...}}")
+            }
             appendLine("- 已得到答案时返回 {\"answer\":\"<正文>\"}")
             if (tools.isNotEmpty()) {
                 appendLine("可用工具：")

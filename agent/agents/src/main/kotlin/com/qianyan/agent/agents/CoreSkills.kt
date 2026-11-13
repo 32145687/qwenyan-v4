@@ -97,6 +97,7 @@ object CoreSkills {
         capabilities = listOf(Capability(CAPABILITY_WRITING, "正文创作方法论")),
         purposes = listOf(IntentType.CONTINUE, IntentType.EXPAND, IntentType.CUSTOM),
         requiredContext = listOf(
+            ContextSourceKind.NOVEL,
             ContextSourceKind.PROJECT_STATE,
             ContextSourceKind.CHAPTER,
             ContextSourceKind.DRAFT,
@@ -112,7 +113,8 @@ object CoreSkills {
             tool(TOOL_SEARCH_VOCABULARY),
         ),
         // 声明"未来 Working Draft 入口"的预期动作；I7 **不实现** Working Draft 执行。
-        expectedActions = listOf(AgentActionKind.READ, AgentActionKind.CREATE_WORKING_DRAFT),
+        // O-112（A-33）：allowedTools 含 search_vocabulary(SEARCH) ⇒ expectedActions 必须声明 SEARCH。
+        expectedActions = listOf(AgentActionKind.READ, AgentActionKind.SEARCH, AgentActionKind.CREATE_WORKING_DRAFT),
         bindings = listOf(SkillBinding(AgentId(AGENT_STORY_WRITER), "既有 WriterAgent（正文创作阶段）")),
     )
 
@@ -136,7 +138,8 @@ object CoreSkills {
             tool(TOOL_SEARCH_VOCABULARY),
         ),
         // 声明"改写落在 Working Draft"的预期动作；I7 **不实现** Canonical 修改 / Commit / Diff / Artifact。
-        expectedActions = listOf(AgentActionKind.READ, AgentActionKind.EDIT_WORKING_DRAFT),
+        // O-112（A-33）：allowedTools 含 search_vocabulary(SEARCH) ⇒ expectedActions 必须声明 SEARCH。
+        expectedActions = listOf(AgentActionKind.READ, AgentActionKind.SEARCH, AgentActionKind.EDIT_WORKING_DRAFT),
         bindings = listOf(SkillBinding(AgentId(AGENT_STORY_REVISION), "既有 RevisionAgent（修订阶段，计数 ≤ 3 门控保留）")),
     )
 
@@ -192,7 +195,8 @@ object CoreSkills {
             tool(TOOL_GET_WORLD_CONTEXT),
         ),
         // 声明"更新世界模型需人工确认"的预期动作；权限仍由 I2 ActionPolicy 判定。
-        expectedActions = listOf(AgentActionKind.READ, AgentActionKind.UPDATE_WORLD_MODEL),
+        // O-112（A-33）：allowedTools 含 search_vocabulary(SEARCH) ⇒ expectedActions 必须声明 SEARCH。
+        expectedActions = listOf(AgentActionKind.READ, AgentActionKind.SEARCH, AgentActionKind.UPDATE_WORLD_MODEL),
         bindings = listOf(SkillBinding(AgentId(AGENT_KNOWLEDGE_UPDATE), "既有 KnowledgeUpdateAgent（知识沉淀阶段）")),
     )
 
