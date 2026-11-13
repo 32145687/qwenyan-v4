@@ -99,6 +99,10 @@ class DesktopGraph @JvmOverloads private constructor(
     private lateinit var assembler: ProviderAssembler
     private lateinit var configuration: ProviderConfiguration
 
+    /** O-97：最近一次实际用于装配容器的配置（只读测试接缝，不参与业务判断）。 */
+    internal var lastBuiltConfiguration: ProviderConfiguration? = null
+        private set
+
     init {
         assembler = DesktopProviderAssembler(DefaultProviderAssembler(credentialStore, httpClient))
         val stored = readStored()
@@ -125,6 +129,9 @@ class DesktopGraph @JvmOverloads private constructor(
     }
 
     private fun build(type: ProviderType): ApplicationContainer {
+        // O-97：装配使用字段 configuration；saveProviderConfig 必须先更新该字段再调用 build，
+        // 否则新容器仍按旧 Provider/模型装配（真机表现为请求继续走旧 Provider）。
+        lastBuiltConfiguration = configuration
         val dbPath = appDir.resolve("qianyan.db")
         val url = "jdbc:sqlite:${dbPath.toAbsolutePath().normalize()}"
         val handle = QianyanDbFactory.open(url)
@@ -211,7 +218,19 @@ class DesktopGraph @JvmOverloads private constructor(
         val previousModel = _modelId.value
         val previousBaseUrl = _baseUrl.value
         val previousEffort = _reasoningEffort.value
-        if (apiKey.isNotBlank()) credentialStore.setApiKey(type, apiKey.trim())
+        val previousProvider = _provider.value
+        val previousConfiguration = configuration
+        // O-87：写凭据也是未保护的 IO；失败同样走失败通道（提示与日志都不含 Key 内容）。
+        if (apiKey.isNotBlank()) {
+            val saved = runCatching { credentialStore.setApiKey(type, apiKey.trim()) }
+            val keyFailure = saved.exceptionOrNull()
+            if (keyFailure != null) {
+                com.qianyan.app.desktop.DesktopCrashLog.record(keyFailure, "saveProviderConfig(${type.name}) 写凭据失败")
+                providerMessage.value =
+                    "保存失败：无法写入本地凭据文件（${type.name}）：${keyFailure.message?.take(200) ?: keyFailure::class.simpleName}"
+                return false
+            }
+        }
         if (modelId != null) _modelId.value = modelId.trim().ifBlank { null }
         if (baseUrl != null) _baseUrl.value = baseUrl.trim().ifBlank { null }
         if (reasoningEffort != null) _reasoningEffort.value = reasoningEffort
@@ -220,13 +239,49 @@ class DesktopGraph @JvmOverloads private constructor(
         val result = runCatching { assembler.assemble(cfg) }
         return result.fold(
             onSuccess = {
-                persist(type)
-                _provider.value = type
-                configuration = cfg
-                container = build(type)
-                refreshEffectiveModel()
-                providerMessage.value = null
-                true
+                // O-87：persist / build 过去在 runCatching 之外，IO / 数据库异常会从按钮 onClick 冒泡到 EDT。
+                // 现在纳入失败通道：失败返回 false + providerMessage + 日志，状态与成功路径保持一致语义。
+                val applied = runCatching {
+                    persist(type)
+                    // O-97：先更新 configuration 再 build，保证新容器按本次 cfg 装配（修掉旧顺序依赖）。
+                    configuration = cfg
+                    val nextContainer = build(type)
+                    container = nextContainer
+                    _provider.value = type
+                    refreshEffectiveModel()
+                }
+                val failure = applied.exceptionOrNull()
+                if (failure != null) {
+                    com.qianyan.app.desktop.DesktopCrashLog.record(
+                        failure,
+                        "saveProviderConfig(${type.name}) 落盘或重建容器失败",
+                    )
+                    // 与装配失败一致：不得留下半改的模型/端点/强度/Provider/配置。
+                    _provider.value = previousProvider
+                    _modelId.value = previousModel
+                    _baseUrl.value = previousBaseUrl
+                    _reasoningEffort.value = previousEffort
+                    configuration = previousConfiguration
+                    // build 可能已关闭旧 DB 驱动：用旧配置重建一次容器，避免切换失败把应用留在不可用状态。
+                    val restored = runCatching { build(previousProvider) }
+                    val restoreFailure = restored.exceptionOrNull()
+                    if (restoreFailure != null) {
+                        com.qianyan.app.desktop.DesktopCrashLog.record(
+                            restoreFailure,
+                            "saveProviderConfig(${type.name}) 回滚旧容器失败",
+                        )
+                    } else {
+                        container = restored.getOrThrow()
+                    }
+                    refreshEffectiveModel()
+                    val suffix = if (restoreFailure != null) "；旧容器恢复失败，请重启应用" else ""
+                    providerMessage.value =
+                        "保存失败：${failure.message?.take(200) ?: failure::class.simpleName}（当前仍使用 ${_provider.value.name}）$suffix"
+                    false
+                } else {
+                    providerMessage.value = null
+                    true
+                }
             },
             onFailure = {
                 // 切换失败不得留下半改的模型/端点/强度，否则 UI 会显示一个并未生效的配置。
@@ -251,9 +306,15 @@ class DesktopGraph @JvmOverloads private constructor(
 
     fun saveThemeMode(mode: String): Boolean = uiPreferences.writeThemeMode(mode)
 
-    /** 读取已保存的 API Key（用于设置页回显是否已配置；不显示明文）。 */
+    /**
+     * 读取已保存的 API Key（用于设置页回显是否已配置；不显示明文）。
+     *
+     * O-87：该方法在组合期被调用，凭据文件不可读时必须回落「未配置」而不是把异常抛进 Compose 重组。
+     */
     fun isConfigured(type: ProviderType): Boolean =
-        !credentialStore.getApiKey(type).isNullOrBlank()
+        runCatching { !credentialStore.getApiKey(type).isNullOrBlank() }
+            .onFailure { com.qianyan.app.desktop.DesktopCrashLog.record(it, "isConfigured(${type.name}) 读取凭据失败") }
+            .getOrDefault(false)
 
     /** 保存 API Key 并尝试切换到该 Provider（装配失败则保留原 Provider 并给出提示）。 */
     fun saveApiKeyAndSelect(type: ProviderType, apiKey: String): Boolean {
@@ -263,10 +324,22 @@ class DesktopGraph @JvmOverloads private constructor(
         return _provider.value == type || (type == before)
     }
 
-    /** 清除某 Provider 的 API Key。 */
-    fun clearApiKey(type: ProviderType) {
-        credentialStore.clearApiKey(type)
+    /**
+     * 清除某 Provider 的 API Key。
+     *
+     * O-87：写凭据文件失败时返回 false 并给出提示（不向 EDT 抛异常）。
+     */
+    fun clearApiKey(type: ProviderType): Boolean {
+        val cleared = runCatching { credentialStore.clearApiKey(type) }
+        val failure = cleared.exceptionOrNull()
+        if (failure != null) {
+            com.qianyan.app.desktop.DesktopCrashLog.record(failure, "clearApiKey(${type.name}) 写凭据失败")
+            providerMessage.value =
+                "无法写入本地凭据文件（${type.name}）：${failure.message?.take(200) ?: failure::class.simpleName}"
+            return false
+        }
         if (type != ProviderType.MOCK) providerMessage.value = "${type.name} 的 API Key 已清除"
+        return true
     }
 
     /** 配置校验（确定性、不发网络请求）：返回问题列表，空 = 合法。 */

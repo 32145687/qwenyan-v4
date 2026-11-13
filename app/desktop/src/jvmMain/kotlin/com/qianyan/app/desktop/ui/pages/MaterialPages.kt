@@ -23,6 +23,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +38,7 @@ import com.qianyan.app.desktop.ui.LoadingState
 import com.qianyan.app.desktop.ui.PageHeader
 import com.qianyan.app.desktop.ui.PendingNote
 import com.qianyan.app.desktop.ui.QianyanTabs
+import com.qianyan.app.desktop.ui.QuietField
 import com.qianyan.app.desktop.ui.SectionLabel
 import com.qianyan.app.desktop.ui.SourceNote
 import com.qianyan.app.desktop.ui.consumeClicks
@@ -62,7 +64,11 @@ import com.qianyan.model.core.VariantContext
 import com.qianyan.model.memory.MemoryEntry
 import com.qianyan.model.vocabulary.Vocabulary
 import com.qianyan.model.vocabulary.VocabularyCandidate
+import com.qianyan.model.vocabulary.VocabularyEntry
+import com.qianyan.model.vocabulary.VocabularyEntryStatus
+import com.qianyan.model.vocabulary.VocabularyRule
 import com.qianyan.model.vocabulary.VocabularyScopeLevel
+import com.qianyan.app.desktop.ui.write.messageFor
 
 /**
  * 词库（`vocabularies` · P1/P6 已交付；新执行链路任务 C 已接入写路径）。
@@ -78,6 +84,18 @@ fun VocabularyPage(state: DesktopAppState) {
     var tab by remember { mutableStateOf(0) }
     var vocabularies by remember { mutableStateOf<List<Vocabulary>>(emptyList()) }
     var candidates by remember { mutableStateOf<List<VocabularyCandidate>>(emptyList()) }
+    // T-O37-B：规则 tab（当前作品 NOVEL 层；创建/启停经 vocabularyRules 用例）
+    var rules by remember { mutableStateOf<List<VocabularyRule>>(emptyList()) }
+    // T-O71（O-71②）：词条 tab（已确认词条只读投影；读侧 vocabularies.listEntries）
+    var entries by remember { mutableStateOf<List<VocabularyEntry>>(emptyList()) }
+    // T-O71（O-71①）：候选编辑对话框（轻量；不新增全局组件）
+    var editingCandidate by remember { mutableStateOf<VocabularyCandidate?>(null) }
+    var editCanonical by remember { mutableStateOf("") }
+    var editAliases by remember { mutableStateOf("") }
+    var ruleFrom by remember { mutableStateOf("") }
+    var ruleTo by remember { mutableStateOf("") }
+    var ruleError by remember { mutableStateOf<String?>(null) }
+    val ruleScope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
 
     val novel = state.novel
@@ -92,6 +110,8 @@ fun VocabularyPage(state: DesktopAppState) {
             vocabularies = it.vocabularies.query(VocabularyScopeLevel.NOVEL)
                 .filter { v -> v.novelId == null || v.novelId == novelId }
             candidates = it.vocabularies.findCandidatesByNovel(novelId)
+            rules = it.vocabularyRules.listRules(novelId)
+            entries = it.vocabularies.listEntries(novelId)
         }
         loading = false
     }
@@ -111,8 +131,18 @@ fun VocabularyPage(state: DesktopAppState) {
                 }
             },
         )
-        QianyanTabs(listOf("词表 · ${vocabularies.size}", "候选 · ${candidates.size}"), tab) { tab = it }
+        QianyanTabs(
+            listOf(
+                "词表 · ${vocabularies.size}",
+                "候选 · ${candidates.size}",
+                "规则 · ${rules.size}",
+                "词条 · ${entries.size}",
+            ),
+            tab,
+        ) { tab = it }
 
+        // T-O71：tabs 内容放在 Box 中，编辑对话框作为整页内容区浮层（不改页面骨架）。
+        Box(Modifier.fillMaxWidth().weight(1f)) {
         when {
             novel == null -> Box(Modifier.padding(QianyanDimens.PageX)) {
                 EmptyState("尚未打开作品", "从顶部「当前作品」打开或新建作品")
@@ -137,14 +167,14 @@ fun VocabularyPage(state: DesktopAppState) {
                     }
                     Spacer(Modifier.height(12.dp))
                     PendingNote(
-                        "词条明细读取（当前 Application 层无 listEntries 只读 UseCase）",
-                        "词库容器与候选词是真数据；词条逐条明细需先补一个只读 UseCase（PC-5 前置），本轮不直连仓储。",
+                        "词条明细已迁到「词条」tab",
+                        "O-71② 已补 vocabularies.listEntries(novelId) 只读投影；这里只保留容器概览，逐条明细看「词条」。",
                     )
                 }
                 SourceNote("来源：vocabularies.query + findCandidatesByNovel（只读）")
             }
 
-            else -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
+            tab == 1 -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
                 val novelId = novel?.novelId
                 if (candidates.isEmpty()) {
                     EmptyState("还没有候选词", "点上方「分析 TXT」从导入的原文提炼候选词库")
@@ -159,6 +189,11 @@ fun VocabularyPage(state: DesktopAppState) {
                                     modifier = Modifier.weight(1f),
                                 )
                                 if (c.status == VocabularyCandidateStatus.PENDING && novelId != null) {
+                                    ActionButton("编辑", ActionLevel.TEXT, true) {
+                                        editingCandidate = c
+                                        editCanonical = c.suggested.canonical
+                                        editAliases = c.suggested.aliases.joinToString("、")
+                                    }
                                     ActionButton("确认", ActionLevel.TEXT, true) {
                                         state.launchCandidateDecision(novelId, c.candidateId, confirm = true)
                                     }
@@ -186,6 +221,209 @@ fun VocabularyPage(state: DesktopAppState) {
                 }
                 Spacer(Modifier.height(12.dp))
                 SourceNote("确认 / 拒绝经 vocabularies.confirmCandidate / rejectCandidate（幂等、PENDING→APPROVED 由后端保证）")
+            }
+
+            tab == 2 -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
+                val novelId = novel?.novelId
+                SectionLabel("新增规则 · 当前作品 NOVEL 层")
+                Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    QuietField(
+                        ruleFrom,
+                        { ruleFrom = it },
+                        Modifier.weight(1f),
+                        placeholder = "原词，如 村长",
+                    )
+                    Text(" → ", style = MaterialTheme.typography.bodyLarge, color = palette.text3)
+                    QuietField(
+                        ruleTo,
+                        { ruleTo = it },
+                        Modifier.weight(1f),
+                        placeholder = "替换词，如 里正",
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    ActionButton("创建", ActionLevel.PRIMARY, novelId != null && !state.busy) {
+                        val target = novelId ?: return@ActionButton
+                        ruleError = null
+                        ruleScope.launch {
+                            try {
+                                state.load { it.vocabularyRules.createRule(target, ruleFrom, ruleTo) }
+                                ruleFrom = ""
+                                ruleTo = ""
+                                state.refreshKey++
+                            } catch (e: Exception) {
+                                ruleError = messageFor(e)
+                            }
+                        }
+                    }
+                }
+                ruleError?.let { message ->
+                    Text(message, style = MaterialTheme.typography.bodySmall, color = palette.del)
+                }
+                Spacer(Modifier.height(10.dp))
+                if (rules.isEmpty()) {
+                    EmptyState("还没有规则", "规则在 AI 定稿后、写入正文前做确定性替换（仅当前作品 NOVEL 层）")
+                } else {
+                    rules.forEach { rule ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${rule.from} → ${rule.to}",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (rule.enabled) palette.text else palette.text3,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Tag(statusLabel(rule.scopeLevel.name), palette.text3)
+                            Spacer(Modifier.width(6.dp))
+                            Tag(if (rule.enabled) "已启用" else "已停用", if (rule.enabled) palette.accent else palette.text3)
+                            Spacer(Modifier.width(6.dp))
+                            ActionButton(if (rule.enabled) "停用" else "启用", ActionLevel.TEXT, true) {
+                                ruleError = null
+                                ruleScope.launch {
+                                    try {
+                                        state.load { it.vocabularyRules.setRuleEnabled(rule.ruleId, !rule.enabled) }
+                                        state.refreshKey++
+                                    } catch (e: Exception) {
+                                        ruleError = messageFor(e)
+                                    }
+                                }
+                            }
+                        }
+                        HLine()
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                SourceNote("来源：vocabularyRules.listRules(当前作品) · 创建/启停经 createRule / setRuleEnabled（仅 NOVEL 层、确定性替换）")
+            }
+
+            else -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(QianyanDimens.PageX)) {
+                if (entries.isEmpty()) {
+                    EmptyState("还没有已确认词条", "先在上方候选里确认；确认后会立即出现在这里")
+                } else {
+                    entries.forEach { entry ->
+                        val target = vocabularyEntryTarget(entry)
+                        Row(Modifier.fillMaxWidth().padding(vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                if (target.isBlank()) entry.canonical else "${entry.canonical} → $target",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = palette.text,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Tag(statusLabel(entry.scopeLevel.name), palette.text3)
+                            Spacer(Modifier.width(6.dp))
+                            Tag(entry.type.name, palette.text3)
+                            Spacer(Modifier.width(6.dp))
+                            Tag(
+                                statusLabel(entry.status.name),
+                                if (entry.status == VocabularyEntryStatus.APPROVED) palette.accent else palette.text3,
+                            )
+                        }
+                        HLine()
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                SourceNote(
+                    "来源：vocabularies.listEntries(novelId)（只读；NOVEL 层）。" +
+                        "词条无「启停」字段（VocabularyEntry 无 enabled），故不显示启停。",
+                )
+            }
+        }
+            editingCandidate?.let { candidate ->
+                CandidateEditDialog(
+                    canonical = editCanonical,
+                    aliases = editAliases,
+                    onCanonicalChange = { editCanonical = it },
+                    onAliasesChange = { editAliases = it },
+                    onDismiss = { editingCandidate = null },
+                    onConfirm = {
+                        val novelId = novel?.novelId
+                        val target = editCanonical.trim()
+                        when {
+                            novelId == null -> Unit
+                            target.isBlank() -> state.toast("规范词不能为空")
+                            else -> {
+                                state.launchCandidateEdit(
+                                    novelId = novelId,
+                                    candidateId = candidate.candidateId,
+                                    from = candidate.suggested.canonical,
+                                    to = target,
+                                    aliases = parseVocabularyAliases(editAliases),
+                                )
+                                editingCandidate = null
+                            }
+                        }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * T-O71：词条行的 `from → to` 目标（纯投影，供「词条」tab 与测试共用）。
+ *
+ * 优先级：显式 `replacement`（如「灵石→星石」）> 首个别名 > 空（此时 UI 只显示 canonical）。
+ * 不在 UI 层推断语义，只按既有字段顺序取值。
+ */
+fun vocabularyEntryTarget(entry: VocabularyEntry): String =
+    entry.replacement?.takeIf { it.isNotBlank() }
+        ?: entry.aliases.firstOrNull { it.isNotBlank() }
+        ?: ""
+
+/** T-O71：别名输入解析（顿号 / 中文逗号 / 英文逗号 / 空白分隔；空串 → 空列表）。 */
+fun parseVocabularyAliases(raw: String): List<String> =
+    raw.split('、', '，', ',', ' ', '\n', '\t')
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+
+/**
+ * T-O71：候选编辑对话框（轻量浮层，复用既有 dialog 视觉：半透明遮罩 + raised 卡片 + 既有按钮层级）。
+ *
+ * 只编辑「规范词 / 别名」两栏；候选身份、状态与来源均不变（编辑后仍是 PENDING）。
+ */
+@Composable
+private fun CandidateEditDialog(
+    canonical: String,
+    aliases: String,
+    onCanonicalChange: (String) -> Unit,
+    onAliasesChange: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit,
+) {
+    val palette = QianyanTheme.palette
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier.fillMaxSize()
+                .background(Color.Black.copy(alpha = if (QianyanTheme.isDark) 0.55f else 0.32f))
+                .clickable { onDismiss() },
+        )
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(
+                Modifier.width(480.dp)
+                    .clip(RoundedCornerShape(QianyanShapes.r3))
+                    .background(palette.raised)
+                    .consumeClicks()
+                    .padding(18.dp),
+            ) {
+                Text("编辑候选", style = MaterialTheme.typography.titleLarge, color = palette.text)
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "只修改候选的规范词与别名；候选身份与状态不变（仍是待确认，随后仍需确认或拒绝）。",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = palette.text2,
+                )
+                Spacer(Modifier.height(14.dp))
+                HLine()
+                Spacer(Modifier.height(12.dp))
+                SectionLabel("规范词")
+                QuietField(canonical, onCanonicalChange, Modifier.fillMaxWidth(), placeholder = "规范词，如 星石")
+                Spacer(Modifier.height(10.dp))
+                SectionLabel("别名（顿号或逗号分隔，可留空）")
+                QuietField(aliases, onAliasesChange, Modifier.fillMaxWidth(), placeholder = "别名，如 灵石、星矿")
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    ActionButton("取消", ActionLevel.TEXT, true, onDismiss)
+                    Spacer(Modifier.width(8.dp))
+                    ActionButton("确定", ActionLevel.PRIMARY, canonical.isNotBlank(), onConfirm)
+                }
             }
         }
     }

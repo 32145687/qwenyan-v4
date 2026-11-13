@@ -3,6 +3,7 @@ package com.qianyan.app.desktop.ui.write
 import com.qianyan.application.usecase.workflow.ChapterPhase
 import com.qianyan.application.usecase.writing.WriterPendingProposal
 import com.qianyan.model.DraftId
+import com.qianyan.model.workflow.HumanDecision
 
 /**
  * Desktop Writer 任务状态（P20-PC2）。
@@ -38,6 +39,12 @@ enum class WriterTaskStatus(val label: String) {
     }
 }
 
+/** T-O82-F：失败来源动作（「重试」按同一动作重新发起，不猜测用户意图）。 */
+enum class WriterFailureAction { CONTINUE_WRITING, REWRITE }
+
+/** T-O108（A-32）：批准后后台收尾的用户可见阶段（纯投影，不是新状态机）。 */
+enum class WriterPostCommitState { NONE, PENDING, FAILED }
+
 /**
  * Desktop Writer UI 状态（P20-PC2）。
  *
@@ -62,10 +69,19 @@ data class WriterUiState(
     val taskStatus: WriterTaskStatus = WriterTaskStatus.IDLE,
     /** durable Workflow 人工门：等待用户确认（HITL，不自动通过）。 */
     val waitingForUser: Boolean = false,
+    /** O-90：当前/最近一次 Gate 决议（PENDING/APPROVED/REJECTED/REQUEST_REVISION；无 Gate → null）。 */
+    val pendingGateDecision: HumanDecision? = null,
     /** AI 候选审查投影（原文 / 候选 / Diff）；仅在 Gate PENDING 时非空。 */
     val pendingProposal: WriterPendingProposal? = null,
     val revisionCount: Int = 0,
     val error: String? = null,
+    /**
+     * T-O82-F：**最近一次写作 / 改写失败**的可见摘要（≤200 字，单行化）。
+     * 成功或停在人工门时一律清空（不残留上次失败）。
+     */
+    val failure: String? = null,
+    /** 失败来源动作；「重试」据此重新触发同一动作。 */
+    val failureAction: WriterFailureAction? = null,
     val isLoaded: Boolean = false,
     val isSaving: Boolean = false,
     val isGenerating: Boolean = false,
@@ -76,6 +92,8 @@ data class WriterUiState(
      * 只锁生成类动作，不影响保存 / 只读。
      */
     val decisionLocked: Boolean = false,
+    /** T-O108：后台收尾（WMU → KU）阶段；决议后 UI 立即恢复，此字段驱动非阻塞提示与重试入口。 */
+    val postCommitState: WriterPostCommitState = WriterPostCommitState.NONE,
 ) {
     val hasDraft: Boolean get() = draftId != null
 
@@ -87,10 +105,10 @@ data class WriterUiState(
     val busy: Boolean get() = isSaving || isGenerating || isApproving || isRejecting
 
     /**
-     * 尚无 Draft 不可保存（不伪造草稿；需先经「继续写作」生成初稿）。
+     * 可保存：已有 Draft，或空章节但正文非空（O-84 作者首稿）。
      * **待审期间禁止普通保存**：未批准的 AI 候选不得经「保存」绕过 Human Gate。
      */
-    val canSave: Boolean get() = isLoaded && draftId != null && !busy && !waitingForUser
+    val canSave: Boolean get() = isLoaded && !busy && !waitingForUser && (draftId != null || draftContent.isNotBlank())
 
     /** 决议防抖窗口内禁用生成类动作；保存不受影响。 */
     val canGenerate: Boolean get() = isLoaded && !busy && !decisionLocked
@@ -109,7 +127,26 @@ data class WriterUiState(
 
     /** HITL：拒绝当前待决 Gate（幂等；Canonical 不变）；不依赖候选产物，失效候选也可关闭 Gate。 */
     val canReject: Boolean get() = isLoaded && waitingForUser && !busy
+
+    /**
+     * O-90：上一轮候选已拒绝——Gate 已关闭（不在待审）且最近一次决议为 REJECTED。
+     * 此时界面显示「上一轮已拒绝」而非误导性的「等待人工确认」，并允许再次发起改写。
+     */
+    val rejectedRound: Boolean
+        get() = isLoaded && !waitingForUser && pendingGateDecision == HumanDecision.REJECTED
 }
 
 /** 候选工作产物丢失（典型：进程重启）时的唯一用户文案（正文页 / 控制器错误提示共用）。 */
 internal const val CANDIDATE_LOST_MESSAGE: String = "候选已失效（可能因进程重启）：请重新发起任务。"
+
+/**
+ * O-108（方案 D）：批准整链进行中的可见阶段文案。
+ *
+ * 批准调用内联 KNOWLEDGE_UPDATE（同步 LLM HTTP），实测可达数十秒；本函数只做文案投影，
+ * 不引入状态机 / 枚举，也不改变 approve 时序（决议与收尾仍在同一次调用内完成）。
+ */
+internal fun approvalProgressLabel(seconds: Int): String {
+    val safe = seconds.coerceAtLeast(0)
+    val elapsed = if (safe < 60) "${safe}s" else "${safe / 60}m${safe % 60}s"
+    return "已通过 · 正在更新故事状态（$elapsed）…"
+}

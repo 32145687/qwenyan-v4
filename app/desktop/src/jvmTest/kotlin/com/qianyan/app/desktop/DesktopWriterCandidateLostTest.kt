@@ -302,6 +302,8 @@ class DesktopWriterCandidateLostTest {
             )
 
         override fun saveContent(draftId: DraftId, content: String): Draft = error("saveContent 不应被调用")
+
+        override fun saveFirstDraft(chapterId: ChapterId, content: String): Draft = error("saveFirstDraft 不应被调用")
         override fun continueWriting(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress =
             error("continueWriting 不应被调用")
         override fun rewrite(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress =

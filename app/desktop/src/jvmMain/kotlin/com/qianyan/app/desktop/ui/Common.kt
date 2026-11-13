@@ -122,6 +122,12 @@ data class StatusInfo(
     val save: String = "—",
 )
 
+/** O-100（裁决 A-27a）：有待确认人工门时切换 Provider/模型的统一拒绝文案。 */
+internal const val PENDING_GATE_SWITCH_BLOCKED_MESSAGE = "当前作品有待确认的候选：请先批准或拒绝，再切换 Provider"
+
+/** O-100：是否应因 PENDING 人工门阻止切换（纯函数，两处入口共用）。 */
+internal fun pendingGateBlocksProviderSwitch(count: Int): Boolean = count > 0
+
 /**
  * 应用级 UI 状态（PC 侧持有）。
  *
@@ -142,7 +148,29 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     var novel by mutableStateOf<Novel?>(null)
     var toast by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
+
+    /**
+     * O-88：写作页是否正在跑生成类动作（由 [com.qianyan.app.desktop.ui.pages.WritePage] 按
+     * `WriterUiState.busy` 同步）。设置页切换 Provider 会重建容器并关闭旧 DB 驱动，
+     * 因此写作任务进行中必须拒绝切换，避免打断进行中的任务。
+     */
+    var writerBusy by mutableStateOf(false)
+
+    /**
+     * O-100（裁决 A-27a）：当前作品持久化 PENDING 人工门数量（Main.kt 同步真实值）。
+     * 有候选待确认时切换 Provider/模型会重建容器并销毁内存候选，因此在入口拒绝。
+     */
+    var pendingGateCount by mutableStateOf(0)
     var refreshKey by mutableStateOf(0)
+
+    /**
+     * O-106（裁决 A-29 / 方案 D1）：**只**刷新待确认门计数，不重建写作页控制器。
+     *
+     * 与 [refreshKey] 独立：写作页的 `LaunchedEffect` 以 refreshKey 为 key；若 writerBusy 收敛也递增
+     * refreshKey，会重建 WriterController 并 load()（applyContext 清空 error/failure），
+     * 使刚写入的失败文案只存在一帧。busy 收敛改递增本键即可。
+     */
+    var gateRefreshKey by mutableStateOf(0)
 
     /** 各工作区的内部标签（只记 UI 选择，不参与业务判断）。 */
     var writeTab by mutableStateOf(0)
@@ -306,6 +334,17 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             toast("任务进行中，暂时不能切换模型")
             return false
         }
+        // O-96①：写作页生成中切换会重建容器并关闭旧 DB 驱动，打断进行中的任务。
+        // 与设置 › AI Provider 同一文案，不新增第二条生效路径。
+        if (writerBusy) {
+            toast("当前写作任务进行中，完成后再切换")
+            return false
+        }
+        // O-100：有 PENDING 人工门时切换会重建容器并销毁内存候选（事后只会看到「候选已失效」）。
+        if (pendingGateBlocksProviderSwitch(pendingGateCount)) {
+            toast(PENDING_GATE_SWITCH_BLOCKED_MESSAGE)
+            return false
+        }
         if (provider != ProviderType.MOCK && !graph.isConfigured(provider)) {
             // 未配置 Key 要落在「AI Provider」（Key 录入处），并预选本次所点的厂商
             openSettingsSection(SETTINGS_PROVIDER_SECTION, provider)
@@ -353,11 +392,12 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
                 }
                 val init = out.canonicalInit
                 toast(
-                    when {
-                        init == null -> "已导入 ${fileName}"
-                        init.skippedChapterCount == 0 -> "已导入 ${fileName}，已生成 ${init.initializedChapterCount} 章正文"
-                        else -> "已导入 ${fileName}（新初始化 ${init.initializedChapterCount} 章，已有 ${init.skippedChapterCount} 章跳过）"
-                    },
+                    txtImportSuccessMessage(
+                        fileName = fileName,
+                        isDuplicate = out.isDuplicate,
+                        initializedChapterCount = init?.initializedChapterCount,
+                        skippedChapterCount = init?.skippedChapterCount ?: 0,
+                    ),
                 )
             } catch (e: com.qianyan.application.error.ApplicationException) {
                 toast(com.qianyan.app.desktop.ui.write.messageFor(e))
@@ -558,6 +598,43 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
         }
     }
 
+    /**
+     * T-O71（O-71①）：词库候选「编辑」（复用既有 `VocabularyUseCases.editCandidate`，**不改其语义**）。
+     *
+     * 只改候选 suggested 的规范词 / 别名：候选身份不变、状态不自动晋升（仍 PENDING，随后仍需确认或拒绝）。
+     * IO 执行；成功 `toast("已更新候选：<from> → <to>")` + `refreshKey++`（候选行重读）；
+     * 失败只 toast 可读原因（类型化错误走 [com.qianyan.app.desktop.ui.write.messageFor]），不把异常抛进 Compose。
+     *
+     * @param from 编辑前的规范词（仅用于提示文案）
+     * @param to 编辑后的规范词（写入 `suggested.canonical`）
+     * @param aliases 编辑后的别名；null 表示保持原值（与 `editCandidate` 的默认语义一致）
+     */
+    fun launchCandidateEdit(
+        novelId: NovelId,
+        candidateId: VocabularyCandidateId,
+        from: String,
+        to: String,
+        aliases: List<String>? = null,
+    ) {
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    container.vocabularies.editCandidate(candidateId, novelId, canonical = to, aliases = aliases)
+                }
+                toast("已更新候选：$from → $to")
+            } catch (e: com.qianyan.application.error.ApplicationException) {
+                toast(com.qianyan.app.desktop.ui.write.messageFor(e))
+            } catch (e: Exception) {
+                toast("操作失败：${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                busy = false
+                refreshKey++
+            }
+        }
+    }
+
     /** 任务 C：词库候选处置（PENDING → APPROVED / REJECTED，复用既有 VocabularyUseCases，幂等由后端保证）。 */
     fun launchCandidateDecision(novelId: NovelId, candidateId: VocabularyCandidateId, confirm: Boolean) {
         if (busy) return
@@ -651,6 +728,19 @@ fun openNovel(state: DesktopAppState, novelId: NovelId) {
         state.container.projects.openProject(novelId)
         state.container.novels.getNovel(novelId)
     }
+}
+
+/** O-05（A-35 d1）· TXT 导入成功文案（纯函数）：重复导入必须说明"已打开现有作品"，不得声称新生成章节。 */
+internal fun txtImportSuccessMessage(
+    fileName: String,
+    isDuplicate: Boolean,
+    initializedChapterCount: Int?,
+    skippedChapterCount: Int,
+): String = when {
+    isDuplicate -> "该文件已导入过，已打开现有作品：$fileName"
+    initializedChapterCount == null -> "已导入 $fileName"
+    skippedChapterCount == 0 -> "已导入 $fileName，已生成 $initializedChapterCount 章正文"
+    else -> "已导入 $fileName（新初始化 $initializedChapterCount 章，已有 $skippedChapterCount 章跳过）"
 }
 
 /**

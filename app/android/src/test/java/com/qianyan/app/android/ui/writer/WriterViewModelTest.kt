@@ -65,6 +65,11 @@ class WriterViewModelTest {
             return saved
         }
 
+        override fun saveFirstDraft(chapterId: ChapterId, content: String): Draft {
+            // O-84 空章节首稿：本测试只覆盖既有保存 / 生成路径，首稿入口保持桩。
+            TODO()
+        }
+
         override fun continueWriting(novelId: NovelId, variantId: VariantId?, chapterId: ChapterId): ChapterWorkflowProgress {
             calls += "continueWriting"
             if (failContinue) throw ApplicationException(ApplicationError.WritingFailed("writer exploded"))

@@ -61,6 +61,8 @@ import com.qianyan.app.desktop.ui.write.CANDIDATE_LOST_MESSAGE
 import com.qianyan.app.desktop.ui.write.RewriteDialog
 import com.qianyan.app.desktop.ui.write.WriterController
 import com.qianyan.app.desktop.ui.write.WriterUiState
+import com.qianyan.app.desktop.ui.write.WriterPostCommitState
+import com.qianyan.app.desktop.ui.write.approvalProgressLabel
 import com.qianyan.application.usecase.memory.WritingMemorySummary
 import com.qianyan.application.usecase.writing.WriterPendingProposal
 import com.qianyan.application.usecase.writing.knowledgeupdate.LatestKnowledgeUpdate
@@ -71,6 +73,13 @@ import com.qianyan.model.vocabulary.VocabularyRuleSkip
 import com.qianyan.model.vocabulary.VocabularyRuleSkipReason
 import com.qianyan.model.workspace.WorkspaceObjectKind
 import com.qianyan.model.workspace.WorkspaceSelection
+
+/**
+ * O-101：写作页忙态结束（true→false）时才需要刷新待确认门计数。
+ *
+ * 与 `onDecision` 共用 `state.refreshKey` 刷新源；纯函数便于单测。
+ */
+internal fun shouldRefreshAfterBusy(previous: Boolean, next: Boolean): Boolean = previous && !next
 
 /**
  * 12.2 · 正文（**内容优先**）。
@@ -96,7 +105,8 @@ fun WritePage(state: DesktopAppState) {
     var latestKu by remember { mutableStateOf<LatestKnowledgeUpdate?>(null) }
 
     // O-08：知识更新结果视图（按作品 + layer=WRITING + effective；只读投影）。
-    LaunchedEffect(state.novel?.novelId, state.refreshKey) {
+    // T-O108：后台收尾完成时只递增 gateRefreshKey（不重建控制器），面板需随之一并刷新。
+    LaunchedEffect(state.novel?.novelId, state.refreshKey, state.gateRefreshKey) {
         val novelId = state.novel?.novelId
         if (novelId == null) {
             knowledgeUpdate = null
@@ -126,17 +136,30 @@ fun WritePage(state: DesktopAppState) {
         val c = WriterController(
             novelId = novelId,
             chapter = loaded,
-            gateway = state.container.writerGateway,
-            workflow = state.container.workflowFacade,
+            // O-88：传提供者而不是实例——设置页切换 Provider 重建容器后，下一次动作自动用新服务。
+            gatewayProvider = { state.container.writerGateway },
+            workflowProvider = { state.container.workflowFacade },
             scope = state.scope,
             autoSave = true,
-            onDecision = { state.refreshKey++ },
+            onDecision = { state.gateRefreshKey++ },
+            // O-96②：忙标志由控制器真实忙态驱动；离页后任务仍在跑，只有任务收敛才复位。
+            onBusyChange = { state.writerBusy = it },
         )
         controller = c
         c.load()
     }
 
     val s by (controller?.uiState?.collectAsState() ?: remember { mutableStateOf(WriterUiState()) })
+
+    // T-O108（A-32）：后台收尾进行中时每 2s 重读一次投影（完成后提示消失 / 失败后出现重试）。
+    LaunchedEffect(s.postCommitState) {
+        if (s.postCommitState == WriterPostCommitState.PENDING) {
+            while (true) {
+                kotlinx.coroutines.delay(2000)
+                controller?.refreshPostCommit()
+            }
+        }
+    }
     ui = s
 
     // 稿纸样式（衬线 + 行距；字号来自用户在「设置 · 写作 · 排版」或 ··· 菜单中的选择）
@@ -147,7 +170,8 @@ fun WritePage(state: DesktopAppState) {
             chapter = chapter?.let { "第 ${it.order} 章" } ?: "—",
             words = formatCount(wordCount(ui.draftContent)),
             save = if (ui.dirty) "未保存" else if (ui.hasDraft) "已保存" else "无草稿",
-            task = ui.taskStatus.label,
+            // O-90：已拒绝轮次不再显示误导性的「等待人工确认」。
+            task = if (ui.rejectedRound) "上一轮已拒绝" else ui.taskStatus.label,
         )
     }
 
@@ -163,6 +187,7 @@ fun WritePage(state: DesktopAppState) {
             onContinue = { controller?.continueWriting() },
             onApprove = { controller?.approveGate() },
             onReject = { controller?.rejectGate() },
+            onRetryPostCommit = { controller?.retryPostCommit() },
             onPrev = {
                 val list = allChapters.sortedBy { it.order }
                 val idx = list.indexOfFirst { it.chapterId == chapterId }
@@ -226,6 +251,16 @@ fun WritePage(state: DesktopAppState) {
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Spacer(Modifier.height(28.dp))
+
+                    // T-O82-F：失败可见 —— 最近一次写作 / 改写失败时，在编辑器上方常驻原因 + 重试。
+                    ui.failure?.let { summary ->
+                        FailureBanner(
+                            summary = summary,
+                            enabled = !ui.busy,
+                            onRetry = { controller?.retryFailed() },
+                        )
+                        Spacer(Modifier.height(16.dp))
+                    }
 
                     // 稿纸：白色纸面 + 极轻投影，放在暖白工作台上（视觉焦点是正文本身）
                     Column(
@@ -338,6 +373,41 @@ private fun ruleSkipLabel(reason: VocabularyRuleSkipReason): String = when (reas
 }
 
 /**
+ * T-O82-F：写作 / 改写失败条（编辑器上方，仅在 [WriterUiState.failure] 非空时渲染）。
+ *
+ * 只做「看得见」：原因来自 Controller 已拿到的失败文本（≤200 字），「重试」重新触发同一动作；
+ * 不新增业务规则、不改工作流语义。
+ */
+@Composable
+private fun FailureBanner(summary: String, enabled: Boolean, onRetry: () -> Unit) {
+    val palette = QianyanTheme.palette
+    Row(
+        Modifier.width(QianyanDimens.EditorWidth)
+            .clip(RoundedCornerShape(QianyanShapes.r3))
+            .background(palette.delSoft)
+            .border(1.dp, palette.del.copy(alpha = 0.55f), RoundedCornerShape(QianyanShapes.r3))
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                "上次写作未完成",
+                style = MaterialTheme.typography.labelSmall,
+                color = palette.del,
+            )
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = palette.text2,
+                maxLines = 3,
+            )
+        }
+        Spacer(Modifier.width(16.dp))
+        ActionButton("重试", ActionLevel.SECONDARY, enabled, onRetry)
+    }
+}
+
+/**
  * 审批前的只读审查区：原文 / 候选稿 / 行级 Diff。
  *
  * 不提供编辑与保存入口 —— 未批准的 AI 候选只能经「通过确认」进入现有 Commit，或经「拒绝」结束当前 Gate。
@@ -359,31 +429,33 @@ private fun PendingProposalReview(proposal: WriterPendingProposal) {
         )
         Spacer(Modifier.height(20.dp))
 
-        if (proposal.ruleHits.isNotEmpty() || proposal.ruleSkips.isNotEmpty()) {
+        // T-O85G-F：命中与跳过各自独立成节——只有跳过、零命中时不再出现空的「词库规则已替换」标题。
+        if (proposal.ruleHits.isNotEmpty()) {
             ReviewSection("词库规则已替换") {
-                if (proposal.ruleHits.isNotEmpty()) {
-                    val total = proposal.ruleHits.sumOf { it.count }
-                    Text(
-                        "词库规则已替换 $total 处：" +
-                            proposal.ruleHits.joinToString("、") { "${it.from}→${it.to} ×${it.count}" },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = palette.text2,
-                    )
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        "替换已包含在候选稿与 Diff 中，批准前不会写入正文。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = palette.text3,
-                    )
-                }
-                if (proposal.ruleSkips.isNotEmpty()) {
-                    if (proposal.ruleHits.isNotEmpty()) Spacer(Modifier.height(6.dp))
-                    Text(
-                        "另有 ${proposal.ruleSkips.size} 条规则未执行：${ruleSkipSummary(proposal.ruleSkips)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = palette.text2,
-                    )
-                }
+                val total = proposal.ruleHits.sumOf { it.count }
+                Text(
+                    "词库规则已替换 $total 处：" +
+                        proposal.ruleHits.joinToString("、") { "${it.from}→${it.to} ×${it.count}" },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text2,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "替换已包含在候选稿与 Diff 中，批准前不会写入正文。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text3,
+                )
+            }
+            Spacer(Modifier.height(18.dp))
+        }
+
+        if (proposal.ruleSkips.isNotEmpty()) {
+            ReviewSection("词库规则未执行") {
+                Text(
+                    "另有 ${proposal.ruleSkips.size} 条规则未执行：${ruleSkipSummary(proposal.ruleSkips)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text2,
+                )
             }
             Spacer(Modifier.height(18.dp))
         }
@@ -469,6 +541,7 @@ private fun ChapterBar(
     onContinue: () -> Unit,
     onApprove: () -> Unit,
     onReject: () -> Unit,
+    onRetryPostCommit: () -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit,
     onContinueNext: () -> Unit,
@@ -476,6 +549,18 @@ private fun ChapterBar(
     onConfirmFinal: () -> Unit,
 ) {
     val palette = QianyanTheme.palette
+
+    // O-108（方案 D）：批准整链（含同步 KU）可能数十秒，进行态用本地秒数计时（不改任何业务状态）。
+    var approvalSeconds by remember { mutableStateOf(0) }
+    LaunchedEffect(ui.isApproving) {
+        approvalSeconds = 0
+        if (!ui.isApproving) return@LaunchedEffect
+        while (true) {
+            kotlinx.coroutines.delay(1000)
+            approvalSeconds++
+        }
+    }
+
     Column(Modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().height(QianyanDimens.TopBar).padding(horizontal = QianyanDimens.PageX),
@@ -488,7 +573,15 @@ private fun ChapterBar(
                 modifier = Modifier.weight(1f),
             )
 
-            if (ui.waitingForUser) {
+            if (ui.isApproving) {
+                // O-108：批准整链进行中——给出阶段 + 已用秒数，替代「只禁用按钮」的静默观感。
+                Text(
+                    approvalProgressLabel(approvalSeconds),
+                    style = TextStyle(fontFamily = QianyanFonts.serif, fontSize = 13.sp, color = palette.text2),
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(8.dp))
+            } else if (ui.waitingForUser) {
                 if (ui.candidateLost) {
                     // 候选已失效：批准没有对象；拒绝只结束当前 Gate、不依赖候选，仍可用。
                     ActionButton("拒绝失效提案", ActionLevel.SECONDARY, ui.canReject, onReject)
@@ -534,6 +627,33 @@ private fun ChapterBar(
         }
         HLine()
 
+        // T-O108（A-32）：决议已生效、故事状态后台更新中 / 更新失败（非阻塞；不替换按钮行）。
+        if (ui.postCommitState == WriterPostCommitState.PENDING) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "已通过 · 故事状态后台更新中…",
+                    style = TextStyle(fontFamily = QianyanFonts.serif, fontSize = 13.sp, color = palette.text2),
+                    maxLines = 1,
+                )
+            }
+        } else if (ui.postCommitState == WriterPostCommitState.FAILED) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "故事状态更新失败（正文已保存）",
+                    style = TextStyle(fontFamily = QianyanFonts.serif, fontSize = 13.sp, color = palette.del),
+                    maxLines = 1,
+                )
+                Spacer(Modifier.width(8.dp))
+                ActionButton("重试", ActionLevel.SECONDARY, true, onRetryPostCommit)
+            }
+        }
+
         // 错误 / 人工门提示：安静的一行，不弹窗
         if (ui.error != null) {
             Row(Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp)) {
@@ -553,6 +673,15 @@ private fun ChapterBar(
             Row(Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp)) {
                 Text(
                     "已停在人工确认：请阅读原文与 AI 候选稿后决定「通过确认」或「拒绝」（不会自动批准）。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text3,
+                )
+            }
+        } else if (ui.rejectedRound) {
+            // O-90：拒绝后的轮次已结束，不再停留在「等待人工确认」投影；提示可重新发起改写。
+            Row(Modifier.fillMaxWidth().padding(horizontal = QianyanDimens.PageX, vertical = 6.dp)) {
+                Text(
+                    "上一轮候选已拒绝：可重新发起「让 Qianyan 修改」。",
                     style = MaterialTheme.typography.bodySmall,
                     color = palette.text3,
                 )

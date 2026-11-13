@@ -2,6 +2,8 @@ package com.qianyan.app.desktop
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -16,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -104,6 +107,7 @@ import com.qianyan.app.desktop.ui.pages.TasksPage
 import com.qianyan.app.desktop.ui.pages.VocabularyPage
 import com.qianyan.app.desktop.ui.pages.WorldPage
 import com.qianyan.app.desktop.ui.pages.WritePage
+import com.qianyan.app.desktop.ui.pages.shouldRefreshAfterBusy
 import com.qianyan.app.desktop.ui.settings.SettingsPanel
 import com.qianyan.app.desktop.ui.shortcutLabel
 import com.qianyan.app.desktop.ui.statusLabel
@@ -125,12 +129,69 @@ import kotlin.math.sin
 import com.qianyan.model.workspace.WorkspaceSelection
 
 /**
- * Qianyan · 桌面工作台入口。
+ * Qianyan 桌面工作台入口（见 [main]）。
  *
- * 五个一级工作区（创作 / 正文 / 故事 / 资料 / 历史）+ 左中右三栏 + 底部状态栏。
- * 顶栏只保留当前作品、项目切换、命令面板与设置；不显示品牌文字标识。
+ * 五个一级工作区（创作 / 正文 / 故事 / 资料 / 历史）+ 左中右三栏 + 底部状态栏；顶栏只保留当前作品、项目切换、命令面板与设置。
+ * 文件内另含 O-87 的 [DesktopCrashLog]（未捕获异常落盘），入口为 [main]。
  */
+/**
+ * O-87 加固 · 桌面端未捕获异常落盘。
+ *
+ * 目的：设置页等 AWT EDT 上的未捕获异常不再只弹一个无栈的「Error」对话框，
+ * 而是把**完整栈（含 Caused by 全部行）**追加写入 `%APPDATA%\Qianyan\logs\qianyan-crash.log`
+ * （每条带 ISO-8601 时间戳与上下文），同时仍打到 stderr。日志里不写任何凭据值。
+ *
+ * 本对象只做记录，不修任何根因；拿到栈后再按栈定位。
+ */
+internal object DesktopCrashLog {
+
+    /** 测试用日志路径覆盖（生产为 null，落 %APPDATA%/Qianyan/logs）。 */
+    internal var fileOverride: java.nio.file.Path? = null
+
+    val file: java.nio.file.Path
+        get() = fileOverride ?: DesktopGraph.appDataDir().resolve("logs").resolve("qianyan-crash.log")
+
+    /** 追加一条带 ISO 时间戳的完整栈。写日志自身失败只打到 stderr，不向上抛。 */
+    fun record(throwable: Throwable, context: String) {
+        runCatching {
+            val target = file
+            target.parent?.let { java.nio.file.Files.createDirectories(it) }
+            val trace = java.io.StringWriter().also { writer ->
+                throwable.printStackTrace(java.io.PrintWriter(writer))
+            }.toString()
+            val entry = buildString {
+                append(java.time.OffsetDateTime.now().toString())
+                append(' ').append(context).append('\n')
+                append(trace)
+                if (!trace.endsWith("\n")) append('\n')
+                append('\n')
+            }
+            java.nio.file.Files.writeString(
+                target,
+                entry,
+                java.nio.charset.StandardCharsets.UTF_8,
+                java.nio.file.StandardOpenOption.CREATE,
+                java.nio.file.StandardOpenOption.APPEND,
+            )
+        }.onFailure { it.printStackTrace() }
+    }
+
+    /**
+     * 注册全局未捕获异常处理器：默认处理器兜住所有线程，另给 AWT EDT 单独挂一层，
+     * 保证 EDT 上的未捕获异常（Compose 组合期 / 事件回调）一定被记录。
+     */
+    fun installGlobalHandlers() {
+        val handler = Thread.UncaughtExceptionHandler { thread, error ->
+            error.printStackTrace()
+            record(error, "uncaught exception in thread ${thread.name}")
+        }
+        Thread.setDefaultUncaughtExceptionHandler(handler)
+        java.awt.EventQueue.invokeLater { Thread.currentThread().uncaughtExceptionHandler = handler }
+    }
+}
+
 fun main() = application {
+    DesktopCrashLog.installGlobalHandlers()
     // 必须 remember：根作用域会因 state.novel 变化而重组合，未 remember 会在每次重组合时
     // 重建 DesktopGraph（新 DB 连接）与 DesktopAppState（novel 归零），表现为「打开作品无效」。
     val graph = remember { DesktopGraph.create() }
@@ -244,22 +305,44 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
     val providerMsg by state.graph.providerMessage.collectAsState()
     var pendingText by remember { mutableStateOf("0") }
 
+    // O-101：写作页 busy 结束（true→false）时刷新待确认门计数。
+    // 放在 AppShell 而非正文页：离页后任务仍在跑，完成时状态栏也要刷新。
+    // O-106（A-29/D1）：只递增 gateRefreshKey，不递增 refreshKey——后者会重建写作页控制器并擦除失败文案。
+    var wasWriterBusy by remember { mutableStateOf(false) }
+    LaunchedEffect(state.writerBusy) {
+        if (shouldRefreshAfterBusy(wasWriterBusy, state.writerBusy)) state.gateRefreshKey++
+        wasWriterBusy = state.writerBusy
+    }
+
+    // T-O108（A-32）：启动时恢复未完成的「提交后收尾」后台任务（WMU → KU）。
+    // 只在 IO 上跑，完成后递增 gateRefreshKey 刷新外壳（不重建写作页控制器）。
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) { runCatching { state.container.postCommitFinalizer.resumeOnStartup() } }
+        state.gateRefreshKey++
+    }
+
     // Workspace：当前对象变化 / 数据变化时重读 Inspector（只读投影）
     LaunchedEffect(state.novel?.projectId, state.refreshKey, state.workspace.selection) {
         state.workspace.load()
     }
-    LaunchedEffect(state.projectId, state.refreshKey) {
+    LaunchedEffect(state.projectId, state.refreshKey, state.gateRefreshKey) {
         val pid = state.projectId
         if (pid == null) {
             pendingText = "0"
+            // O-100：无作品时不存在待确认门，计数同步回落。
+            state.pendingGateCount = 0
             return@LaunchedEffect
         }
         pendingText = try {
             // O-50：待确认 = 持久化 PENDING Gate 数（不再读内存 ChangeArtifact 列表）。
-            state.load { it.workspace.pendingGateCount(pid) }.toString()
+            val count = state.load { it.workspace.pendingGateCount(pid) }
+            // O-100：同一处写入可见计数，供 Provider/模型切换守卫使用；读取失败回落 0，不阻断切换。
+            state.pendingGateCount = count
+            count.toString()
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
+            state.pendingGateCount = 0
             "读取失败"
         }
     }
@@ -342,10 +425,10 @@ fun AppShell(state: DesktopAppState, window: ComposeWindow, onClose: () -> Unit)
                 Box(
                     Modifier.fillMaxSize()
                         .background(Color.Black.copy(alpha = if (dark) 0.55f else 0.32f))
-                        .clickable { state.settingsOpen = false },
+                        .clickable { state.settingsOpen = false; clearProviderMessageOnSettingsClose(state) },
                 )
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    SettingsPanel(state) { state.settingsOpen = false }
+                    SettingsPanel(state) { state.settingsOpen = false; clearProviderMessageOnSettingsClose(state) }
                 }
             }
         }
@@ -747,33 +830,38 @@ private fun ProjectSwitcher(state: DesktopAppState, compact: Boolean = false) {
                     color = palette.text3,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                 )
-                else -> novels.forEach { novel ->
-                    val current = state.novel?.novelId == novel.novelId
-                    DropdownMenuItem(
-                        text = {
-                            Column {
-                                Text(
-                                    novel.title + if (current) " · 当前" else "",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = palette.text,
-                                    maxLines = 1,
-                                )
-                                Text(
-                                    listOfNotNull(
-                                        novel.genre.joinToString(" · ").takeIf { it.isNotBlank() },
-                                        statusLabel(novel.status.name),
-                                    ).joinToString(" · "),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = palette.text3,
-                                )
-                            }
-                        },
-                        onClick = {
-                            open = false
-                            openNovel(state, novel.novelId)
-                        },
-                        enabled = !state.busy,
-                    )
+                // T-O80-F：列表区独立滚动（标题 / 分隔线 / 新建 / 导入保持固定），最新作品置顶。
+                else -> Column(
+                    Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    novels.asReversed().forEach { novel ->
+                        val current = state.novel?.novelId == novel.novelId
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(
+                                        novel.title + if (current) " · 当前" else "",
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = palette.text,
+                                        maxLines = 1,
+                                    )
+                                    Text(
+                                        listOfNotNull(
+                                            novel.genre.joinToString(" · ").takeIf { it.isNotBlank() },
+                                            statusLabel(novel.status.name),
+                                        ).joinToString(" · "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = palette.text3,
+                                    )
+                                }
+                            },
+                            onClick = {
+                                open = false
+                                openNovel(state, novel.novelId)
+                            },
+                            enabled = !state.busy,
+                        )
+                    }
                 }
             }
             HLine()
@@ -1089,6 +1177,25 @@ private fun WorkspaceTabs(
 
 /* ---------------- 底部状态栏（28dp） ---------------- */
 
+/**
+ * O-99：状态栏任务段文案（纯函数，便于单测）。
+ *
+ * 非空闲优先展示具体任务（如「上一轮已拒绝」）；否则沿用既有的「任务运行中」；都不成立则不显示该段。
+ */
+internal fun statusTaskLabel(task: String, busy: Boolean): String? = when {
+    task.isNotBlank() && task != "空闲" -> "任务 $task"
+    busy -> "任务运行中"
+    else -> null
+}
+
+/**
+ * O-102：关闭设置面板时清空 providerMessage，避免「当前作品有待确认的候选…」等红条在解决门之后继续残留。
+ * 背景点击与关闭按钮两条路径统一调用（纯函数便于单测）。
+ */
+internal fun clearProviderMessageOnSettingsClose(state: DesktopAppState) {
+    state.graph.providerMessage.value = null
+}
+
 @Composable
 private fun StatusBar(state: DesktopAppState) {
     val palette = QianyanTheme.palette
@@ -1112,9 +1219,11 @@ private fun StatusBar(state: DesktopAppState) {
             StatusText("保存 ${s.save}")
             StatusDot()
             StatusText("待确认 ${s.pending}")
-            if (state.busy) {
+            // O-99：StatusBar 之前从不渲染 StatusInfo.task，导致「上一轮已拒绝」等文案真机不可见。
+            val taskLabel = statusTaskLabel(s.task, state.busy)
+            if (taskLabel != null) {
                 StatusDot()
-                StatusText("任务运行中", palette.accent)
+                StatusText(taskLabel, if (state.busy) palette.accent else palette.text2)
             }
         }
         Spacer(Modifier.weight(1f))

@@ -38,14 +38,17 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.qianyan.app.desktop.DesktopCrashLog
 import com.qianyan.app.desktop.ui.ActionButton
 import com.qianyan.app.desktop.ui.ActionLevel
 import com.qianyan.app.desktop.ui.DesktopAppState
 import com.qianyan.app.desktop.ui.HLine
+import com.qianyan.app.desktop.ui.PENDING_GATE_SWITCH_BLOCKED_MESSAGE
 import com.qianyan.app.desktop.ui.ProseSize
 import com.qianyan.app.desktop.ui.QuietField
 import com.qianyan.app.desktop.ui.consumeClicks
 import com.qianyan.app.desktop.ui.hoverBackground
+import com.qianyan.app.desktop.ui.pendingGateBlocksProviderSwitch
 import com.qianyan.app.desktop.ui.providerLabel
 import com.qianyan.app.desktop.ui.shortcutLabel
 import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
@@ -448,10 +451,19 @@ private fun ProviderCredentials(state: DesktopAppState) {
         ) {
             if (selected != ProviderType.MOCK && configured) {
                 ActionButton("清除 Key", ActionLevel.TEXT, !state.busy) {
-                    state.graph.clearApiKey(selected)
-                    apiKey = ""
-                    configured = false
-                    note = "已清除 ${providerLabel(selected)} 的 API Key"
+                    // O-87：清除失败不得让异常冒泡到 EDT（否则整页点击无响应）；失败走既有 note 通道。
+                    val attempt = runCatching { state.graph.clearApiKey(selected) }
+                    if (attempt.getOrDefault(false)) {
+                        apiKey = ""
+                        configured = false
+                        note = "已清除 ${providerLabel(selected)} 的 API Key"
+                    } else {
+                        attempt.exceptionOrNull()?.let {
+                            DesktopCrashLog.record(it, "清除 Key 失败（${selected.name}）")
+                        }
+                        val reason = state.graph.providerMessage.value ?: "无法写入本地凭据文件"
+                        note = "清除失败：${reason.take(200)}"
+                    }
                 }
                 Spacer(Modifier.width(8.dp))
             }
@@ -461,12 +473,19 @@ private fun ProviderCredentials(state: DesktopAppState) {
                 ActionLevel.PRIMARY,
                 enabled = !state.busy && (selected == ProviderType.MOCK || configured || apiKey.isNotBlank()),
             ) {
-                val ok = saveProviderFromSettings(state, selected, apiKey, baseUrl)
+                // O-87：onClick 在 AWT EDT 上执行，任何未捕获异常都会让整页点击静默失效；这里兜住并可见。
+                val attempt = runCatching { saveProviderFromSettings(state, selected, apiKey, baseUrl) }
+                val ok = attempt.getOrDefault(false)
+                val thrown = attempt.exceptionOrNull()
+                if (thrown != null) {
+                    DesktopCrashLog.record(thrown, "保存 Provider 设置失败（${selected.name}）")
+                }
                 note = if (ok) {
                     val switched = if (current == selected) "" else "并切换到 ${providerLabel(selected)}"
                     "已保存$switched（模型 ${state.graph.modelId()}）"
                 } else {
-                    state.graph.providerMessage.value ?: "保存失败：请检查 Key 与端点"
+                    thrown?.let { "保存失败：${it.message?.take(200) ?: it::class.simpleName}" }
+                        ?: (state.graph.providerMessage.value ?: "保存失败：请检查 Key 与端点")
                 }
                 if (ok) {
                     apiKey = ""
@@ -505,6 +524,17 @@ internal fun saveProviderFromSettings(
     apiKey: String,
     baseUrl: String,
 ): Boolean {
+    // O-88：切换会重建容器并关闭旧 DB 驱动；写作页生成中硬切会把进行中的任务打断。
+    // 因此忙时拒绝（不产生任何半切换），由既有 note / providerMessage 通道提示。
+    if (state.busy || state.writerBusy) {
+        state.graph.providerMessage.value = "当前写作任务进行中，完成后再切换"
+        return false
+    }
+    // O-100：有待确认人工门时切换会重建容器并销毁内存候选；必须在任何赋值之前拒绝。
+    if (pendingGateBlocksProviderSwitch(state.pendingGateCount)) {
+        state.graph.providerMessage.value = PENDING_GATE_SWITCH_BLOCKED_MESSAGE
+        return false
+    }
     val current = state.graph.provider.value
     val modelId = if (selected == current) {
         state.graph.modelId()

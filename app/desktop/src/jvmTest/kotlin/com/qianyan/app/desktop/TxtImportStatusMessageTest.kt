@@ -1,5 +1,6 @@
 package com.qianyan.app.desktop
 
+import com.qianyan.app.desktop.ui.txtImportSuccessMessage
 import com.qianyan.app.desktop.ui.write.messageFor
 import com.qianyan.application.error.ApplicationError
 import com.qianyan.application.error.ApplicationException
@@ -48,5 +49,42 @@ class TxtImportStatusMessageTest {
     fun `plain import failure does not claim the file was imported`() {
         val msg = messageFor(ApplicationException(ApplicationError.EmptyDocument("文件内容为空")))
         assertFalse(msg.contains("TXT 已导入"), "导入失败不得声称已导入：$msg")
+    }
+
+    /* ---------------- A-35 d1/d2：重复导入与跨来源冲突的下一步指引 ---------------- */
+
+    @Test
+    fun `duplicate import message says already imported and opens existing`() {
+        val msg = txtImportSuccessMessage(
+            fileName = "novel.txt",
+            isDuplicate = true,
+            initializedChapterCount = null,
+            skippedChapterCount = 0,
+        )
+        assertTrue(msg.contains("已导入过"), "重复导入必须明确告知已导入过：$msg")
+        assertTrue(msg.contains("novel.txt"), msg)
+        assertTrue(msg.contains("现有作品"), "重复导入必须说明打开的是现有作品：$msg")
+        assertFalse(msg.contains("已生成"), "重复导入不得声称新生成章节：$msg")
+    }
+
+    @Test
+    fun `normal import message keeps chapter count`() {
+        val msg = txtImportSuccessMessage(
+            fileName = "novel.txt",
+            isDuplicate = false,
+            initializedChapterCount = 3,
+            skippedChapterCount = 0,
+        )
+        assertTrue(msg.contains("已导入"), msg)
+        assertTrue(msg.contains("已生成 3 章"), "正常导入必须保留章节计数：$msg")
+    }
+
+    @Test
+    fun `conflict message tells user to import into a new work`() {
+        val msg = messageFor(
+            ApplicationException(ApplicationError.ChapterSourceConflict("Novel n 已有 1 个不属于目标集合的章节")),
+        )
+        assertTrue(msg.contains("其他来源的章节"), "既有冲突原因文案必须保留：$msg")
+        assertTrue(msg.contains("新建作品分别导入"), "冲突提示必须给出下一步指引：$msg")
     }
 }

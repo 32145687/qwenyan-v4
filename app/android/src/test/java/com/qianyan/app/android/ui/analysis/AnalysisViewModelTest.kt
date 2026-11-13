@@ -162,6 +162,8 @@ class AnalysisViewModelTest {
         override fun findEntriesByVariant(novelId: NovelId, variantId: VariantId): List<VocabularyEntry> = TODO()
         override fun findEntriesByNovel(novelId: NovelId): List<VocabularyEntry> = TODO()
         override fun saveRule(rule: VocabularyRule) = TODO()
+        // T-O37-B 规则启用开关：本测试不覆盖该路径，与候选写接口同样保持桩。
+        override fun updateRuleEnabled(ruleId: com.qianyan.model.VocabularyRuleId, enabled: Boolean) = TODO()
         // T-O37-A 只读接口：本测试不覆盖词库规则执行，保持空桩。
         override fun listRules(): List<VocabularyRule> = emptyList()
     }

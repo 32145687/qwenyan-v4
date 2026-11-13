@@ -137,26 +137,38 @@ fun ReaderPage(state: DesktopAppState) {
         restoredChapter = r.chapterId.value
         displayPosition = r.position
         if (r.position > 0) {
-            var waited = 0
-            while (!blockTops.containsKey(r.position) && waited < 40) {
-                delay(25)
-                waited++
+            if (r.blocks.size <= 1) {
+                // O-68：单块章节的 position 是千分比，等滚动范围就绪后换算回像素；
+                // 内容不满一屏（maxValue 恒 0）时不滚动、不除零。
+                var waited = 0
+                while (scroll.maxValue <= 0 && waited < 40) {
+                    delay(25)
+                    waited++
+                }
+                scroll.scrollTo(readerSingleBlockTarget(r.position, scroll.maxValue))
+            } else {
+                var waited = 0
+                while (!blockTops.containsKey(r.position) && waited < 40) {
+                    delay(25)
+                    waited++
+                }
+                blockTops[r.position]?.let { top -> scroll.scrollTo(top) }
             }
-            blockTops[r.position]?.let { top -> scroll.scrollTo(top) }
         }
     }
 
-    // 滚动停止后保存当前可见块序号（700ms 防抖）
+    // 滚动停止后保存当前位置（700ms 防抖）；单块存千分比，多块存首个可见块序号
     LaunchedEffect(scroll.isScrollInProgress, reader?.chapterId, restoredChapter) {
         val r = reader ?: return@LaunchedEffect
         if (scroll.isScrollInProgress || restoredChapter != r.chapterId.value) return@LaunchedEffect
         delay(700)
         val firstVisible = blockTops.filterValues { it <= scroll.value + 8 }
             .maxByOrNull { it.value }?.key ?: 0
-        if (firstVisible == displayPosition) return@LaunchedEffect
+        val position = readerPositionToSave(r.blocks.size, firstVisible, scroll.value, scroll.maxValue)
+        if (position == displayPosition) return@LaunchedEffect
         val novelId = state.novel?.novelId ?: return@LaunchedEffect
-        runCatching { state.load { it.reading.savePosition(novelId, r.chapterId, firstVisible) } }
-            .onSuccess { displayPosition = firstVisible }
+        runCatching { state.load { it.reading.savePosition(novelId, r.chapterId, position) } }
+            .onSuccess { displayPosition = position }
     }
 
     // 离开阅读页时落一次位置（应用级 scope，切页/切章也能完成）
@@ -167,8 +179,9 @@ fun ReaderPage(state: DesktopAppState) {
             val novelId = state.novel?.novelId ?: return@onDispose
             val firstVisible = blockTops.filterValues { it <= scroll.value + 8 }
                 .maxByOrNull { it.value }?.key ?: 0
+            val position = readerPositionToSave(r.blocks.size, firstVisible, scroll.value, scroll.maxValue)
             state.scope.launch {
-                runCatching { state.container.reading.savePosition(novelId, r.chapterId, firstVisible) }
+                runCatching { state.container.reading.savePosition(novelId, r.chapterId, position) }
             }
         }
     }
@@ -249,7 +262,7 @@ fun ReaderPage(state: DesktopAppState) {
                             val pos = displayPosition
                             Text(
                                 "共 ${formatCount(wordCount(r.blocks.joinToString("") { blockText(it) }))} 字 · " +
-                                    "格式 ${r.format ?: "纯文本"} · 阅读位置 $pos",
+                                    "格式 ${r.format ?: "纯文本"} · 阅读位置 ${readerPositionLabel(r.blocks.size, pos)}",
                                 style = QianyanCodeStyle,
                                 color = palette.text3,
                             )

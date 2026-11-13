@@ -42,6 +42,42 @@ import com.qianyan.provider.ModelProfile
 import com.qianyan.provider.ProviderType
 
 /**
+ * 「当前模型」小节的纯投影（无 Compose，便于单测）。
+ *
+ * [options] = 该 Provider 的已启用自定义模型（[DesktopGraph.customModels] 已按 enabled 过滤）
+ * + 当前值 + 厂商默认模型，去重；[currentModelId] 即已选值。
+ */
+internal data class CurrentModelProjection(
+    val providerLabel: String,
+    val currentModelId: String,
+    val currentLabel: String,
+    val options: List<String>,
+) {
+    /** 多于一个候选才可切换；MOCK 等无候选时只读展示。 */
+    val switchable: Boolean get() = options.size > 1
+}
+
+internal fun currentModelSection(
+    provider: ProviderType,
+    currentModelId: String,
+    candidates: List<CustomModel>,
+    defaultModelId: String,
+): CurrentModelProjection {
+    val labels = candidates.associate { it.modelId to it.label }
+    val options = buildList {
+        candidates.forEach { add(it.modelId) }
+        if (currentModelId.isNotBlank()) add(currentModelId)
+        if (defaultModelId.isNotBlank()) add(defaultModelId)
+    }.distinct()
+    return CurrentModelProjection(
+        providerLabel = providerLabel(provider),
+        currentModelId = currentModelId,
+        currentLabel = labels[currentModelId] ?: currentModelId.ifBlank { "—" },
+        options = options,
+    )
+}
+
+/**
  * 设置 · 模型页：管理自定义模型清单（`models.properties`，与 provider-selection 同族）。
  *
  * 只显示真实 Provider 的条目（mock-v1 不进入候选）；清单与 Provider 设置里的模型 ID 手填共用同一数据源。
@@ -52,6 +88,10 @@ fun ModelSettings(state: DesktopAppState) {
     val revision by state.graph.customModelsRevision.collectAsState()
     var adding by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CustomModel?>(null) }
+
+    // O-89：当前生效 Provider / 模型 + 同 Provider 内切换（一律经 chooseProviderModel）。
+    val provider by state.graph.provider.collectAsState()
+    CurrentModelSection(state = state, provider = provider, revision = revision)
 
     SettingsSection("自定义模型", "使用自有 API Key 管理自定义模型。") {
         val models = remember(revision) { state.graph.customModels() }
@@ -109,6 +149,78 @@ fun ModelSettings(state: DesktopAppState) {
                 ok
             },
         )
+    }
+}
+
+@Composable
+private fun CurrentModelSection(
+    state: DesktopAppState,
+    provider: ProviderType,
+    revision: Int,
+) {
+    val palette = QianyanTheme.palette
+    var menuOpen by remember { mutableStateOf(false) }
+    var failure by remember { mutableStateOf<String?>(null) }
+    // O-98：modelId() 是普通读值，不构成 Compose 可观察状态（17 号的 remember key 方案无效）。
+    // 改为订阅 effectiveModel（StateFlow），切换模型后重组并把新值同时用于投影与 key。
+    val effectiveModel by state.graph.effectiveModel.collectAsState()
+    val section = remember(provider, revision, effectiveModel) {
+        currentModelSection(
+            provider = provider,
+            currentModelId = effectiveModel,
+            candidates = state.graph.customModels(provider),
+            defaultModelId = state.graph.defaultModelId(provider),
+        )
+    }
+
+    SettingsSection("当前模型", "显示当前生效的 Provider 与模型；可在同一 Provider 内切换。") {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    section.currentLabel,
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = palette.text,
+                    fontWeight = FontWeight.Medium,
+                )
+                Text(
+                    "${section.providerLabel} · ${section.currentModelId}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text3,
+                )
+            }
+            if (section.switchable) {
+                Box {
+                    ActionButton("切换", ActionLevel.SECONDARY, true) { menuOpen = true; failure = null }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        section.options.forEach { id ->
+                            val selected = id == section.currentModelId
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        if (selected) "$id（当前）" else id,
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = if (selected) palette.accent else palette.text,
+                                    )
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    // 唯一生效入口：忙态（含写作页生成中）守卫在 chooseProviderModel 内部。
+                                    if (!state.chooseProviderModel(provider, id)) {
+                                        failure = state.toast ?: "切换失败：请检查该 Provider 的配置"
+                                    }
+                                },
+                            )
+                        }
+                    }
+                }
+            } else {
+                Text("无可切换模型", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+            }
+        }
+        failure?.let { SettingsNote(it, divider = true) }
     }
 }
 

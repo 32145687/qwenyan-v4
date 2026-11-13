@@ -45,8 +45,8 @@ class PendingGateWiringGuardTest {
     fun `gate decision refreshes the pending count`() {
         assertTrue("onDecision()" in writer, "Gate 决议成功后必须触发刷新回调")
         assertTrue(
-            "onDecision = { state.refreshKey++ }" in writePage,
-            "写页必须把刷新回调接到 refreshKey（状态栏 / Inspector 同步更新）",
+            "onDecision = { state.gateRefreshKey++ }" in writePage,
+            "写页必须把刷新回调接到 gateRefreshKey（T-O108：只刷外壳，不重建控制器）",
         )
     }
 }
