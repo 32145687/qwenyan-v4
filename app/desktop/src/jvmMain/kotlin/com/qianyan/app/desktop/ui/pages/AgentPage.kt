@@ -104,6 +104,14 @@ fun AgentPage(state: DesktopAppState) {
                 Spacer(Modifier.height(12.dp))
                 ComposerHint()
 
+                if (shouldShowUnselectedChapterHint(
+                        state.novel != null,
+                        state.workspace.selection?.chapterId != null,
+                    )
+                ) {
+                    UnselectedChapterHint(state)
+                }
+
                 if (state.novel == null) {
                     Spacer(Modifier.height(18.dp))
                     Text(
@@ -138,6 +146,13 @@ fun AgentPage(state: DesktopAppState) {
                 Box(Modifier.align(Alignment.Center).widthIn(max = 706.dp).fillMaxWidth()) {
                     TaskComposer(state, input, { state.creationDraft = it }, ::submit)
                 }
+                if (shouldShowUnselectedChapterHint(
+                        state.novel != null,
+                        state.workspace.selection?.chapterId != null,
+                    )
+                ) {
+                    UnselectedChapterHint(state)
+                }
             }
         }
     }
@@ -155,6 +170,40 @@ private fun ComposerHint() {
         textAlign = TextAlign.Center,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/* ---------------- 未选章节提示（A-38 / O-113） ---------------- */
+
+/** 未选章节常驻提示的可见性：已打开作品且当前无焦点章节（纯函数，便于单测）。 */
+internal fun shouldShowUnselectedChapterHint(novelOpen: Boolean, hasChapterSelection: Boolean): Boolean =
+    novelOpen && !hasChapterSelection
+
+/**
+ * A-38（O-113）· 未选章节常驻提示：大纲 / 人物 / 世界观类任务可直接下达；写作类任务需要章节，
+ * 提供「创建第一章」（复用既有 createNextChapter，见 [DesktopAppState.launchCreateFirstChapter]）+ 三步引导。
+ */
+@Composable
+private fun UnselectedChapterHint(state: DesktopAppState) {
+    val palette = QianyanTheme.palette
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "未选章节：大纲 / 人物 / 世界观类任务可直接下达；写作类任务需要章节。",
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.text3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(6.dp))
+        ActionButton("创建第一章", ActionLevel.SECONDARY, !state.busy) { state.launchCreateFirstChapter() }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "① 直接下达大纲 / 人物 / 世界观任务　② 大纲就绪后到「故事 · 章节」创建章节　③ 选章写正文（保存首稿或继续写）",
+            style = MaterialTheme.typography.labelSmall,
+            color = palette.text3,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 /* ---------------- 连续会话 ---------------- */

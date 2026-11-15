@@ -64,6 +64,7 @@ import com.qianyan.app.desktop.ui.settings.SETTINGS_PROVIDER_SECTION
 import com.qianyan.provider.ReasoningEffort
 import com.qianyan.model.core.Novel
 import com.qianyan.model.NovelId
+import com.qianyan.model.workspace.WorkspaceSelection
 import com.qianyan.model.VocabularyCandidateId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -417,7 +418,9 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
      * 未打开作品时明确拒绝（不猜项目）；同一时刻只允许一个后台任务（与导入共用 busy 闸）。
      *
      * P0-3B（§17.2 UI 契约 1/2）：
-     *  - 必须携带当前有效的 Chapter 上下文（写作 / 改写 / 分析类任务都需要焦点章节）；
+     *  - 写作 / 改写 / 分析类任务需要焦点章节；**A-38（O-113）**：章节不再前置为一切任务的前提——
+     *    大纲 / 人物 / 世界观类任务可无章节下达（`activeChapterId=null` 原样透传，
+     *    需要章节的任务由 NovelAgent 以 `MISSING_FOCUS_CHAPTER` 显式拒绝，UI 不复制任务类型判定）；
      *  - 保留候选标识与会话身份（`sessionId / workingDraftId / artifactId / approvalState`），
      *    供 AgentPage 与写作页基于**正式 Workflow 投影**展示状态。
      */
@@ -430,14 +433,10 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             return false
         }
         if (busy) return false
-        // P0-3B：写作类任务需要焦点章节——从 Workspace 当前 Selection 取（必须属于当前 Project）。
+        // 焦点章节（可空）：从 Workspace 当前 Selection 取（必须属于当前 Project）；无选中即无章节任务。
         val chapterId = workspace.selection
             ?.takeIf { it.projectId == projectId }
             ?.chapterId
-        if (chapterId == null) {
-            toast("请先在左侧章节目录中选择要操作的章节，再下达任务")
-            return false
-        }
         val request = com.qianyan.model.novelagent.NovelAgentRequest(
             projectId = projectId,
             userIntent = intent,
@@ -463,6 +462,29 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             }
         }
         return true
+    }
+
+    /**
+     * A-38（O-113）· 冷启动「创建第一章」：无章节作品的一键建章——**复用既有** `createNextChapter`
+     * （不新增用例），创建后自动选中（走既有 `workspace.select` 写入口）并 toast。
+     * 幂等：已有章节时只选中第一章，不重复创建。无作品时明确拒绝。
+     */
+    fun launchCreateFirstChapter() {
+        val novel = novel ?: run {
+            toast("请先新建或打开一部作品，再下达任务")
+            return
+        }
+        if (busy) return
+        io(
+            then = { (chapter, created) ->
+                workspace.select(WorkspaceSelection.chapter(novel.projectId, novel.novelId, chapter.chapterId))
+                toast(if (created) "已创建第一章" else "已返回第一章")
+            },
+        ) {
+            val existing = container.chapters.listByNovel(novel.novelId, null)
+            if (existing.isNotEmpty()) existing.first() to false
+            else container.chapters.createNextChapter(title = "第一章", novelId = novel.novelId) to true
+        }
     }
 
     /** P0-3B D4/D5：显式重试把**已有**候选接入正式章节 Workflow（不重新生成候选）。 */

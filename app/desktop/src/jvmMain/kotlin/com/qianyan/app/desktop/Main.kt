@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -1056,12 +1057,19 @@ private fun ChapterDirectoryBlock(state: DesktopAppState) {
                 Spacer(Modifier.height(4.dp))
                 ActionButton("重试", ActionLevel.TEXT, true) { reloadKey++ }
             }
-            chapters.isEmpty() -> Text(
-                "还没有章节",
-                style = MaterialTheme.typography.bodySmall,
-                color = palette.text3,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
-            )
+            chapters.isEmpty() -> Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "还没有章节",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = palette.text3,
+                )
+                // A-38（O-113）：冷启动一键建章（复用既有 createNextChapter，创建后自动选中）。
+                ActionButton("新建", ActionLevel.TEXT, !state.busy) { state.launchCreateFirstChapter() }
+            }
             else -> {
                 chapters.take(8).forEach { chapter ->
                     ListRow(
