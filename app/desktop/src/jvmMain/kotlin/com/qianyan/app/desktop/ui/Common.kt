@@ -444,6 +444,7 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             activeChapterId = chapterId,
         )
         creationMessages = creationMessages + CreationMessage(CreationMessageRole.USER, intent)
+        persistConversation(CreationMessageRole.USER, intent)
         lastConvergenceReview = null
         busy = true
         scope.launch {
@@ -456,6 +457,7 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             } catch (e: Exception) {
                 val message = "出错了：${e.message ?: e.javaClass.simpleName}"
                 creationMessages = creationMessages + CreationMessage(CreationMessageRole.ERROR, message)
+                persistConversation(CreationMessageRole.ERROR, message)
                 toast(message)
             } finally {
                 busy = false
@@ -569,6 +571,7 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             } catch (e: Exception) {
                 val message = "出错了：${e.message ?: e.javaClass.simpleName}"
                 creationMessages = creationMessages + CreationMessage(CreationMessageRole.ERROR, message)
+                persistConversation(CreationMessageRole.ERROR, message)
                 toast(message)
             } finally {
                 busy = false
@@ -586,6 +589,31 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
             text = text,
             detail = statusText.takeIf { it != text },
         )
+        persistConversation(CreationMessageRole.ASSISTANT, text)
+    }
+
+    /**
+     * DSH-1：对话消息落库（失败静默——存储问题不阻断创作对话）。
+     * 只写消息事实，不写提案 / 正典（铁律：Memory ≠ 事实源，AI 产出仍走人工门）。
+     */
+    private fun persistConversation(role: CreationMessageRole, text: String) {
+        val novel = novel ?: return
+        val projectId = novel.projectId
+        runCatching {
+            container.conversations.append(projectId, novel.novelId, role.toConversationRole(), text)
+        }
+    }
+
+    private fun CreationMessageRole.toConversationRole(): com.qianyan.model.session.ConversationRole = when (this) {
+        CreationMessageRole.USER -> com.qianyan.model.session.ConversationRole.USER
+        CreationMessageRole.ASSISTANT -> com.qianyan.model.session.ConversationRole.ASSISTANT
+        CreationMessageRole.ERROR -> com.qianyan.model.session.ConversationRole.ERROR
+    }
+
+    private fun com.qianyan.model.session.ConversationRole.toCreationMessageRole(): CreationMessageRole = when (this) {
+        com.qianyan.model.session.ConversationRole.USER -> CreationMessageRole.USER
+        com.qianyan.model.session.ConversationRole.ASSISTANT -> CreationMessageRole.ASSISTANT
+        com.qianyan.model.session.ConversationRole.ERROR -> CreationMessageRole.ERROR
     }
 
     /**
@@ -722,7 +750,16 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     fun applyNovelSwitch(novel: com.qianyan.model.core.Novel?) {
         this.novel = novel
         workspace.resetForNovelSwitch()
-        creationMessages = emptyList()
+        // DSH-1：对话记忆回灌——切换 / 打开作品时从库恢复该作品的对话历史（提案仍内存态）。
+        creationMessages = if (novel == null) {
+            emptyList()
+        } else {
+            runCatching {
+                container.conversations
+                    .listByNovel(novel.novelId)
+                    .map { CreationMessage(it.role.toCreationMessageRole(), it.content) }
+            }.getOrDefault(emptyList())
+        }
         creationDraft = ""
         lastAgentResult = null
         lastAgentRequest = null

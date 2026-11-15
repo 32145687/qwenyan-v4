@@ -8,6 +8,7 @@ import com.qianyan.application.usecase.memory.MemoryUseCases
 import com.qianyan.application.usecase.novel.NovelUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
 import com.qianyan.application.usecase.session.AgentSessionUseCases
+import com.qianyan.application.usecase.session.ConversationUseCases
 import com.qianyan.application.usecase.log.ActivityUseCases
 import com.qianyan.application.usecase.log.ToolCallLogUseCases
 import com.qianyan.application.usecase.tool.AgentToolBridge
@@ -102,6 +103,7 @@ import com.qianyan.application.usecase.author.ObservationCollector
 import com.qianyan.application.usecase.decision.DecisionModelFacade
 import com.qianyan.application.usecase.decision.DecisionModelGateway
 import com.qianyan.application.usecase.decision.DecisionModelUseCases
+import com.qianyan.storage.repository.AgentConversationRepository
 import com.qianyan.storage.repository.AgentSessionRepository
 import com.qianyan.storage.repository.ActivityRepository
 import com.qianyan.storage.repository.ToolCallLogRepository
@@ -124,6 +126,7 @@ import com.qianyan.storage.repository.NarrativeStateRepository
 import com.qianyan.storage.repository.NovelRepository
 import com.qianyan.storage.repository.ProjectStateRepository
 import com.qianyan.storage.repository.ReadingProgressRepository
+import com.qianyan.storage.repository.SqliteAgentConversationRepository
 import com.qianyan.storage.repository.SqliteAgentSessionRepository
 import com.qianyan.storage.repository.SqliteActivityRepository
 import com.qianyan.storage.repository.SqliteToolCallLogRepository
@@ -194,6 +197,8 @@ class ApplicationContainer(
     private val projectStateRepository: ProjectStateRepository,
     /** I3 · Agent Session 仓储（会话身份 + Project 归属 + Workflow/Task 引用；不承载其状态与小说事实）。 */
     private val agentSessionRepository: AgentSessionRepository,
+    /** DSH-1 · 对话记忆仓储（创作页对话消息；不承载小说事实，Memory ≠ 事实源）。 */
+    private val agentConversationRepository: AgentConversationRepository,
     /** I4 · Activity / ToolCallLog 仓储（已发生行为的事实记录；是记录，不是控制器）。 */
     private val activityRepository: ActivityRepository,
     private val toolCallLogRepository: ToolCallLogRepository,
@@ -240,6 +245,10 @@ class ApplicationContainer(
      */
     val agentSessions: AgentSessionUseCases
         get() = AgentSessionUseCases(novelRepository, agentSessionRepository, workflowRepository, taskRepository, errorMapper)
+
+    /** DSH-1 · 对话记忆用例（创作页对话消息持久化存取）。 */
+    val conversations: ConversationUseCases
+        get() = ConversationUseCases(agentConversationRepository, errorMapper)
 
     /**
      * I4 · Activity / Tool Call Log（Agent 工作过程的事实记录）。
@@ -906,6 +915,7 @@ class ApplicationContainer(
                 readingProgressRepository = SqliteReadingProgressRepository(db),
                 projectStateRepository = SqliteProjectStateRepository(db),
                 agentSessionRepository = SqliteAgentSessionRepository(db),
+                agentConversationRepository = SqliteAgentConversationRepository(db),
                 activityRepository = SqliteActivityRepository(db),
                 toolCallLogRepository = SqliteToolCallLogRepository(db),
                 commitHistoryRepository = SqliteCommitHistoryRepository(db),

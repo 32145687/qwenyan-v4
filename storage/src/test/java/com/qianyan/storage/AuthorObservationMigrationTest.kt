@@ -90,7 +90,7 @@ class AuthorObservationMigrationTest {
             val driver = h.driver as JdbcSqliteDriver
             try {
                 assertTrue(tableExists(driver, "AuthorObservation"), "migration 后应存在 AuthorObservation（P18-A）")
-                assertEquals(28L, userVersion(driver), "migration 后 user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
+                assertEquals(29L, userVersion(driver), "migration 后 user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
                 assertEquals("旧书", scalar(driver, "SELECT title FROM Novel WHERE novel_id='n-legacy'"))
                 assertEquals("GLOBAL", scalar(driver, "SELECT scope FROM AuthorCore WHERE core_id='c-legacy'"), "P17 AuthorCore 旧数据保持")
                 DatabaseInitializer.initializeDatabase(driver)

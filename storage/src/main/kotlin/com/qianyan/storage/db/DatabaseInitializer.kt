@@ -108,6 +108,9 @@ object DatabaseInitializer {
     /** v27（Phase 2）→ v28（Phase 3：CandidateFact 候选事实表，additive）迁移起点。 */
     private const val V27 = 27L
 
+    /** v28（Phase 3）→ v29（DSH-1：AgentConversationMessage 对话记忆表，additive）迁移起点。 */
+    private const val V28 = 28L
+
     /** Schema 建好后仍需追加执行的守卫 DDL（每项一个完整语句）。 */
     private val GUARD_DDL: List<String> = listOf(
         """
@@ -544,6 +547,14 @@ object DatabaseInitializer {
                 // CandidateFact 承载 Pending/Accepted/Rejected/Conflict 生命周期与 Commit 来源引用；
                 // 纯新增表，不改六表/既有列；见 27.sqm。表已存在则跳过（幂等）。
                 QianyanDb.Schema.migrate(driver, V27, QianyanDb.Schema.version)
+                setVersion(driver, QianyanDb.Schema.version)
+            }
+
+            !tableExists(driver, "AgentConversationMessage") -> withTransaction(driver) {
+                // v28 → v29：DSH-1 对话记忆表（additive）：AgentConversationMessage 承载创作页对话消息
+                // （用户 / 千言 / 错误），只存消息身份 + 内容 + 归属；不承载小说事实（Memory ≠ 事实源）。
+                // 纯新增表，不改既有表 / 列；见 28.sqm。表已存在则跳过（幂等）。
+                QianyanDb.Schema.migrate(driver, V28, QianyanDb.Schema.version)
                 setVersion(driver, QianyanDb.Schema.version)
             }
         }

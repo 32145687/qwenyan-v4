@@ -110,7 +110,7 @@ class StoryStateWorldModelFieldsMigrationTest {
             NEW_COLUMNS.forEach { (tbl, col) ->
                 assertTrue(columnExists(d1, tbl, col), "前置：v27 全新库应含 $tbl.$col")
             }
-            assertEquals(28L, userVersion(d1), "前置：全新库版本应为 28")
+            assertEquals(29L, userVersion(d1), "前置：全新库版本应为 29")
             d1.getConnection().close()
 
             // 2) 真实回退为 v26 形态：摘除 17 列 + user_version = 26
@@ -130,7 +130,7 @@ class StoryStateWorldModelFieldsMigrationTest {
             val second = QianyanDbFactory.open(url)
             val d2 = second.driver as JdbcSqliteDriver
             try {
-                assertEquals(28L, userVersion(d2), "v26 库应迁移到最新版本")
+                assertEquals(29L, userVersion(d2), "v26 库应迁移到最新版本")
                 NEW_COLUMNS.forEach { (tbl, col) ->
                     assertTrue(columnExists(d2, tbl, col), "迁移后应含 $tbl.$col")
                 }
@@ -170,7 +170,7 @@ class StoryStateWorldModelFieldsMigrationTest {
                 // 5) 幂等：重复初始化不改值
                 DatabaseInitializer.initializeDatabase(d2)
                 DatabaseInitializer.initializeDatabase(d2)
-                assertEquals(28L, userVersion(d2))
+                assertEquals(29L, userVersion(d2))
                 assertEquals(emptyList(), repo.getCharacterById(CharacterId("mig-c"))!!.goals, "幂等重跑后默认值不变")
                 assertEquals("旧事件", repo.getEventById(EventId("mig-e"))!!.name, "幂等重跑后旧行不变")
             } finally {

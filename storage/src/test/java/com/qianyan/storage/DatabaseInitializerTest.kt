@@ -57,7 +57,7 @@ class DatabaseInitializerTest {
 
         DatabaseInitializer.initializeDatabase(driver) // 触发 v22 → v25（22.sqm + 23.sqm + 24.sqm）
 
-        assertEquals(28L, userVersion(driver), "migration 后 user_version 应为 28")
+        assertEquals(29L, userVersion(driver), "migration 后 user_version 应为 29")
         assertEquals(QianyanDb.Schema.version, userVersion(driver), "user_version 应与 Schema.version 一致")
         assertTrue(!columnIsNotNull(driver, "WorkflowHumanGate", "workflow_id"), "migration 后 workflow_id 应放宽为可空")
         assertTrue(columnExists(driver, "CommitHistory", "gate_id"), "migration 后 CommitHistory 应含 gate_id（P1-02j）")
@@ -82,12 +82,12 @@ class DatabaseInitializerTest {
 
         simulateV22Gate(driver)
         DatabaseInitializer.initializeDatabase(driver)
-        assertEquals(28L, userVersion(driver))
+        assertEquals(29L, userVersion(driver))
 
         // 已 v25：重复初始化不得重新执行已有迁移，版本与数据保持稳定
         DatabaseInitializer.initializeDatabase(driver)
         DatabaseInitializer.initializeDatabase(driver)
-        assertEquals(28L, userVersion(driver), "已 v25 不得重复 migration")
+        assertEquals(29L, userVersion(driver), "已 v25 不得重复 migration")
         assertEquals(1L, countGates(driver), "重复初始化不得丢数据或重复行")
         assertTrue(!columnIsNotNull(driver, "WorkflowHumanGate", "workflow_id"), "重复初始化后仍应为可空")
     }

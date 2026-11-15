@@ -38,7 +38,7 @@ class WorkflowStepRoundNoMigrationTest {
             val driver = h.driver as JdbcSqliteDriver
             try {
                 assertTrue(columnExists(driver, "WorkflowStep", "round_no"), "全新库应含 round_no")
-                assertEquals(28L, userVersion(driver), "全新库版本应为 28")
+                assertEquals(29L, userVersion(driver), "全新库版本应为 29")
 
                 val repo = SqliteWorkflowRepository(QianyanDb(driver))
                 val wfId = WorkflowId("wf-round")
@@ -100,7 +100,7 @@ class WorkflowStepRoundNoMigrationTest {
                 assertTrue(columnExists(d2, "WorkflowStep", "round_no"), "迁移后应含 round_no")
                 assertTrue(columnExists(d2, "CommitHistory", "previous_format"), "迁移后应含 previous_format")
                 assertTrue(columnExists(d2, "CommitHistory", "resulting_format"), "迁移后应含 resulting_format")
-                assertEquals(28L, userVersion(d2), "旧 v24 库应迁移到最新版本")
+                assertEquals(29L, userVersion(d2), "旧 v24 库应迁移到最新版本")
 
                 // 历史旧行保留，且 round_no = NULL（不回填、不猜测）
                 val row = QianyanDb(d2).workflowQueries.getStepById("s-legacy").executeAsOne()
@@ -110,7 +110,7 @@ class WorkflowStepRoundNoMigrationTest {
                 // 4) 重复初始化幂等
                 DatabaseInitializer.initializeDatabase(d2)
                 DatabaseInitializer.initializeDatabase(d2)
-                assertEquals(28L, userVersion(d2))
+                assertEquals(29L, userVersion(d2))
                 assertNull(QianyanDb(d2).workflowQueries.getStepById("s-legacy").executeAsOne().round_no)
             } finally {
                 d2.getConnection().close()

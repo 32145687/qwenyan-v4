@@ -140,6 +140,7 @@ import com.qianyan.storage.db.ProjectState as DbProjectState
 import com.qianyan.model.session.AgentSession as DomainAgentSession
 import com.qianyan.model.session.AgentSessionStatus
 import com.qianyan.storage.db.AgentSession as DbAgentSession
+import com.qianyan.storage.db.AgentConversationMessage as DbConversationMessage
 import com.qianyan.model.log.Activity as DomainActivity
 import com.qianyan.model.log.AgentLogStatus
 import com.qianyan.model.log.ToolCallLog as DomainToolCallLog
@@ -204,6 +205,28 @@ import kotlinx.serialization.json.JsonObject
 internal object StorageMappers {
 
     private val json get() = QianyanJson.json
+
+    /* ---- AgentConversationMessage（DSH-1 对话记忆） ---- */
+
+    fun dbConversationMessage(m: com.qianyan.model.session.ConversationMessage): DbConversationMessage =
+        DbConversationMessage(
+            message_id = m.messageId,
+            project_id = m.projectId.value,
+            novel_id = m.novelId.value,
+            role = m.role.name,
+            content = m.content,
+            created_at = m.createdAt.toEpochMillis(),
+        )
+
+    fun domainConversationMessage(row: DbConversationMessage): com.qianyan.model.session.ConversationMessage =
+        com.qianyan.model.session.ConversationMessage(
+            messageId = row.message_id,
+            projectId = com.qianyan.model.ProjectId(row.project_id),
+            novelId = NovelId(row.novel_id),
+            role = com.qianyan.model.session.ConversationRole.valueOf(row.role),
+            content = row.content,
+            createdAt = epochMillisToInstant(row.created_at),
+        )
 
     /* ---- 时间转换（不使用可能不可见的扩展函数，改用属性运算） ---- */
     private fun Instant.toEpochMillis(): Long = epochSeconds * 1000 + nanosecondsOfSecond / 1_000_000

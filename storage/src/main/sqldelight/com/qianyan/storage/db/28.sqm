@@ -1,0 +1,19 @@
+-- DSH-1 · 对话记忆（v28 → v29，additive）
+-- AgentConversationMessage：创作页对话消息持久化（用户 / 千言 / 错误）。
+-- 只承载消息身份与内容；不承载小说事实（Memory ≠ 事实源铁律不变——
+-- 对话内容绝不写 MemoryEntry / CandidateFact，入正典仍只经 Human Gate）。
+-- 不修改任何既有表 / 列 / 语义；无 backfill；幂等由 DatabaseInitializer 的 !tableExists 分支包裹。
+
+CREATE TABLE IF NOT EXISTS AgentConversationMessage (
+    message_id  TEXT NOT NULL PRIMARY KEY,
+    project_id  TEXT NOT NULL,
+    novel_id    TEXT NOT NULL,
+    role        TEXT NOT NULL,               -- ConversationRole 枚举名（USER / ASSISTANT / ERROR）
+    content     TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,            -- epoch 毫秒
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_conversation_novel ON AgentConversationMessage(novel_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_agent_conversation_project ON AgentConversationMessage(project_id, created_at);

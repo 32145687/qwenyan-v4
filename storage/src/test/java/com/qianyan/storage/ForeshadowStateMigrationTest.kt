@@ -250,7 +250,7 @@ class ForeshadowStateMigrationTest {
 
                 assertTrue(columnExists(driver, "Foreshadow", "state"), "migration 后应有 state 列")
                 assertTrue(columnExists(driver, "Foreshadow", "payoff_chapter_id"), "migration 后应有 payoff_chapter_id 列")
-                assertEquals(28L, userVersion(driver), "user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
+                assertEquals(29L, userVersion(driver), "user_version 应为最新版本 28（I13 v22 + P1-01 v23 + P1-02j v24 + P1-02j.2 v25 + P2 v27 + P3 v28）")
                 assertEquals("RESOLVED", queryState(driver, "f-r"), "resolved=1 → RESOLVED")
                 assertEquals("PLANTED", queryState(driver, "f-p"), "resolved=0 → PLANTED")
 

@@ -1,0 +1,23 @@
+-- DSH-1 · 对话记忆（O-113 后续 / DSH Session 最小落库）。
+-- 职责边界（与 AgentSession 同口径）：只承载消息身份 + 内容 + 归属；
+-- 不承载正文 / World Model / Project State / Human Gate / Memory（铁律：Memory ≠ 事实源）。
+
+CREATE TABLE AgentConversationMessage (
+    message_id  TEXT NOT NULL PRIMARY KEY,
+    project_id  TEXT NOT NULL,               -- 项目身份（= Novel.project_id）
+    novel_id    TEXT NOT NULL,               -- 归属作品
+    role        TEXT NOT NULL,               -- ConversationRole 枚举名（USER / ASSISTANT / ERROR）
+    content     TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,            -- epoch 毫秒
+    FOREIGN KEY (novel_id) REFERENCES Novel(novel_id)
+);
+
+insertAgentConversationMessage:
+INSERT OR REPLACE INTO AgentConversationMessage(message_id, project_id, novel_id, role, content, created_at)
+VALUES (:message_id, :project_id, :novel_id, :role, :content, :created_at);
+
+listAgentConversationMessagesByNovel:
+SELECT * FROM AgentConversationMessage WHERE novel_id = :novel_id ORDER BY created_at ASC, message_id ASC;
+
+countAgentConversationMessagesByNovel:
+SELECT COUNT(*) AS c FROM AgentConversationMessage WHERE novel_id = :novel_id;

@@ -61,7 +61,7 @@ class CommitHistoryFormatBackfillMigrationTest {
             val second = QianyanDbFactory.open(url)
             val d2 = second.driver as JdbcSqliteDriver
             try {
-                assertEquals(28L, userVersion(d2), "v25 库应迁移到最新版本")
+                assertEquals(29L, userVersion(d2), "v25 库应迁移到最新版本")
                 assertTrue(columnExists(d2, "CommitHistory", "previous_format"), "迁移后应含 previous_format")
                 assertTrue(columnExists(d2, "CommitHistory", "resulting_format"), "迁移后应含 resulting_format")
 
@@ -100,7 +100,7 @@ class CommitHistoryFormatBackfillMigrationTest {
                 // 7) 幂等：重复初始化不得改动已回填的值
                 DatabaseInitializer.initializeDatabase(d2)
                 DatabaseInitializer.initializeDatabase(d2)
-                assertEquals(28L, userVersion(d2))
+                assertEquals(29L, userVersion(d2))
                 assertStorageFormats(d2, "h-r4", null, DraftFormatText.CM, "幂等重跑后同 row 旧行仍为 NULL")
                 assertStorageFormats(d2, "h-r2", DraftFormatText.CM, DraftFormatText.CM, "幂等重跑后可证明值不变")
             } finally {
