@@ -65,6 +65,7 @@ import com.qianyan.provider.ReasoningEffort
 import com.qianyan.model.core.Novel
 import com.qianyan.model.NovelId
 import com.qianyan.model.workspace.WorkspaceSelection
+import kotlinx.datetime.toLocalDateTime
 import com.qianyan.model.VocabularyCandidateId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -1410,9 +1411,14 @@ fun statusTint(name: String?): Color = when (name) {
 
 /* ---------------- 工具函数 ---------------- */
 
-/** 人类可读时间（epoch → 本地简写；不引入新依赖）。 */
-fun shortTime(instant: kotlinx.datetime.Instant): String =
-    instant.toString().replace('T', ' ').take(16)
+/** 人类可读时间（epoch → **本地时区**简写；不引入新依赖。O-111：禁止显示 UTC）。 */
+fun shortTime(
+    instant: kotlinx.datetime.Instant,
+    timeZone: kotlinx.datetime.TimeZone = kotlinx.datetime.TimeZone.currentSystemDefault(),
+): String {
+    val local = instant.toLocalDateTime(timeZone)
+    return "${local.date} " + local.time.toString().take(5)
+}
 
 /** 千分位字数（展示用）。 */
 fun formatCount(n: Int): String = n.toString().reversed().chunked(3).joinToString(",").reversed()
