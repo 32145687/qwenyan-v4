@@ -15,6 +15,7 @@ import com.qianyan.application.usecase.writing.planning.toPromptLine
 import com.qianyan.application.usecase.writing.planning.toPromptSection
 import com.qianyan.application.usecase.writing.planning.worldModelPromptSection
 import com.qianyan.model.AgentId
+import com.qianyan.model.IntentType
 import com.qianyan.model.agent.AgentContract
 import com.qianyan.model.decision.DecisionPolicy
 import com.qianyan.model.story.ChapterPlan
@@ -155,6 +156,8 @@ class WriterAgent(
         }
 
         context.currentDraft?.let { appendLine(it.toPromptSection()) }
+        // O-116：续写任务 + 已有正文 → 只输出追加段（装配层把原文 + 新段拼成候选），不重复/改写已有内容。
+        continuationModeSection(context.request.intentType, context.currentDraft)?.let { appendLine(it) }
         if (context.memories.isNotEmpty()) {
             appendLine("【相关记忆】")
             context.memories.forEach { appendLine("- $it") }
@@ -191,4 +194,20 @@ class WriterAgent(
             allowedTools = emptyList(),
         )
     }
+}
+
+/**
+ * O-116：续写模式提示（纯函数便于单测）。
+ *
+ * 仅当任务意图为 CONTINUE 且本章已有正文时渲染——指示模型**只输出接续段**，
+ * 候选由装配层拼接为「原文 + 新段」（见 WritingExecutionUseCase 的
+ * [assembleCandidateContent]）。REWRITE / 空章节不渲染（保持替换 / 全文生成语义）。
+ */
+internal fun continuationModeSection(
+    intentType: IntentType,
+    currentDraft: com.qianyan.application.usecase.writing.planning.CurrentDraftLite?,
+): String? {
+    if (intentType != IntentType.CONTINUE || currentDraft == null) return null
+    return "【续写模式】本章已有正文（见上）。只输出接续在其后的新段落：" +
+        "不要重复、改写或总结已有内容，第一句自然衔接已有结尾；仍遵守【输出契约】。"
 }

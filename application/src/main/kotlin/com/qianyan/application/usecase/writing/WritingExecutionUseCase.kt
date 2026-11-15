@@ -12,6 +12,7 @@ import com.qianyan.application.usecase.vocabulary.VocabularyRuleEngine
 import com.qianyan.application.usecase.vocabulary.VocabularyRuleUseCases
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
+import com.qianyan.model.IntentType
 import com.qianyan.model.TaskId
 import com.qianyan.model.context.ContextRequest
 import com.qianyan.model.context.UserWritingRequest
@@ -119,12 +120,19 @@ class WritingExecutionUseCase(
                 produced.content,
                 vocabularyRules.activeFor(plan.novelId, plan.variantId),
             )
+            // O-116：CONTINUE + 已有正文 → **追加语义**（候选 = 原文 + 新段，词库规则只作用于新段）；
+            // REWRITE / 空章节保持替换语义。纯函数见下方 [assembleCandidateContent]。
+            val candidateContent = assembleCandidateContent(
+                intentType = request.intentType,
+                currentDraftContent = context.currentDraft?.content,
+                segment = applied.content,
+            )
             val baseDraftId = guard { draftRepository.latestByChapter(chapterId) }?.draftId
             val created = guard {
                 workingDrafts.create(
                     projectId = project.projectId,
                     target = WorkingDraftTarget(plan.novelId, chapterId, plan.variantId),
-                    content = applied.content,
+                    content = candidateContent,
                     baseDraftId = baseDraftId,
                     ruleHits = applied.hits,
                     ruleSkips = applied.skipped,
@@ -196,4 +204,21 @@ class WritingExecutionUseCase(
         is ApplicationError.UnknownStorage -> "UnknownStorage: ${error.cause.message ?: error.cause::class.simpleName}"
         else -> error.toString()
     }
+}
+
+/**
+ * O-116：候选内容装配（纯函数便于单测）。
+ *
+ * CONTINUE + 已有正文 → **追加语义**：候选 = 原文 + 空行 + 新段（词库规则已作用于新段）；
+ * REWRITE / EXPAND / 空章节 → 候选 = 新段本身（替换语义，与既有改写路径一致）。
+ * 判定只用 [IntentType] 与「是否有已聚焦正文」，不读聊天文本、不猜意图。
+ */
+internal fun assembleCandidateContent(
+    intentType: IntentType,
+    currentDraftContent: String?,
+    segment: String,
+): String = if (intentType == IntentType.CONTINUE && currentDraftContent != null) {
+    currentDraftContent + "\n\n" + segment
+} else {
+    segment
 }
