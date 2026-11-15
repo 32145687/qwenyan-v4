@@ -32,6 +32,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
@@ -531,12 +533,14 @@ private fun UsageStatCard(label: String, value: String, tint: Color, modifier: M
     }
 }
 
-/** 左卡：API 请求次数平滑面积图（cubic 平滑 + 渐变填充 + 网格线 + 首末日期）。 */
+/** 左卡：API 请求次数平滑面积图（cubic 平滑 + 渐变填充 + 网格线 + 点击柱日出虚线引导/白点/浮层）。 */
 @Composable
 private fun CallsAreaCard(series: List<DailyPoint>, modifier: Modifier = Modifier) {
     val palette = QianyanTheme.palette
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = TextStyle(fontSize = 9.sp, color = palette.text3)
+    val tipStyle = TextStyle(fontSize = 10.sp, color = palette.text)
+    var selectedIdx by remember(series) { mutableStateOf<Int?>(null) }
     val total = series.sumOf { it.calls }
 
     Column(
@@ -560,9 +564,23 @@ private fun CallsAreaCard(series: List<DailyPoint>, modifier: Modifier = Modifie
             )
         }
         Spacer(Modifier.height(8.dp))
-        Canvas(Modifier.fillMaxWidth().height(120.dp)) {
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .pointerInput(series) {
+                    detectTapGestures { offset ->
+                        val n = series.size
+                        if (n == 0) return@detectTapGestures
+                        val step = (size.width - CHART_LEFT - CHART_RIGHT) / (n - 1).coerceAtLeast(1)
+                        val idx = ((offset.x - CHART_LEFT) / step + 0.5f).toInt()
+                        selectedIdx = if (idx in 0 until n) idx else null
+                    }
+                },
+        ) {
             val chartH = size.height - CHART_BOTTOM
             val plotW = size.width - CHART_LEFT - CHART_RIGHT
+            if (series.isEmpty()) return@Canvas
             val step = plotW / (series.size - 1).coerceAtLeast(1)
             val maxV = series.maxOf { it.calls }.coerceAtLeast(1).toDouble()
 
@@ -573,7 +591,6 @@ private fun CallsAreaCard(series: List<DailyPoint>, modifier: Modifier = Modifie
             }
             drawLine(palette.lineStrong, Offset(CHART_LEFT, chartH), Offset(CHART_LEFT + plotW, chartH), 1f)
 
-            if (series.isEmpty()) return@Canvas
             fun px(i: Int) = CHART_LEFT + i * step
             fun py(calls: Int) = chartH - (calls / maxV * (chartH - 6f)).toFloat()
 
@@ -610,6 +627,52 @@ private fun CallsAreaCard(series: List<DailyPoint>, modifier: Modifier = Modifie
                     Offset((CHART_LEFT + plotW - w).coerceAtLeast(CHART_LEFT), chartH + 6f),
                     labelStyle,
                 )
+            }
+
+            // 选中日：虚线引导（曲线点 → 底轴）+ 曲线上的白点 + 浮层（对齐厂商用量页）
+            selectedIdx?.let { idx ->
+                val p = series[idx]
+                val dotX = px(idx)
+                val dotY = py(p.calls)
+                drawLine(
+                    brush = SolidColor(palette.text3),
+                    start = Offset(dotX, dotY),
+                    end = Offset(dotX, chartH),
+                    strokeWidth = 1f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 5f)),
+                )
+                drawCircle(Color.White, radius = 4.dp.toPx(), center = Offset(dotX, dotY))
+                drawCircle(
+                    palette.accent,
+                    radius = 4.dp.toPx(),
+                    center = Offset(dotX, dotY),
+                    style = Stroke(width = 2.dp.toPx()),
+                )
+                val tipW = 150.dp.toPx()
+                val tipH = 60.dp.toPx()
+                val tipX = (dotX + 14.dp.toPx()).coerceAtMost(size.width - CHART_RIGHT - tipW)
+                    .coerceAtLeast(CHART_LEFT)
+                val tipY = (dotY - tipH - 10.dp.toPx()).coerceAtLeast(2f)
+                drawRoundRect(
+                    color = palette.raised,
+                    topLeft = Offset(tipX, tipY),
+                    size = Size(tipW, tipH),
+                    cornerRadius = CornerRadius(9.dp.toPx()),
+                )
+                var ly = tipY + 9.dp.toPx()
+                drawText(textMeasurer, xLabel(p.date), Offset(tipX + 12.dp.toPx(), ly), tipStyle)
+                val vText = p.calls.toString()
+                val vw = textMeasurer.measure(vText, tipStyle).size.width
+                drawText(textMeasurer, vText, Offset(tipX + tipW - 12.dp.toPx() - vw, ly), tipStyle)
+                ly += 19.dp.toPx()
+                drawText(
+                    textMeasurer,
+                    "请求次数",
+                    Offset(tipX + 12.dp.toPx(), ly),
+                    tipStyle.copy(color = palette.text2),
+                )
+                val vw2 = textMeasurer.measure(vText, tipStyle).size.width
+                drawText(textMeasurer, vText, Offset(tipX + tipW - 12.dp.toPx() - vw2, ly), tipStyle)
             }
         }
     }
@@ -703,9 +766,17 @@ private fun TokensStackCard(series: List<DailyPoint>, modifier: Modifier = Modif
                 )
             }
 
-            // 浮层明细：日期 + 合计 + 命中缓存/未命中/输出 三行（点击同柱再点取消）
+            // 浮层明细：虚线引导 + 日期 + 合计 + 命中缓存/未命中/输出 三行（点击同柱再点取消）
             selectedIdx?.let { idx ->
                 val p = series[idx]
+                val barCenterX = CHART_LEFT + idx * slot + slot / 2f
+                drawLine(
+                    brush = SolidColor(palette.text3),
+                    start = Offset(barCenterX, 2f),
+                    end = Offset(barCenterX, chartH),
+                    strokeWidth = 1f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 5f)),
+                )
                 val tipW = 196.dp.toPx()
                 val tipH = 88.dp.toPx()
                 val tipX = (CHART_LEFT + idx * slot + slot / 2f - tipW / 2f)
