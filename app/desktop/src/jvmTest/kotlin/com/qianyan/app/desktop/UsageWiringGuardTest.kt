@@ -56,7 +56,12 @@ class UsageWiringGuardTest {
     fun `usage page is reachable from settings navigation`() {
         assertTrue("SettingsItem(SETTINGS_USAGE_SECTION, \"用量与余额\")" in settings, "AI 组必须有「用量与余额」")
         assertTrue("SETTINGS_USAGE_SECTION -> UsageSettings(state)" in settings, "分区必须渲染用量页")
-        assertTrue("还没有记录：真实模型调用完成后才会计数" in page, "空态文案必须存在")
-        assertTrue("离线示意·不计费" in page, "MOCK 用量行必须标注不计费")
+        // 2026-11-16 用户裁决：旧「厂商 × 模型」用量表已被按模型看板取代而移除；
+        // 空态守卫改为看板空态文案。
+        assertTrue("还没有记录：真实模型调用完成后才会显示图表" in page, "看板空态文案必须存在")
+        assertTrue(
+            "UsageTableSection" !in page && "离线示意·不计费" !in page,
+            "旧用量表不得回潮（已由按模型看板取代）",
+        )
     }
 }

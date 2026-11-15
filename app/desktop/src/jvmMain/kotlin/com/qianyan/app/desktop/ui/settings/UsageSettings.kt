@@ -86,7 +86,6 @@ private const val BALANCE_CACHE_MILLIS = 60_000L
 fun UsageSettings(state: DesktopAppState) {
     BalanceSection(state)
     UsageDashboardSection(state)
-    UsageTableSection(state)
     LedgerSection(state)
 }
 
@@ -216,107 +215,6 @@ private fun BalanceRow(
             else -> ActionButton("刷新余额", ActionLevel.TEXT, snapshot?.loading != true) { onRefresh() }
         }
     }
-}
-
-/* ---------------- 用量表 ---------------- */
-
-@Composable
-private fun UsageTableSection(state: DesktopAppState) {
-    var rangeIndex by remember { mutableStateOf(0) }
-    val days = when (rangeIndex) {
-        0 -> 7
-        1 -> 30
-        else -> null
-    }
-    // 聊天结束后 refreshKey 递增：这里跟着重算，不用轮询
-    val refreshKey = state.refreshKey
-    val rows = remember(days, refreshKey) { aggregateUsage(state.graph.usageLedger.summary(days)) }
-
-    SettingsSection("用量", "按 厂商 × 模型 统计成功调用与 token（本地账本，不含金额）。") {
-        SettingsRow("统计范围", "调用 · 输入 / 输出 / 合计") {
-            SettingsSegmented(listOf("7 天", "30 天", "全部"), rangeIndex) { rangeIndex = it }
-        }
-        if (rows.isEmpty()) {
-            SettingsNote("还没有记录：真实模型调用完成后才会计数", divider = true)
-        } else {
-            // 列头与数据行共用同一套列宽，数字右对齐成表格，不再挤成一串
-            val palette = QianyanTheme.palette
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 30.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "模型",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = palette.text3,
-                    modifier = Modifier.weight(1f),
-                )
-                UsageNumColumn("调用", USAGE_COL_CALLS)
-                UsageNumColumn("输入", USAGE_COL_TOKEN)
-                UsageNumColumn("输出", USAGE_COL_TOKEN)
-                UsageNumColumn("合计", USAGE_COL_TOKEN)
-            }
-            rows.forEachIndexed { index, row ->
-                if (index > 0) Spacer(Modifier.height(6.dp))
-                UsageTableRow(row)
-            }
-        }
-    }
-}
-
-/** 用量表数值列宽（调用 / token 列；右对齐，表头与数据行共用）。 */
-private val USAGE_COL_CALLS = 52.dp
-private val USAGE_COL_TOKEN = 88.dp
-
-@Composable
-private fun UsageNumColumn(label: String, width: androidx.compose.ui.unit.Dp) {
-    val palette = QianyanTheme.palette
-    Text(
-        label,
-        style = MaterialTheme.typography.labelSmall,
-        color = palette.text3,
-        textAlign = androidx.compose.ui.text.style.TextAlign.End,
-        modifier = Modifier.width(width),
-    )
-}
-
-@Composable
-private fun UsageTableRow(row: UsageRow) {
-    val palette = QianyanTheme.palette
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .background(palette.soft, RoundedCornerShape(12.dp))
-            .padding(horizontal = 14.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(row.modelId, style = MaterialTheme.typography.bodyMedium, color = palette.text, maxLines = 1)
-            Text(
-                if (row.provider == ProviderType.MOCK) "离线示意·不计费" else providerLabel(row.provider),
-                style = MaterialTheme.typography.labelSmall,
-                color = palette.text3,
-                maxLines = 1,
-            )
-        }
-        UsageNumText(row.calls.toString(), USAGE_COL_CALLS, color = palette.text2)
-        UsageNumText(formatTokens(row.prompt), USAGE_COL_TOKEN, color = palette.text2)
-        UsageNumText(formatTokens(row.completion), USAGE_COL_TOKEN, color = palette.text2)
-        UsageNumText(formatTokens(row.total), USAGE_COL_TOKEN, color = palette.text)
-    }
-}
-
-@Composable
-private fun UsageNumText(value: String, width: androidx.compose.ui.unit.Dp, color: androidx.compose.ui.graphics.Color) {
-    Text(
-        value,
-        style = QianyanCodeStyle,
-        color = color,
-        maxLines = 1,
-        textAlign = androidx.compose.ui.text.style.TextAlign.End,
-        modifier = Modifier.width(width),
-    )
 }
 
 /* ---------------- 本地账本维护 ---------------- */
