@@ -43,7 +43,11 @@ class UsageWiringGuardTest {
             "进页自动查询必须跳过 MOCK 与未配置",
         )
         assertTrue("state.graph.balanceQuery(type) ?: return" in page, "UI 只经接缝取查询器")
-        assertTrue("离线示意不查询余额" in page, "MOCK 行必须明说")
+        // 2026-11-16 用户裁决：MOCK（离线示意）不再渲染余额卡；不触网约束留在 graph 接缝层。
+        assertTrue(
+            "filter { it != ProviderType.MOCK }" in page,
+            "余额区必须过滤 MOCK（离线示意卡不得回潮）",
+        )
         assertTrue("未配置 API Key" in page, "未配置行必须引导到 Key 录入")
         assertTrue(
             "state.openSettingsSection(SETTINGS_PROVIDER_SECTION, type)" in page,

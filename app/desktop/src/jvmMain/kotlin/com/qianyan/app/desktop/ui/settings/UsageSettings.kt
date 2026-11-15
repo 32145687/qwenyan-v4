@@ -121,7 +121,8 @@ private fun BalanceSection(state: DesktopAppState) {
             Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(IntrinsicSize.Min),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            ProviderType.entries.forEach { type ->
+            // MOCK（离线示意）不渲染余额卡（2026-11-16 用户裁决）；不触网约束仍在 graph 接缝层
+            ProviderType.entries.filter { it != ProviderType.MOCK }.forEach { type ->
                 val configured = state.graph.isConfigured(type)
                 LaunchedEffect(type, configured) {
                     if (type != ProviderType.MOCK && configured) refresh(type, force = false)
@@ -172,16 +173,12 @@ private fun BalanceCard(
             }
             Spacer(Modifier.weight(1f))
             when {
-                type == ProviderType.MOCK -> Unit
                 !configured -> ActionButton("配置 ›", ActionLevel.TEXT, true) { onConfigure() }
                 else -> ActionButton("刷新", ActionLevel.TEXT, snapshot?.loading != true) { onRefresh() }
             }
         }
         Spacer(Modifier.height(8.dp))
         when {
-            type == ProviderType.MOCK ->
-                Text("离线示意不查询余额", style = MaterialTheme.typography.bodySmall, color = palette.text3)
-
             !configured ->
                 Text("未配置 API Key", style = MaterialTheme.typography.bodySmall, color = palette.text3)
 
