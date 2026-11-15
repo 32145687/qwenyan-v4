@@ -136,6 +136,7 @@ internal object OpenAiChatCompletion {
                 promptTokens = u?.get("prompt_tokens")?.jsonPrimitive?.intOrNull ?: 0,
                 completionTokens = u?.get("completion_tokens")?.jsonPrimitive?.intOrNull ?: 0,
                 totalTokens = u?.get("total_tokens")?.jsonPrimitive?.intOrNull ?: 0,
+                promptCacheHitTokens = u?.get("prompt_cache_hit_tokens")?.jsonPrimitive?.intOrNull ?: 0,
             )
         }
         return ProviderResponse(

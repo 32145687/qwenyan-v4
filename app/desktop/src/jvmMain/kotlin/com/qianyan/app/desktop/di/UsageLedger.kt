@@ -25,6 +25,8 @@ data class UsageBucket(
     val prompt: Long,
     val completion: Long,
     val total: Long,
+    /** 输入中命中上下文缓存的 token 累计（U-02；v1 旧账本读回为 0）。 */
+    val cacheHit: Long = 0L,
 )
 
 /** 单个桶的计数（与 usage.json 的字段一一对应）。 */
@@ -33,11 +35,14 @@ private data class UsageCounts(
     val prompt: Long = 0,
     val completion: Long = 0,
     val total: Long = 0,
+    val cacheHit: Long = 0,
 )
 
 /**
- * 本地用量账本（A-14）：`<appDir>/usage.json`，schema v1：
- * `{"version":1,"buckets":{"YYYY-MM-DD|PROVIDER|model":{"calls":n,"prompt":n,"completion":n,"total":n}}}`
+ * 本地用量账本（A-14）：`<appDir>/usage.json`，schema v2：
+ * `{"version":2,"buckets":{"YYYY-MM-DD|PROVIDER|model":{"calls":n,"prompt":n,"completion":n,"total":n,"cacheHit":n}}}`
+ *
+ * v1（无 cacheHit 字段）读回按 0 兼容，下次写入即升级 v2。
  *
  * 约束：
  *  - 记账是旁路——任何失败都被吞掉，绝不抛进聊天链路；读取损坏先备份再重置；
@@ -68,6 +73,7 @@ class UsageLedger(
                 prompt = old.prompt + usage.promptTokens,
                 completion = old.completion + usage.completionTokens,
                 total = old.total + usage.totalTokens,
+                cacheHit = old.cacheHit + usage.promptCacheHitTokens,
             )
             write(prune(buckets + (key to updated), date))
         }
@@ -109,6 +115,7 @@ class UsageLedger(
             prompt = counts.prompt,
             completion = counts.completion,
             total = counts.total,
+            cacheHit = counts.cacheHit,
         )
     }
 
@@ -136,6 +143,7 @@ class UsageLedger(
                     prompt = (obj["prompt"] as? JsonPrimitive)?.longOrNull ?: 0,
                     completion = (obj["completion"] as? JsonPrimitive)?.longOrNull ?: 0,
                     total = (obj["total"] as? JsonPrimitive)?.longOrNull ?: 0,
+                    cacheHit = (obj["cacheHit"] as? JsonPrimitive)?.longOrNull ?: 0,
                 )
             }.toMap()
         } catch (e: Exception) {
@@ -160,7 +168,7 @@ class UsageLedger(
     private fun write(buckets: Map<String, UsageCounts>) {
         path.parent?.let { Files.createDirectories(it) }
         val payload = buildJsonObject {
-            put("version", 1)
+            put("version", 2)
             putJsonObject("buckets") {
                 buckets.forEach { (key, counts) ->
                     putJsonObject(key) {
@@ -168,6 +176,7 @@ class UsageLedger(
                         put("prompt", counts.prompt)
                         put("completion", counts.completion)
                         put("total", counts.total)
+                        put("cacheHit", counts.cacheHit)
                     }
                 }
             }

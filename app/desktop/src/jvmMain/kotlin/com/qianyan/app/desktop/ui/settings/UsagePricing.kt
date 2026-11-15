@@ -51,6 +51,8 @@ internal data class DailyModelUsage(
     val prompt: Long,
     val completion: Long,
     val total: Long,
+    /** 输入中命中上下文缓存的 token 累计（U-02；厂商不返回为 0）。 */
+    val cacheHit: Long,
     /** 估算金额；null = 该模型未列入单价表（不计金额）。 */
     val costCny: Double?,
 )
@@ -101,6 +103,7 @@ internal fun aggregateDailyByModel(
                 prompt = prompt,
                 completion = completion,
                 total = rows.sumOf { it.total },
+                cacheHit = rows.sumOf { it.cacheHit },
                 costCny = ModelPricing.costCny(key.second, prompt, completion),
             )
         }
@@ -135,3 +138,42 @@ internal fun summarize(daily: List<DailyUsage>): UsageTotals =
 
 /** 「本月」下界：当月 1 号（含）。 */
 internal fun monthStart(today: LocalDate): LocalDate = today.withDayOfMonth(1)
+
+/** 单模型 × 单日数据点（U-02；缺日零填充——面积图需要连续横轴）。 */
+internal data class DailyPoint(
+    val date: LocalDate,
+    val calls: Int,
+    val prompt: Long,
+    val completion: Long,
+    val total: Long,
+    val cacheHit: Long,
+)
+
+/**
+ * 某模型在 [from, to] 内的按日序列；[from] = null 时从该模型最早有数据日开始，
+ * 到 [to] 止逐日零填充（缺数据的日期 calls/tokens = 0）。
+ */
+internal fun modelDailySeries(
+    rows: List<DailyModelUsage>,
+    from: LocalDate?,
+    to: LocalDate,
+): List<DailyPoint> {
+    if (rows.isEmpty()) return emptyList()
+    val start = from ?: rows.minOf { it.date }
+    val byDate = rows.groupBy { it.date }
+    val out = mutableListOf<DailyPoint>()
+    var day = start
+    while (!day.isAfter(to)) {
+        val rs = byDate[day].orEmpty()
+        out += DailyPoint(
+            date = day,
+            calls = rs.sumOf { it.calls },
+            prompt = rs.sumOf { it.prompt },
+            completion = rs.sumOf { it.completion },
+            total = rs.sumOf { it.total },
+            cacheHit = rs.sumOf { it.cacheHit },
+        )
+        day = day.plusDays(1)
+    }
+    return out
+}

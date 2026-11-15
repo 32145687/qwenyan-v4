@@ -71,6 +71,8 @@ data class Usage(
     val promptTokens: Int,
     val completionTokens: Int,
     val totalTokens: Int,
+    /** 输入中命中上下文缓存的 token 数（DeepSeek 返回 prompt_cache_hit_tokens；其他厂商缺省 0）。 */
+    val promptCacheHitTokens: Int = 0,
 )
 
 @Serializable

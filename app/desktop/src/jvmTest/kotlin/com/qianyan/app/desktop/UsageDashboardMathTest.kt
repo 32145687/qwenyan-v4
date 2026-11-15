@@ -4,6 +4,7 @@ import com.qianyan.app.desktop.di.UsageBucket
 import com.qianyan.app.desktop.ui.settings.ModelPricing
 import com.qianyan.app.desktop.ui.settings.aggregateDaily
 import com.qianyan.app.desktop.ui.settings.aggregateDailyByModel
+import com.qianyan.app.desktop.ui.settings.modelDailySeries
 import com.qianyan.app.desktop.ui.settings.monthStart
 import com.qianyan.app.desktop.ui.settings.summarize
 import com.qianyan.provider.ProviderType
@@ -160,5 +161,47 @@ class UsageDashboardMathTest {
         assertEquals(0L, totals.total)
         assertEquals(0.0, totals.costCny, 1e-9)
         assertTrue(totals.costKnown, "空账本视为已知（不显示低估提示）")
+    }
+
+    /* ---------- U-02 按模型序列 ---------- */
+
+    @Test
+    fun `model daily series zero fills missing days inclusively`() {
+        val byModel = aggregateDailyByModel(
+            listOf(
+                bucket(LocalDate.of(2026, 11, 1), "deepseek-v4-flash", calls = 3),
+                bucket(LocalDate.of(2026, 11, 3), "deepseek-v4-flash", calls = 1),
+            ),
+            from = null,
+            to = LocalDate.of(2026, 11, 3),
+        )
+        val series = modelDailySeries(byModel, from = null, to = LocalDate.of(2026, 11, 3))
+        assertEquals(3, series.size, "11/1..11/3 逐日连续（缺日零填充）")
+        assertEquals(3, series[0].calls)
+        assertEquals(0, series[1].calls, "11/2 缺日 = 0")
+        assertEquals(1, series[2].calls)
+    }
+
+    @Test
+    fun `model daily series carries cache hit and empty model gives empty series`() {
+        val cacheBucket = UsageBucket(
+            date = today,
+            provider = ProviderType.DEEPSEEK,
+            modelId = "deepseek-v4-flash",
+            calls = 2,
+            prompt = 100,
+            completion = 50,
+            total = 150,
+            cacheHit = 40,
+        )
+        val byModel = aggregateDailyByModel(listOf(cacheBucket), from = null, to = today)
+        assertEquals(40L, byModel.single().cacheHit, "cacheHit 逐桶汇总")
+
+        val series = modelDailySeries(byModel, from = null, to = today)
+        assertEquals(1, series.size)
+        assertEquals(40L, series[0].cacheHit)
+        assertEquals(60L, series[0].prompt - series[0].cacheHit, "未命中 = prompt - hit")
+
+        assertTrue(modelDailySeries(emptyList(), from = null, to = today).isEmpty(), "空模型 → 空序列")
     }
 }

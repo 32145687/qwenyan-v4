@@ -104,12 +104,12 @@ class UsageLedgerTest {
     }
 
     @Test
-    fun `written file follows schema v1`() {
+    fun `written file follows schema v2 with cacheHit`() {
         val (ledger, dir) = ledgerAt()
         ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-pro", usage(7, 8))
 
         val root = Json.parseToJsonElement(dir.resolve("usage.json").toFile().readText()).jsonObject
-        assertEquals(1, root["version"]!!.jsonPrimitive.content.toInt())
+        assertEquals(2, root["version"]!!.jsonPrimitive.content.toInt())
         val buckets = root["buckets"]!!.jsonObject
         val key = buckets.keys.single()
         assertEquals("2026-11-07|DEEPSEEK|deepseek-v4-pro", key)
@@ -118,6 +118,40 @@ class UsageLedgerTest {
         assertEquals(7, counts["prompt"]!!.jsonPrimitive.content.toInt())
         assertEquals(8, counts["completion"]!!.jsonPrimitive.content.toInt())
         assertEquals(15, counts["total"]!!.jsonPrimitive.content.toInt())
+        assertEquals(0, counts["cacheHit"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `cache hit tokens accumulate per bucket`() {
+        val (ledger, _) = ledgerAt()
+        val hit = Usage(promptTokens = 100, completionTokens = 10, totalTokens = 110, promptCacheHitTokens = 60)
+        ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-flash", hit)
+        ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-flash", hit)
+
+        val bucket = ledger.summary().single()
+        assertEquals(2, bucket.calls)
+        assertEquals(120L, bucket.cacheHit, "同桶 cacheHit 累加")
+        assertEquals(200L, bucket.prompt)
+    }
+
+    @Test
+    fun `legacy v1 file without cacheHit reads back as zero and upgrades on next write`() {
+        val (ledger, dir) = ledgerAt()
+        // 手工写入一份 v1 账本（无 cacheHit 字段）
+        dir.resolve("usage.json").toFile().writeText(
+            """{"version":1,"buckets":{"2026-11-07|DEEPSEEK|deepseek-v4-pro":{"calls":2,"prompt":20,"completion":10,"total":30}}}""",
+        )
+
+        val bucket = ledger.summary().single()
+        assertEquals(2, bucket.calls)
+        assertEquals(0L, bucket.cacheHit, "v1 旧账本读回 cacheHit = 0，不伪造")
+
+        ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-pro", usage(1, 1))
+        val root = Json.parseToJsonElement(dir.resolve("usage.json").toFile().readText()).jsonObject
+        assertEquals(2, root["version"]!!.jsonPrimitive.content.toInt(), "继续记账即升级 v2")
+        val counts = root["buckets"]!!.jsonObject.values.single().jsonObject
+        assertEquals(3, counts["calls"]!!.jsonPrimitive.content.toInt())
+        assertEquals(0, counts["cacheHit"]!!.jsonPrimitive.content.toInt())
     }
 
     @Test
