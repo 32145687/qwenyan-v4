@@ -2,7 +2,6 @@ package com.qianyan.app.desktop.ui.settings
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +30,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
@@ -111,7 +111,7 @@ private fun BalanceSection(state: DesktopAppState) {
 
     SettingsSection("余额", "余额直接读自厂商接口；只展示币种与金额，不做价格估算。") {
         ProviderType.entries.forEachIndexed { index, type ->
-            if (index > 0) HLine(Modifier.padding(start = 16.dp))
+            if (index > 0) Spacer(Modifier.height(10.dp))
             val configured = state.graph.isConfigured(type)
             LaunchedEffect(type, configured) {
                 if (type != ProviderType.MOCK && configured) refresh(type, force = false)
@@ -139,7 +139,11 @@ private fun BalanceRow(
 ) {
     val palette = QianyanTheme.palette
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(palette.bg, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {
@@ -378,15 +382,15 @@ private fun UsageDashboardSection(state: DesktopAppState) {
             rangeIndex = it
             selectedDate = null
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             val costText = if (totals.costKnown) "¥%.2f".format(totals.costCny) else "¥%.2f+".format(totals.costCny)
-            UsageStatCard("消费金额（估算）", costText, Modifier.weight(1f))
-            UsageStatCard("API 请求次数", formatTokens(totals.calls.toLong()) + " 次", Modifier.weight(1f))
-            UsageStatCard("Tokens", formatTokens(totals.total), Modifier.weight(1f))
+            UsageStatCard("消费金额（估算）", costText, palette.accent, Modifier.weight(1f))
+            UsageStatCard("API 请求次数", formatTokens(totals.calls.toLong()) + " 次", palette.add, Modifier.weight(1f))
+            UsageStatCard("Tokens", formatTokens(totals.total), chartModelColors[3], Modifier.weight(1f))
         }
         if (!totals.costKnown) {
             SettingsNote("部分模型未列入单价表，其用量未计入金额（实际消费高于估算）。", divider = true)
@@ -420,22 +424,27 @@ private fun UsageDashboardSection(state: DesktopAppState) {
             )
             if (models.isNotEmpty()) {
                 Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     models.forEachIndexed { index, model ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            Modifier
+                                .background(palette.bg, RoundedCornerShape(999.dp))
+                                .padding(horizontal = 9.dp, vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Box(
                                 Modifier.size(8.dp).background(
                                     chartModelColors[index % chartModelColors.size],
-                                    RoundedCornerShape(2.dp),
+                                    RoundedCornerShape(999.dp),
                                 ),
                             )
-                            Spacer(Modifier.width(4.dp))
+                            Spacer(Modifier.width(5.dp))
                             Text(
                                 model,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = palette.text3,
+                                color = palette.text2,
                                 maxLines = 1,
                             )
                         }
@@ -470,20 +479,37 @@ private fun UsageDashboardSection(state: DesktopAppState) {
 }
 
 @Composable
-private fun UsageStatCard(label: String, value: String, modifier: Modifier = Modifier) {
+private fun UsageStatCard(label: String, value: String, tint: Color, modifier: Modifier = Modifier) {
     val palette = QianyanTheme.palette
     Column(
         modifier
-            .border(1.dp, palette.line, RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .background(palette.bg, RoundedCornerShape(14.dp))
+            .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
-        Text(label, style = MaterialTheme.typography.labelSmall, color = palette.text3, maxLines = 1)
-        Spacer(Modifier.height(4.dp))
-        Text(value, style = QianyanCodeStyle, color = palette.text, maxLines = 1)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(7.dp).background(tint, RoundedCornerShape(999.dp)))
+            Spacer(Modifier.width(6.dp))
+            Text(label, style = MaterialTheme.typography.labelSmall, color = palette.text3, maxLines = 1)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            value,
+            style = QianyanCodeStyle.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+            color = palette.text,
+            maxLines = 1,
+        )
     }
 }
 
-/** 按日柱状图：X 轴按日、同日按模型分色堆叠；点选柱条回调日期（再点同日取消）。 */
+/** 轴标签紧凑格式：金额保留两位；大数 k/M 缩写（避免长数字顶出画布）。 */
+private fun formatAxisValue(v: Double, metric: Int): String = when {
+    metric == METRIC_COST -> "%.2f".format(v)
+    v >= 1_000_000 -> "%.1fM".format(v / 1_000_000)
+    v >= 1_000 -> "%.1fk".format(v / 1_000)
+    else -> v.toInt().toString()
+}
+
+/** 按日柱状图：X 轴按日、同日按模型分色堆叠；水平网格线 + 圆角柱 + 选中列描边；点选柱条回调日期（再点同日取消）。 */
 @Composable
 private fun UsageBarChart(
     daily: List<DailyUsage>,
@@ -500,7 +526,7 @@ private fun UsageBarChart(
     Canvas(
         Modifier
             .fillMaxWidth()
-            .height(150.dp)
+            .height(160.dp)
             .padding(horizontal = 16.dp)
             .pointerInput(daily, metric) {
                 detectTapGestures { offset ->
@@ -514,9 +540,28 @@ private fun UsageBarChart(
         val n = daily.size
         val slot = (size.width - CHART_LEFT - CHART_RIGHT) / n
         val chartH = size.height - CHART_BOTTOM
+        val plotW = size.width - CHART_LEFT - CHART_RIGHT
         val maxV = daily.maxOf { metricValueOfDay(it, metric) }.coerceAtLeast(1.0)
 
-        // 选中日的整列高亮
+        // 水平网格线（4 分格）+ 轴标签
+        for (g in 0..4) {
+            val frac = g / 4f
+            val y = chartH - frac * (chartH - 8f)
+            drawLine(
+                palette.line.copy(alpha = 0.45f),
+                Offset(CHART_LEFT, y),
+                Offset(CHART_LEFT + plotW, y),
+                1f,
+            )
+            if (g == 0 || g == 2 || g == 4) {
+                val label = formatAxisValue(maxV * frac, metric)
+                drawText(textMeasurer, label, Offset(2f, (y - 6f).coerceAtLeast(0f)), labelStyle)
+            }
+        }
+        // 底轴线（比网格线略重）
+        drawLine(palette.lineStrong, Offset(CHART_LEFT, chartH), Offset(CHART_LEFT + plotW, chartH), 1.5f)
+
+        // 选中日的整列：淡填充 + 描边
         selected?.let { sel ->
             val idx = daily.indexOfFirst { it.date == sel }
             if (idx >= 0) {
@@ -525,13 +570,19 @@ private fun UsageBarChart(
                     topLeft = Offset(CHART_LEFT + idx * slot, 0f),
                     size = Size(slot, chartH),
                 )
+                drawRect(
+                    color = palette.accent.copy(alpha = 0.55f),
+                    topLeft = Offset(CHART_LEFT + idx * slot, 0f),
+                    size = Size(slot, chartH),
+                    style = Stroke(width = 1.dp.toPx()),
+                )
             }
         }
-        // 基线
-        drawLine(palette.line, Offset(CHART_LEFT, chartH), Offset(size.width - CHART_RIGHT, chartH), 1f)
-        // 堆叠柱（同日按模型固定顺序，颜色与图例一致）
+
+        // 堆叠柱（同日按模型固定顺序，颜色与图例一致；圆角柱）
+        val radius = CornerRadius(3.dp.toPx())
         daily.forEachIndexed { i, day ->
-            val barW = (slot * 0.65f).coerceIn(1f, 20.dp.toPx())
+            val barW = (slot * 0.6f).coerceIn(2f, 22.dp.toPx())
             val x0 = CHART_LEFT + i * slot + (slot - barW) / 2f
             var y = chartH
             val rows = (byModel[day.date] ?: emptyList())
@@ -539,34 +590,39 @@ private fun UsageBarChart(
             rows.forEach { row ->
                 val v = metricValueOfModel(row, metric)
                 if (v > 0.0) {
-                    val h = (v / maxV * (chartH - 8f)).toFloat().coerceAtLeast(1f)
+                    val h = (v / maxV * (chartH - 8f)).toFloat().coerceAtLeast(2f)
                     y -= h
                     val colorIdx = models.indexOf(row.modelId).coerceAtLeast(0)
                     drawRoundRect(
                         color = chartModelColors[colorIdx % chartModelColors.size],
                         topLeft = Offset(x0, y),
                         size = Size(barW, h),
-                        cornerRadius = CornerRadius(2f, 2f),
+                        cornerRadius = radius,
                     )
                 }
             }
         }
-        // 坐标文本（顶 = 最大值，左下 = 0，X 首末日期）
-        val maxLabel = when (metric) {
-            METRIC_COST -> "%.2f".format(maxV)
-            else -> formatTokens(maxV.toLong())
-        }
-        drawText(textMeasurer, maxLabel, Offset(2f, 2f), labelStyle)
-        drawText(textMeasurer, "0", Offset(2f, chartH - 12f), labelStyle)
+
+        // X 轴日期标签：首 / 中 / 末
         val xLabel: (LocalDate) -> String = { "${it.monthValue}/${it.dayOfMonth}" }
-        drawText(textMeasurer, xLabel(daily.first().date), Offset(CHART_LEFT, chartH + 4f), labelStyle)
+        drawText(textMeasurer, xLabel(daily.first().date), Offset(CHART_LEFT, chartH + 6f), labelStyle)
+        if (n >= 3) {
+            val midText = xLabel(daily[n / 2].date)
+            val mw = textMeasurer.measure(midText, labelStyle).size.width
+            drawText(
+                textMeasurer,
+                midText,
+                Offset(CHART_LEFT + plotW / 2f - mw / 2f, chartH + 6f),
+                labelStyle,
+            )
+        }
         if (n > 1) {
             val lastText = xLabel(daily.last().date)
             val w = textMeasurer.measure(lastText, labelStyle).size.width
             drawText(
                 textMeasurer,
                 lastText,
-                Offset((size.width - CHART_RIGHT - w).coerceAtLeast(CHART_LEFT), chartH + 4f),
+                Offset((CHART_LEFT + plotW - w).coerceAtLeast(CHART_LEFT), chartH + 6f),
                 labelStyle,
             )
         }
