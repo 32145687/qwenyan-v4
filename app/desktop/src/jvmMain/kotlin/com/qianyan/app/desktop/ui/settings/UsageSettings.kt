@@ -142,7 +142,7 @@ private fun BalanceRow(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .background(palette.bg, RoundedCornerShape(14.dp))
+            .background(palette.soft, RoundedCornerShape(14.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -430,7 +430,7 @@ private fun UsageDashboardSection(state: DesktopAppState) {
                     models.forEachIndexed { index, model ->
                         Row(
                             Modifier
-                                .background(palette.bg, RoundedCornerShape(999.dp))
+                                .background(palette.soft, RoundedCornerShape(999.dp))
                                 .padding(horizontal = 9.dp, vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
@@ -483,7 +483,7 @@ private fun UsageStatCard(label: String, value: String, tint: Color, modifier: M
     val palette = QianyanTheme.palette
     Column(
         modifier
-            .background(palette.bg, RoundedCornerShape(14.dp))
+            .background(palette.soft, RoundedCornerShape(14.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
