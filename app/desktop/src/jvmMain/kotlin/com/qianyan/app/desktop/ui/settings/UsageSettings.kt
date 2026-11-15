@@ -233,41 +233,84 @@ private fun UsageTableSection(state: DesktopAppState) {
         if (rows.isEmpty()) {
             SettingsNote("还没有记录：真实模型调用完成后才会计数", divider = true)
         } else {
-            rows.forEach { row -> UsageTableRow(row) }
+            // 列头与数据行共用同一套列宽，数字右对齐成表格，不再挤成一串
+            val palette = QianyanTheme.palette
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 30.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "模型",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = palette.text3,
+                    modifier = Modifier.weight(1f),
+                )
+                UsageNumColumn("调用", USAGE_COL_CALLS)
+                UsageNumColumn("输入", USAGE_COL_TOKEN)
+                UsageNumColumn("输出", USAGE_COL_TOKEN)
+                UsageNumColumn("合计", USAGE_COL_TOKEN)
+            }
+            rows.forEachIndexed { index, row ->
+                if (index > 0) Spacer(Modifier.height(6.dp))
+                UsageTableRow(row)
+            }
         }
     }
+}
+
+/** 用量表数值列宽（调用 / token 列；右对齐，表头与数据行共用）。 */
+private val USAGE_COL_CALLS = 52.dp
+private val USAGE_COL_TOKEN = 88.dp
+
+@Composable
+private fun UsageNumColumn(label: String, width: androidx.compose.ui.unit.Dp) {
+    val palette = QianyanTheme.palette
+    Text(
+        label,
+        style = MaterialTheme.typography.labelSmall,
+        color = palette.text3,
+        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        modifier = Modifier.width(width),
+    )
 }
 
 @Composable
 private fun UsageTableRow(row: UsageRow) {
     val palette = QianyanTheme.palette
-    HLine(Modifier.padding(start = 16.dp))
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .background(palette.soft, RoundedCornerShape(12.dp))
+            .padding(horizontal = 14.dp, vertical = 9.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
             Text(row.modelId, style = MaterialTheme.typography.bodyMedium, color = palette.text, maxLines = 1)
             Text(
-                buildString {
-                    append(providerLabel(row.provider))
-                    if (row.provider == ProviderType.MOCK) append(" · 离线示意·不计费")
-                },
+                if (row.provider == ProviderType.MOCK) "离线示意·不计费" else providerLabel(row.provider),
                 style = MaterialTheme.typography.labelSmall,
                 color = palette.text3,
                 maxLines = 1,
             )
         }
-        Spacer(Modifier.width(10.dp))
-        Text("${row.calls} 次", style = MaterialTheme.typography.labelMedium, color = palette.text2)
-        Spacer(Modifier.width(12.dp))
-        Text(
-            "${formatTokens(row.prompt)} / ${formatTokens(row.completion)} / ${formatTokens(row.total)}",
-            style = QianyanCodeStyle,
-            color = palette.text2,
-            maxLines = 1,
-        )
+        UsageNumText(row.calls.toString(), USAGE_COL_CALLS, color = palette.text2)
+        UsageNumText(formatTokens(row.prompt), USAGE_COL_TOKEN, color = palette.text2)
+        UsageNumText(formatTokens(row.completion), USAGE_COL_TOKEN, color = palette.text2)
+        UsageNumText(formatTokens(row.total), USAGE_COL_TOKEN, color = palette.text)
     }
+}
+
+@Composable
+private fun UsageNumText(value: String, width: androidx.compose.ui.unit.Dp, color: androidx.compose.ui.graphics.Color) {
+    Text(
+        value,
+        style = QianyanCodeStyle,
+        color = color,
+        maxLines = 1,
+        textAlign = androidx.compose.ui.text.style.TextAlign.End,
+        modifier = Modifier.width(width),
+    )
 }
 
 /* ---------------- 本地账本维护 ---------------- */
@@ -281,12 +324,45 @@ private fun LedgerSection(state: DesktopAppState) {
     val count = remember(refreshKey) { ledger.recordCount() }
 
     SettingsSection("本地账本", "用量只追加在本机文件里，不进数据库；保留最近 400 天。") {
-        SettingsInfoRow("文件", ledger.path.toString())
-        SettingsInfoRow("记录数", count.toString(), divider = true)
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .background(palette.soft, RoundedCornerShape(14.dp))
+                .padding(horizontal = 14.dp, vertical = 4.dp),
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("文件", style = MaterialTheme.typography.labelMedium, color = palette.text3)
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    ledger.path.toString(),
+                    style = QianyanCodeStyle.copy(fontSize = 11.sp),
+                    color = palette.text2,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                )
+            }
+            HLine(Modifier.padding(vertical = 2.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("记录数", style = MaterialTheme.typography.labelMedium, color = palette.text3)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    count.toString(),
+                    style = QianyanCodeStyle,
+                    color = palette.text,
+                )
+            }
+        }
         ledger.corruptNotice()?.let { SettingsNote(it, divider = true) }
-        HLine(Modifier.padding(start = 16.dp))
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             if (confirming) {
@@ -453,8 +529,13 @@ private fun UsageDashboardSection(state: DesktopAppState) {
             }
             selectedDate?.let { date ->
                 val rows = byModel.filter { it.date == date }
-                HLine(Modifier.padding(start = 16.dp))
-                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .background(palette.soft, RoundedCornerShape(12.dp))
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                ) {
                     Text(
                         "${date.monthValue}/${date.dayOfMonth} 明细（点选柱条切换）",
                         style = MaterialTheme.typography.labelMedium,
@@ -561,20 +642,14 @@ private fun UsageBarChart(
         // 底轴线（比网格线略重）
         drawLine(palette.lineStrong, Offset(CHART_LEFT, chartH), Offset(CHART_LEFT + plotW, chartH), 1.5f)
 
-        // 选中日的整列：淡填充 + 描边
+        // 选中日：只留整列淡填充（不描边，避免生硬的大框）
         selected?.let { sel ->
             val idx = daily.indexOfFirst { it.date == sel }
             if (idx >= 0) {
                 drawRect(
-                    color = palette.accent.copy(alpha = 0.08f),
+                    color = palette.accent.copy(alpha = 0.07f),
                     topLeft = Offset(CHART_LEFT + idx * slot, 0f),
                     size = Size(slot, chartH),
-                )
-                drawRect(
-                    color = palette.accent.copy(alpha = 0.55f),
-                    topLeft = Offset(CHART_LEFT + idx * slot, 0f),
-                    size = Size(slot, chartH),
-                    style = Stroke(width = 1.dp.toPx()),
                 )
             }
         }
