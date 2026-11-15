@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.LocalDate
+import java.time.LocalTime
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -27,6 +28,11 @@ data class UsageBucket(
     val total: Long,
     /** 输入中命中上下文缓存的 token 累计（U-02；v1 旧账本读回为 0）。 */
     val cacheHit: Long = 0L,
+    /** 高峰时段拆分（U-03；v1/v2 旧账本读回 = 全量，按高峰价保守计）。谷侧 = 总量 − 峰量。 */
+    val peakCalls: Int = calls,
+    val peakPrompt: Long = prompt,
+    val peakHit: Long = cacheHit,
+    val peakCompletion: Long = completion,
 )
 
 /** 单个桶的计数（与 usage.json 的字段一一对应）。 */
@@ -36,13 +42,30 @@ private data class UsageCounts(
     val completion: Long = 0,
     val total: Long = 0,
     val cacheHit: Long = 0,
+    val peakCalls: Int = 0,
+    val peakPrompt: Long = 0,
+    val peakHit: Long = 0,
+    val peakCompletion: Long = 0,
 )
 
 /**
- * 本地用量账本（A-14）：`<appDir>/usage.json`，schema v2：
- * `{"version":2,"buckets":{"YYYY-MM-DD|PROVIDER|model":{"calls":n,"prompt":n,"completion":n,"total":n,"cacheHit":n}}}`
+ * DeepSeek 峰谷时段（官方价格页脚注 (2)）：北京时间周一至周五（不含法定节假日）
+ * 9:00–12:00、14:00–18:00 为高峰；其余时段（含周末与节假日）为空闲。
+ * 法定节假日不做日历（局限如实标注）。本机时区即北京时间（用户环境 GMT+8）。
+ */
+fun isPeakUsageTime(date: LocalDate, time: LocalTime): Boolean {
+    if (date.dayOfWeek == java.time.DayOfWeek.SATURDAY || date.dayOfWeek == java.time.DayOfWeek.SUNDAY) return false
+    val hourMinute = time.hour * 60 + time.minute
+    val morningPeak = hourMinute >= 9 * 60 && hourMinute < 12 * 60
+    val afternoonPeak = hourMinute >= 14 * 60 && hourMinute < 18 * 60
+    return morningPeak || afternoonPeak
+}
+
+/**
+ * 本地用量账本（A-14）：`<appDir>/usage.json`，schema v3：
+ * 桶 = `{"calls","prompt","completion","total","cacheHit","peakCalls","peakPrompt","peakHit","peakCompletion"}`
  *
- * v1（无 cacheHit 字段）读回按 0 兼容，下次写入即升级 v2。
+ * v1/v2 旧文件读回兼容：缺 cacheHit 按 0、缺峰拆分按「全量为高峰」保守处理；下次写入即升级 v3。
  *
  * 约束：
  *  - 记账是旁路——任何失败都被吞掉，绝不抛进聊天链路；读取损坏先备份再重置；
@@ -52,6 +75,7 @@ private data class UsageCounts(
 class UsageLedger(
     val path: Path,
     private val today: () -> LocalDate = { LocalDate.now() },
+    private val nowTime: () -> LocalTime = { LocalTime.now() },
 ) {
     private val lock = Any()
     private val json = Json { ignoreUnknownKeys = true }
@@ -64,16 +88,22 @@ class UsageLedger(
     fun record(provider: ProviderType, modelId: String?, usage: Usage) = synchronized(lock) {
         runCatching {
             val date = today()
+            val time = nowTime()
             val model = modelId?.takeIf { it.isNotBlank() } ?: UNKNOWN_MODEL
             val key = "$date|${provider.name}|$model"
             val buckets = load()
             val old = buckets[key] ?: UsageCounts()
+            val peak = isPeakUsageTime(date, time)
             val updated = old.copy(
                 calls = old.calls + 1,
                 prompt = old.prompt + usage.promptTokens,
                 completion = old.completion + usage.completionTokens,
                 total = old.total + usage.totalTokens,
                 cacheHit = old.cacheHit + usage.promptCacheHitTokens,
+                peakCalls = old.peakCalls + if (peak) 1 else 0,
+                peakPrompt = old.peakPrompt + if (peak) usage.promptTokens.toLong() else 0L,
+                peakHit = old.peakHit + if (peak) usage.promptCacheHitTokens.toLong() else 0L,
+                peakCompletion = old.peakCompletion + if (peak) usage.completionTokens.toLong() else 0L,
             )
             write(prune(buckets + (key to updated), date))
         }
@@ -116,6 +146,10 @@ class UsageLedger(
             completion = counts.completion,
             total = counts.total,
             cacheHit = counts.cacheHit,
+            peakCalls = counts.peakCalls,
+            peakPrompt = counts.peakPrompt,
+            peakHit = counts.peakHit,
+            peakCompletion = counts.peakCompletion,
         )
     }
 
@@ -138,12 +172,21 @@ class UsageLedger(
                 ?: throw IllegalArgumentException("usage.json 缺少 buckets")
             bucketsNode.mapNotNull { (key, value) ->
                 val obj = value as? JsonObject ?: return@mapNotNull null
+                val calls = (obj["calls"] as? JsonPrimitive)?.intOrNull ?: 0
+                val prompt = (obj["prompt"] as? JsonPrimitive)?.longOrNull ?: 0
+                val completion = (obj["completion"] as? JsonPrimitive)?.longOrNull ?: 0
+                val cacheHit = (obj["cacheHit"] as? JsonPrimitive)?.longOrNull ?: 0
                 key to UsageCounts(
-                    calls = (obj["calls"] as? JsonPrimitive)?.intOrNull ?: 0,
-                    prompt = (obj["prompt"] as? JsonPrimitive)?.longOrNull ?: 0,
-                    completion = (obj["completion"] as? JsonPrimitive)?.longOrNull ?: 0,
+                    calls = calls,
+                    prompt = prompt,
+                    completion = completion,
                     total = (obj["total"] as? JsonPrimitive)?.longOrNull ?: 0,
-                    cacheHit = (obj["cacheHit"] as? JsonPrimitive)?.longOrNull ?: 0,
+                    cacheHit = cacheHit,
+                    // v1/v2 旧文件无峰拆分 → 全量按高峰保守计（不低估）
+                    peakCalls = (obj["peakCalls"] as? JsonPrimitive)?.intOrNull ?: calls,
+                    peakPrompt = (obj["peakPrompt"] as? JsonPrimitive)?.longOrNull ?: prompt,
+                    peakHit = (obj["peakHit"] as? JsonPrimitive)?.longOrNull ?: cacheHit,
+                    peakCompletion = (obj["peakCompletion"] as? JsonPrimitive)?.longOrNull ?: completion,
                 )
             }.toMap()
         } catch (e: Exception) {
@@ -168,7 +211,7 @@ class UsageLedger(
     private fun write(buckets: Map<String, UsageCounts>) {
         path.parent?.let { Files.createDirectories(it) }
         val payload = buildJsonObject {
-            put("version", 2)
+            put("version", 3)
             putJsonObject("buckets") {
                 buckets.forEach { (key, counts) ->
                     putJsonObject(key) {
@@ -177,6 +220,10 @@ class UsageLedger(
                         put("completion", counts.completion)
                         put("total", counts.total)
                         put("cacheHit", counts.cacheHit)
+                        put("peakCalls", counts.peakCalls)
+                        put("peakPrompt", counts.peakPrompt)
+                        put("peakHit", counts.peakHit)
+                        put("peakCompletion", counts.peakCompletion)
                     }
                 }
             }

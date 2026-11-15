@@ -40,20 +40,69 @@ class UsageDashboardMathTest {
         total = prompt + completion,
     )
 
-    /* ---------- 单价表 ---------- */
+    /* ---------- 单价表（U-03 三段 × 峰谷真价） ---------- */
 
     @Test
-    fun `cost uses input and output unit prices`() {
-        val price = ModelPricing.priceOf("deepseek-flash")!!
-        val cost = ModelPricing.costCny("deepseek-flash", promptTokens = 1_000_000, completionTokens = 1_000_000)!!
-        assertEquals(price.inputPerMillion + price.outputPerMillion, cost, 1e-9)
+    fun `deepseek flash prices by tier with peak and offpeak`() {
+        // 空闲：命中 0.02 · 未命中 1 · 输出 4；高峰：0.04/2/8（元/百万）
+        val offPeak = ModelPricing.costCny(
+            "deepseek-flash",
+            prompt = 1_000_000, completion = 1_000_000, cacheHit = 0,
+            peakPrompt = 0, peakHit = 0, peakCompletion = 0,
+        )!!
+        assertEquals(1.0 + 4.0, offPeak, 1e-9, "全空闲 = 未命中 1 + 输出 4")
+
+        val peak = ModelPricing.costCny(
+            "deepseek-flash",
+            prompt = 1_000_000, completion = 1_000_000, cacheHit = 0,
+            peakPrompt = 1_000_000, peakHit = 0, peakCompletion = 1_000_000,
+        )!!
+        assertEquals(2.0 + 8.0, peak, 1e-9, "全高峰 = 未命中 2 + 输出 8")
+
+        val mixed = ModelPricing.costCny(
+            "deepseek-flash",
+            prompt = 2_000_000, completion = 1_000_000, cacheHit = 1_000_000,
+            peakPrompt = 1_000_000, peakHit = 1_000_000, peakCompletion = 500_000,
+        )!!
+        // 高峰：命中 1M×0.04 + 输出 0.5M×8 = 0.04 + 4
+        // 空闲：未命中 1M×1 + 输出 0.5M×4 = 1 + 2
+        assertEquals(0.04 + 4.0 + 1.0 + 2.0, mixed, 1e-9, "峰/谷分段三段计价")
+    }
+
+    @Test
+    fun `legacy bucket with peak equal to totals prices conservatively at peak`() {
+        val cost = ModelPricing.costCny(
+            "deepseek-flash",
+            prompt = 1_000_000, completion = 0, cacheHit = 0,
+            peakPrompt = 1_000_000, peakHit = 0, peakCompletion = 0,
+        )!!
+        assertEquals(2.0, cost, 1e-9, "旧数据峰拆分未知 = 全量按高峰（保守上界）")
+    }
+
+    @Test
+    fun `mimo prices are flat across peak and offpeak`() {
+        val allPeak = ModelPricing.costCny(
+            "mimo-v2.6-flash",
+            prompt = 1_000_000, completion = 1_000_000, cacheHit = 0,
+            peakPrompt = 1_000_000, peakHit = 0, peakCompletion = 1_000_000,
+        )!!
+        val allOff = ModelPricing.costCny(
+            "mimo-v2.6-flash",
+            prompt = 1_000_000, completion = 1_000_000, cacheHit = 0,
+            peakPrompt = 0, peakHit = 0, peakCompletion = 0,
+        )!!
+        assertEquals(1.0 + 2.0, allPeak, 1e-9)
+        assertEquals(allPeak, allOff, 1e-9, "MiMo 无峰谷，两档同价")
     }
 
     @Test
     fun `unknown model has no price and no fabricated cost`() {
         assertNull(ModelPricing.priceOf("no-such-model"), "未列入单价表的模型不得编造价格")
-        assertNull(ModelPricing.costCny("no-such-model", 1_000, 1_000))
-        assertNull(ModelPricing.costCny("unknown", 1_000, 1_000), "MOCK/unknown 兜底名同样不计金额")
+        assertNull(
+            ModelPricing.costCny("no-such-model", 1_000, 1_000, 0, 0, 0, 0),
+            "未知模型不计金额",
+        )
+        assertNull(ModelPricing.costCny("unknown", 1_000, 1_000, 0, 0, 0, 0), "MOCK/unknown 兜底名同样不计金额")
     }
 
     /* ---------- 按日 × 模型聚合 ---------- */
@@ -99,21 +148,13 @@ class UsageDashboardMathTest {
         )
         val flash = byModel.first { it.modelId == "deepseek-flash" }
         val unknown = byModel.first { it.modelId == "no-such-model" }
-        assertEquals(
-            ModelPricing.priceOf("deepseek-flash")!!.inputPerMillion,
-            flash.costCny!!,
-            1e-9,
-        )
+        // 桶未给峰拆分（默认 = 全量）⇒ 按高峰未命中价 2 元/百万保守计
+        assertEquals(2.0, flash.costCny!!, 1e-9)
         assertNull(unknown.costCny, "未知模型不计金额")
 
         val daily = aggregateDaily(byModel)
         assertEquals(1, daily.size)
-        assertEquals(
-            ModelPricing.priceOf("deepseek-flash")!!.inputPerMillion,
-            daily[0].costCny,
-            1e-9,
-            "日金额 = 已知模型之和，未知模型不计入",
-        )
+        assertEquals(2.0, daily[0].costCny, 1e-9, "日金额 = 已知模型之和，未知模型不计入")
         assertFalse(daily[0].costKnown, "存在未知模型 ⇒ costKnown=false（金额为低估）")
     }
 
@@ -146,10 +187,9 @@ class UsageDashboardMathTest {
         assertEquals(1_000_000, totals.prompt)
         assertEquals(1_500_000, totals.completion)
         assertEquals(2_500_000, totals.total)
-        val perMillion = ModelPricing.priceOf("deepseek-flash")!!
-        val expected = 1.0 * perMillion.inputPerMillion + 0.5 * perMillion.outputPerMillion +
-            0.0 * perMillion.inputPerMillion + 1.0 * perMillion.outputPerMillion
-        assertEquals(expected, totals.costCny, 1e-9, "月汇总金额 = 各日估算之和")
+        // 桶未给峰拆分（默认 = 全量）⇒ 高峰价：未命中 2 元/百万、输出 8 元/百万
+        val expected = 1.0 * 2.0 + 0.5 * 8.0 + 0.0 * 2.0 + 1.0 * 8.0
+        assertEquals(expected, totals.costCny, 1e-9, "月汇总金额 = 各日计价之和")
         assertTrue(totals.costKnown)
     }
 

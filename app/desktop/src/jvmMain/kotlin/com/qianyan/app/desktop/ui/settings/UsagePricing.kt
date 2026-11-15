@@ -11,36 +11,86 @@ import java.time.LocalDate
  *  - 金额一律是**本地单价估算**，不是厂商账单——UI 必须标注「估算」；
  *  - 未列入单价表的模型不计金额（costKnown=false），绝不编造价格。
  */
-internal data class ModelUnitPrice(
-    val inputPerMillion: Double,
-    val outputPerMillion: Double,
+/** 三段单价（CNY / 百万 token）：命中缓存 / 未命中 / 输出。 */
+internal data class TierUnitPrice(
+    val cacheHit: Double,
+    val inputMiss: Double,
+    val output: Double,
 )
+
+/** 一档模型的峰/谷双价（无峰谷的厂商两档同价）。 */
+internal data class TieredModelPrice(val peak: TierUnitPrice, val offPeak: TierUnitPrice)
 
 internal object ModelPricing {
     /**
-     * 单价表（CNY / 百万 token，输入 / 输出分计）。
+     * 单价表（CNY / 百万 token）——2026-11-16 用户提供厂商价格页真值：
      *
-     * ⚠ 占位数值：上线前须按各厂商价格页核对修改；只收模型 ID 精确匹配，
-     * 未列入的模型（含 MOCK / unknown）不计金额。
-     * 模型 ID 以本地账本实际记录为准（真机 2026-11-16 校对：deepseek-v4-flash /
-     * mimo-v2.6-flash / mimo-v2.6-pro / mock-v1）。
+     * DeepSeek（峰谷双价；空闲=高峰一半。高峰=北京时间周一至五 9:00–12:00、14:00–18:00）：
+     *   deepseek-flash：命中 0.02/0.04 · 未命中 1/2 · 输出 4/8（空闲/高峰）
+     *   deepseek-v4-pro：命中 0.15/0.30 · 未命中 4.5/9.0 · 输出 13.5/27.0
+     *   官方脚注 (1)：旧模型名 deepseek-v4-flash（含 vision-exp）仍可调用，按 Flash 价格计。
+     * MiMo（无峰谷，双档同价；实时推理价，本应用不用批量推理）：
+     *   mimo-v2.6-flash 0.02/1.00/2.00 · mimo-v2.6-pro 0.025/3.00/6.00 ·
+     *   mimo-v2.6-pro-ultraspeed 0.25/30/60
+     *
+     * 只收模型 ID 精确匹配；未列入的模型（含 MOCK / unknown）不计金额。
+     * 法定节假日按空闲计的日历未实现（局限如实标注）。
      */
+    private val flash = TieredModelPrice(
+        peak = TierUnitPrice(cacheHit = 0.04, inputMiss = 2.0, output = 8.0),
+        offPeak = TierUnitPrice(cacheHit = 0.02, inputMiss = 1.0, output = 4.0),
+    )
+    private val pro = TieredModelPrice(
+        peak = TierUnitPrice(cacheHit = 0.30, inputMiss = 9.0, output = 27.0),
+        offPeak = TierUnitPrice(cacheHit = 0.15, inputMiss = 4.5, output = 13.5),
+    )
     private val table = mapOf(
-        "deepseek-flash" to ModelUnitPrice(inputPerMillion = 0.5, outputPerMillion = 2.0),
-        "deepseek-v4-flash" to ModelUnitPrice(inputPerMillion = 0.5, outputPerMillion = 2.0),
-        "deepseek-v4-pro" to ModelUnitPrice(inputPerMillion = 4.0, outputPerMillion = 16.0),
-        "mimo-v2.6-flash" to ModelUnitPrice(inputPerMillion = 1.0, outputPerMillion = 4.0),
-        "mimo-v2.6-pro" to ModelUnitPrice(inputPerMillion = 2.0, outputPerMillion = 8.0),
+        "deepseek-flash" to flash,
+        "deepseek-v4-flash" to flash, // 旧名按 Flash 价格计（官方脚注 (1)）
+        "deepseek-v4-pro" to pro,
+        "mimo-v2.6-flash" to TieredModelPrice(
+            peak = TierUnitPrice(0.02, 1.0, 2.0),
+            offPeak = TierUnitPrice(0.02, 1.0, 2.0),
+        ),
+        "mimo-v2.6-pro" to TieredModelPrice(
+            peak = TierUnitPrice(0.025, 3.0, 6.0),
+            offPeak = TierUnitPrice(0.025, 3.0, 6.0),
+        ),
+        "mimo-v2.6-pro-ultraspeed" to TieredModelPrice(
+            peak = TierUnitPrice(0.25, 30.0, 60.0),
+            offPeak = TierUnitPrice(0.25, 30.0, 60.0),
+        ),
     )
 
-    internal fun priceOf(modelId: String): ModelUnitPrice? = table[modelId]
+    internal fun priceOf(modelId: String): TieredModelPrice? = table[modelId]
 
-    /** 一次调用的估算金额（CNY）；未知模型返回 null（不计入）。 */
-    internal fun costCny(modelId: String, promptTokens: Long, completionTokens: Long): Double? =
-        priceOf(modelId)?.let { price ->
-            promptTokens / 1_000_000.0 * price.inputPerMillion +
-                completionTokens / 1_000_000.0 * price.outputPerMillion
-        }
+    /**
+     * 一桶用量的计价（CNY）：峰/谷拆分分别按三段（命中/未命中/输出）计价后求和。
+     * 未命中 = prompt − cacheHit。未知模型返回 null（不计金额）。
+     */
+    internal fun costCny(
+        modelId: String,
+        prompt: Long,
+        completion: Long,
+        cacheHit: Long,
+        peakPrompt: Long,
+        peakHit: Long,
+        peakCompletion: Long,
+    ): Double? {
+        val price = table[modelId] ?: return null
+        val miss = (prompt - cacheHit).coerceAtLeast(0)
+        val peakMiss = (peakPrompt - peakHit).coerceAtLeast(0)
+        val offMiss = (miss - peakMiss).coerceAtLeast(0)
+        val offCompletion = (completion - peakCompletion).coerceAtLeast(0)
+
+        fun tierCost(t: TierUnitPrice, hit: Long, missTokens: Long, out: Long): Double =
+            hit / 1_000_000.0 * t.cacheHit +
+                missTokens / 1_000_000.0 * t.inputMiss +
+                out / 1_000_000.0 * t.output
+
+        return tierCost(price.peak, peakHit, peakMiss, peakCompletion) +
+            tierCost(price.offPeak, cacheHit - peakHit, offMiss, offCompletion)
+    }
 }
 
 /** 单日 × 单模型的聚合（图表堆叠与单日明细的最小单元）。 */
@@ -96,6 +146,10 @@ internal fun aggregateDailyByModel(
         .map { (key, rows) ->
             val prompt = rows.sumOf { it.prompt }
             val completion = rows.sumOf { it.completion }
+            val cacheHit = rows.sumOf { it.cacheHit }
+            val peakPrompt = rows.sumOf { it.peakPrompt }
+            val peakHit = rows.sumOf { it.peakHit }
+            val peakCompletion = rows.sumOf { it.peakCompletion }
             DailyModelUsage(
                 date = key.first,
                 modelId = key.second,
@@ -103,8 +157,16 @@ internal fun aggregateDailyByModel(
                 prompt = prompt,
                 completion = completion,
                 total = rows.sumOf { it.total },
-                cacheHit = rows.sumOf { it.cacheHit },
-                costCny = ModelPricing.costCny(key.second, prompt, completion),
+                cacheHit = cacheHit,
+                costCny = ModelPricing.costCny(
+                    modelId = key.second,
+                    prompt = prompt,
+                    completion = completion,
+                    cacheHit = cacheHit,
+                    peakPrompt = peakPrompt,
+                    peakHit = peakHit,
+                    peakCompletion = peakCompletion,
+                ),
             )
         }
         .sortedWith(compareBy({ it.date }, { it.modelId }))

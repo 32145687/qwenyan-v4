@@ -20,8 +20,9 @@ class UsageLedgerTest {
 
     private fun ledgerAt(
         dir: Path = Files.createTempDirectory("qianyan-usage"),
-        date: () -> LocalDate = { LocalDate.of(2026, 11, 7) },
-    ): Pair<UsageLedger, Path> = UsageLedger(dir.resolve("usage.json"), date) to dir
+        date: () -> LocalDate = { LocalDate.of(2026, 11, 7) }, // 周六：DeepSeek 全天空闲
+        time: () -> java.time.LocalTime = { java.time.LocalTime.NOON },
+    ): Pair<UsageLedger, Path> = UsageLedger(dir.resolve("usage.json"), date, time) to dir
 
     private fun usage(prompt: Int, completion: Int) =
         Usage(promptTokens = prompt, completionTokens = completion, totalTokens = prompt + completion)
@@ -104,12 +105,12 @@ class UsageLedgerTest {
     }
 
     @Test
-    fun `written file follows schema v2 with cacheHit`() {
+    fun `written file follows schema v3 with peak split`() {
         val (ledger, dir) = ledgerAt()
         ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-pro", usage(7, 8))
 
         val root = Json.parseToJsonElement(dir.resolve("usage.json").toFile().readText()).jsonObject
-        assertEquals(2, root["version"]!!.jsonPrimitive.content.toInt())
+        assertEquals(3, root["version"]!!.jsonPrimitive.content.toInt())
         val buckets = root["buckets"]!!.jsonObject
         val key = buckets.keys.single()
         assertEquals("2026-11-07|DEEPSEEK|deepseek-v4-pro", key)
@@ -119,6 +120,31 @@ class UsageLedgerTest {
         assertEquals(8, counts["completion"]!!.jsonPrimitive.content.toInt())
         assertEquals(15, counts["total"]!!.jsonPrimitive.content.toInt())
         assertEquals(0, counts["cacheHit"]!!.jsonPrimitive.content.toInt())
+        // 周六 = DeepSeek 全天空闲 → 峰侧全 0
+        assertEquals(0, counts["peakCalls"]!!.jsonPrimitive.content.toInt())
+        assertEquals(0, counts["peakPrompt"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `peak and offpeak usage split into the same bucket by time of day`() {
+        var day = LocalDate.of(2026, 11, 11) // 周三
+        var time = java.time.LocalTime.of(10, 30) // 高峰（9:00–12:00）
+        val (ledger, _) = ledgerAt(date = { day }, time = { time })
+        ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-flash", usage(100, 10))
+        time = java.time.LocalTime.of(20, 30) // 空闲
+        ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-flash", usage(50, 5))
+        day = LocalDate.of(2026, 11, 14) // 周六：全天空闲
+        ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-flash", usage(20, 2))
+
+        val bucket = ledger.summary().first { it.date == LocalDate.of(2026, 11, 11) }
+        assertEquals(2, bucket.calls)
+        assertEquals(150L, bucket.prompt)
+        assertEquals(1, bucket.peakCalls, "周三 10:30 计入高峰")
+        assertEquals(100L, bucket.peakPrompt)
+        assertEquals(0L, bucket.peakHit)
+        assertEquals(10L, bucket.peakCompletion)
+        // 谷侧 = 总量 − 峰量
+        assertEquals(50L, bucket.prompt - bucket.peakPrompt)
     }
 
     @Test
@@ -137,7 +163,7 @@ class UsageLedgerTest {
     @Test
     fun `legacy v1 file without cacheHit reads back as zero and upgrades on next write`() {
         val (ledger, dir) = ledgerAt()
-        // 手工写入一份 v1 账本（无 cacheHit 字段）
+        // 手工写入一份 v1 账本（无 cacheHit / 峰拆分字段）
         dir.resolve("usage.json").toFile().writeText(
             """{"version":1,"buckets":{"2026-11-07|DEEPSEEK|deepseek-v4-pro":{"calls":2,"prompt":20,"completion":10,"total":30}}}""",
         )
@@ -145,13 +171,30 @@ class UsageLedgerTest {
         val bucket = ledger.summary().single()
         assertEquals(2, bucket.calls)
         assertEquals(0L, bucket.cacheHit, "v1 旧账本读回 cacheHit = 0，不伪造")
+        assertEquals(2, bucket.peakCalls, "v1 峰拆分未知 → 全量按高峰保守计")
+        assertEquals(20L, bucket.peakPrompt)
 
         ledger.record(ProviderType.DEEPSEEK, "deepseek-v4-pro", usage(1, 1))
         val root = Json.parseToJsonElement(dir.resolve("usage.json").toFile().readText()).jsonObject
-        assertEquals(2, root["version"]!!.jsonPrimitive.content.toInt(), "继续记账即升级 v2")
+        assertEquals(3, root["version"]!!.jsonPrimitive.content.toInt(), "继续记账即升级 v3")
         val counts = root["buckets"]!!.jsonObject.values.single().jsonObject
         assertEquals(3, counts["calls"]!!.jsonPrimitive.content.toInt())
         assertEquals(0, counts["cacheHit"]!!.jsonPrimitive.content.toInt())
+    }
+
+    @Test
+    fun `legacy v2 file without peak split reads back conservatively`() {
+        val (ledger, dir) = ledgerAt()
+        dir.resolve("usage.json").toFile().writeText(
+            """{"version":2,"buckets":{"2026-11-07|DEEPSEEK|deepseek-v4-pro":{"calls":2,"prompt":20,"completion":10,"total":30,"cacheHit":8}}}""",
+        )
+
+        val bucket = ledger.summary().single()
+        assertEquals(8L, bucket.cacheHit)
+        assertEquals(2, bucket.peakCalls, "v2 峰拆分未知 → 全量按高峰保守计")
+        assertEquals(20L, bucket.peakPrompt)
+        assertEquals(8L, bucket.peakHit)
+        assertEquals(10L, bucket.peakCompletion)
     }
 
     @Test
@@ -162,7 +205,7 @@ class UsageLedgerTest {
 
         var today = LocalDate.of(2026, 11, 7)
         val dir = Files.createTempDirectory("qianyan-usage-count")
-        val counting = UsageLedger(dir.resolve("usage.json")) { today }
+        val counting = UsageLedger(dir.resolve("usage.json"), { today }, { java.time.LocalTime.NOON })
         counting.record(ProviderType.DEEPSEEK, "a", usage(1, 1))
         counting.record(ProviderType.DEEPSEEK, "a", usage(1, 1))
         counting.record(ProviderType.DEEPSEEK, "b", usage(1, 1))

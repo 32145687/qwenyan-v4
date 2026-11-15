@@ -389,7 +389,7 @@ private fun UsageDashboardSection(state: DesktopAppState) {
             .map { it.first }
     }
 
-    SettingsSection("用量看板", "按 模型 × 日 统计；金额为单价估算，非厂商账单。") {
+    SettingsSection("用量看板", "按 模型 × 日 统计；金额按厂商公开单价计（峰谷时段，节假日按空闲）。") {
         SettingsSegmented(listOf("本月", "30 天", "全部"), rangeIndex) { rangeIndex = it }
         Spacer(Modifier.height(12.dp))
         Row(
@@ -397,7 +397,7 @@ private fun UsageDashboardSection(state: DesktopAppState) {
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             val costText = if (totals.costKnown) "¥%.2f".format(totals.costCny) else "¥%.2f+".format(totals.costCny)
-            UsageStatCard("消费金额（估算）", costText, palette.accent, Modifier.weight(1f))
+            UsageStatCard("消费金额（计价）", costText, palette.accent, Modifier.weight(1f))
             UsageStatCard("API 请求次数", formatTokens(totals.calls.toLong()) + " 次", palette.add, Modifier.weight(1f))
             UsageStatCard("Tokens", formatTokens(totals.total), chartModelColors[3], Modifier.weight(1f))
         }
