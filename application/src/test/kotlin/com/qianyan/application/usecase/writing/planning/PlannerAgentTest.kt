@@ -164,4 +164,86 @@ class PlannerAgentTest {
         assertEquals("cp-1", parsed.chapterPlanId.value)
         assertEquals("抵达终点", parsed.chapterGoal)
     }
+
+    /* O-114：真实模型把 Plan JSON 包进 {"answer":"…"} 协议字段（样本 A）——解包后可解析 */
+    @Test
+    fun `answer wrapped plan output is unwrapped and parsed`() {
+        val s = ChapterPlanStructure(
+            novelId = NovelId("novel-1"),
+            arcId = ArcId("arc-1"),
+            actId = ActId("act-1"),
+            scope = VariantScope.ORIGINAL,
+            chapterPlanId = "cp-1",
+        )
+        val inner = "{\"chapterGoal\":\"抵达终点\"}"
+        val wrapped = "{\"answer\":\"" + inner.replace("\"", "\\\"") + "\"}"
+        val parsed = ChapterPlanParser.parse(wrapped, s)
+        assertEquals("抵达终点", parsed.chapterGoal)
+    }
+
+    /* O-114：Markdown 围栏包裹同样解包 */
+    @Test
+    fun `markdown fenced plan output is unwrapped and parsed`() {
+        val s = ChapterPlanStructure(
+            novelId = NovelId("novel-1"),
+            arcId = ArcId("arc-1"),
+            actId = ActId("act-1"),
+            scope = VariantScope.ORIGINAL,
+            chapterPlanId = "cp-1",
+        )
+        val parsed = ChapterPlanParser.parse("```json\n{\"chapterGoal\":\"抵达终点\"}\n```", s)
+        assertEquals("抵达终点", parsed.chapterGoal)
+    }
+
+    /* O-114：双层包裹（有界解包 ≤2 层） */
+    @Test
+    fun `double wrapped plan output is unwrapped within bound`() {
+        val s = ChapterPlanStructure(
+            novelId = NovelId("novel-1"),
+            arcId = ArcId("arc-1"),
+            actId = ActId("act-1"),
+            scope = VariantScope.ORIGINAL,
+            chapterPlanId = "cp-1",
+        )
+        val inner = "{\"chapterGoal\":\"抵达终点\"}"
+        val once = "{\"answer\":\"" + inner.replace("\"", "\\\"") + "\"}"
+        val twice = "{\"answer\":\"" + once.replace("\\", "\\\\").replace("\"", "\\\"") + "\"}"
+        val parsed = ChapterPlanParser.parse(twice, s)
+        assertEquals("抵达终点", parsed.chapterGoal)
+    }
+
+    /* O-114：真 Plan（含 chapterGoal）不会被误解包——即使多出一个 answer 字段 */
+    @Test
+    fun `legitimate plan with extra answer field is not unwrapped`() {
+        val s = ChapterPlanStructure(
+            novelId = NovelId("novel-1"),
+            arcId = ArcId("arc-1"),
+            actId = ActId("act-1"),
+            scope = VariantScope.ORIGINAL,
+            chapterPlanId = "cp-1",
+        )
+        val parsed = ChapterPlanParser.parse(
+            "{\"chapterGoal\":\"抵达终点\",\"answer\":\"干扰文本\"}",
+            s,
+        )
+        assertEquals("抵达终点", parsed.chapterGoal)
+    }
+
+    /* O-114：真坏 JSON（分号分隔，样本 B）仍类型化抛错——由上层纠正重试兜底 */
+    @Test
+    fun `semicolon separated malformed json still fails typed`() {
+        val s = ChapterPlanStructure(
+            novelId = NovelId("novel-1"),
+            arcId = ArcId("arc-1"),
+            actId = ActId("act-1"),
+            scope = VariantScope.ORIGINAL,
+            chapterPlanId = "cp-1",
+        )
+        assertFailsWith<com.qianyan.application.usecase.writing.planning.PlanningException.InvalidOutput> {
+            ChapterPlanParser.parse(
+                "{\"chapterGoal\":\"出关\";\"other\":\"值\"}",
+                s,
+            )
+        }
+    }
 }

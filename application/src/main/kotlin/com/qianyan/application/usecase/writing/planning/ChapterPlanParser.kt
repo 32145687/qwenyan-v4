@@ -11,6 +11,10 @@ import com.qianyan.model.VariantScope
 import com.qianyan.model.story.ChapterPlan
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /**
  * [ChapterPlan] 输出解析（P11.2）。
@@ -25,8 +29,35 @@ object ChapterPlanParser {
 
     /** 解析 Planner 输出为 [ChapterPlan]。structure 提供结构 ID，raw 提供创作性字段。 */
     fun parse(raw: String, structure: ChapterPlanStructure): ChapterPlan {
-        val dto = decode(raw)
+        val dto = decode(unwrap(raw))
         return toPlan(dto, structure)
+    }
+
+    /**
+     * O-114：模型偶尔把 Plan JSON 包进 `{"answer":"…"}` 协议字段、或加 Markdown 围栏——
+     * 解析前做**有界解包**（answer 字符串 → 内层文本；围栏剥离；最多两层包裹）。
+     * 解包条件从严：顶层对象含字符串 answer 且**不含 chapterGoal**（真 Plan 不会长这样）；
+     * 无法识别包裹时原样返回，交给既有类型化错误路径。
+     */
+    internal fun unwrap(raw: String): String {
+        var text = raw.trim()
+        if (text.startsWith("```")) {
+            text = text.removePrefix("```json").removePrefix("```JSON").removePrefix("```").trim()
+            val fence = text.lastIndexOf("```")
+            if (fence >= 0) text = text.take(fence).trim()
+        }
+        repeat(2) {
+            if (!text.startsWith("{")) return@repeat
+            val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return@repeat
+            val answer = obj["answer"] ?: return@repeat
+            if (obj["chapterGoal"] != null) return@repeat
+            text = when (answer) {
+                is JsonPrimitive -> if (answer.isString) answer.content.trim() else return@repeat
+                is JsonObject -> answer.toString().trim()
+                else -> return@repeat
+            }
+        }
+        return text
     }
 
     private fun decode(raw: String): PlanDto {

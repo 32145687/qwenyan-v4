@@ -149,7 +149,9 @@ class PlanningExecutionUseCase(
             val correction: String? = lastError?.let { error ->
                 val detail = (error.error as? ApplicationError.InvalidPlanningOutput)?.detail ?: throw error
                 "上一次输出无法解析为规划 JSON：$detail。" +
-                    "请只输出合法 JSON 对象（顶层 chapterGoal），字符串内引号必须转义。"
+                    "请只输出合法 JSON 对象（顶层 chapterGoal），字符串内引号必须转义；" +
+                    "不要把 JSON 包进 {\"answer\":…} 协议字段，直接输出 JSON 本体；" +
+                    "键值对之间用逗号分隔，不要用分号。"
             }
             try {
                 return planner.plan(context, policies, correction = correction)
