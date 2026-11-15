@@ -1,12 +1,20 @@
 package com.qianyan.app.desktop.ui.settings
 
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,8 +27,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.qianyan.app.desktop.ui.ActionButton
 import com.qianyan.app.desktop.ui.ActionLevel
 import com.qianyan.app.desktop.ui.DesktopAppState
@@ -30,6 +47,7 @@ import com.qianyan.app.desktop.ui.theme.QianyanCodeStyle
 import com.qianyan.app.desktop.ui.theme.QianyanTheme
 import com.qianyan.provider.ProviderBalance
 import com.qianyan.provider.ProviderType
+import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -61,6 +79,7 @@ private const val BALANCE_CACHE_MILLIS = 60_000L
 @Composable
 fun UsageSettings(state: DesktopAppState) {
     BalanceSection(state)
+    UsageDashboardSection(state)
     UsageTableSection(state)
     LedgerSection(state)
 }
@@ -284,6 +303,272 @@ private fun LedgerSection(state: DesktopAppState) {
                 Spacer(Modifier.weight(1f))
                 ActionButton("清空本地统计", ActionLevel.TEXT, count > 0) { confirming = true }
             }
+        }
+    }
+}
+
+/* ---------------- 用量看板（U-01） ---------------- */
+
+/** 看板指标下标：0 金额（估算）/ 1 请求次数 / 2 Tokens。 */
+private const val METRIC_COST = 0
+private const val METRIC_CALLS = 1
+private const val METRIC_TOKENS = 2
+
+/** 图表模型配色（固定序列；按模型名排序取色，超出后循环）。 */
+private val chartModelColors = listOf(
+    Color(0xFFFF9500),
+    Color(0xFF0A84FF),
+    Color(0xFF30D158),
+    Color(0xFFBF5AF2),
+    Color(0xFF64D2FF),
+    Color(0xFFFFD60A),
+    Color(0xFFFF375F),
+    Color(0xFFAC8E68),
+)
+
+private const val CHART_LEFT = 46f
+private const val CHART_RIGHT = 8f
+private const val CHART_BOTTOM = 22f
+
+private fun metricValueOfDay(row: DailyUsage, metric: Int): Double = when (metric) {
+    METRIC_COST -> row.costCny
+    METRIC_CALLS -> row.calls.toDouble()
+    else -> row.total.toDouble()
+}
+
+private fun metricValueOfModel(row: DailyModelUsage, metric: Int): Double = when (metric) {
+    METRIC_COST -> row.costCny ?: 0.0
+    METRIC_CALLS -> row.calls.toDouble()
+    else -> row.total.toDouble()
+}
+
+/**
+ * 用量看板（U-01）：本月/30 天/全部 三档范围 + 概览三卡 + 按日柱状图（按模型分色堆叠）
+ * + 点选单日明细。金额一律是本地单价估算，看板内反复标注「估算，非厂商账单」。
+ */
+@Composable
+private fun UsageDashboardSection(state: DesktopAppState) {
+    val palette = QianyanTheme.palette
+    var rangeIndex by remember { mutableStateOf(0) }
+    var metricIndex by remember { mutableStateOf(METRIC_COST) }
+    var selectedDate by remember { mutableStateOf<LocalDate?>(null) }
+    val refreshKey = state.refreshKey
+
+    val today = remember(refreshKey) { LocalDate.now() }
+    val summaryDays = when (rangeIndex) {
+        0 -> today.dayOfMonth
+        1 -> 30
+        else -> null
+    }
+    val from = when (rangeIndex) {
+        0 -> monthStart(today)
+        1 -> today.minusDays(29)
+        else -> null
+    }
+    val buckets = remember(rangeIndex, refreshKey) {
+        state.graph.usageLedger.summary(summaryDays)
+    }
+    val byModel = remember(buckets, from, today) { aggregateDailyByModel(buckets, from, today) }
+    val daily = remember(byModel) { aggregateDaily(byModel) }
+    val totals = remember(daily) { summarize(daily) }
+    val models = remember(byModel) { byModel.map { it.modelId }.distinct().sorted() }
+
+    SettingsSection("用量看板", "按日统计本地调用；金额为单价估算，非厂商账单。") {
+        SettingsSegmented(listOf("本月", "30 天", "全部"), rangeIndex) {
+            rangeIndex = it
+            selectedDate = null
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            val costText = if (totals.costKnown) "¥%.2f".format(totals.costCny) else "¥%.2f+".format(totals.costCny)
+            UsageStatCard("消费金额（估算）", costText, Modifier.weight(1f))
+            UsageStatCard("API 请求次数", formatTokens(totals.calls.toLong()) + " 次", Modifier.weight(1f))
+            UsageStatCard("Tokens", formatTokens(totals.total), Modifier.weight(1f))
+        }
+        if (!totals.costKnown) {
+            SettingsNote("部分模型未列入单价表，其用量未计入金额（实际消费高于估算）。", divider = true)
+        }
+        HLine(Modifier.padding(top = 12.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "按日视图",
+                style = MaterialTheme.typography.labelMedium,
+                color = palette.text2,
+                modifier = Modifier.weight(1f),
+            )
+            SettingsSegmented(listOf("金额", "请求", "Tokens"), metricIndex) {
+                metricIndex = it
+                selectedDate = null
+            }
+        }
+        if (daily.isEmpty()) {
+            SettingsNote("还没有记录：真实模型调用完成后才会显示图表")
+        } else {
+            UsageBarChart(
+                daily = daily,
+                byModel = byModel.groupBy { it.date },
+                models = models,
+                metric = metricIndex,
+                selected = selectedDate,
+                onSelect = { selectedDate = if (selectedDate == it) null else it },
+            )
+            if (models.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    models.forEachIndexed { index, model ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier.size(8.dp).background(
+                                    chartModelColors[index % chartModelColors.size],
+                                    RoundedCornerShape(2.dp),
+                                ),
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                model,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = palette.text3,
+                                maxLines = 1,
+                            )
+                        }
+                    }
+                }
+            }
+            selectedDate?.let { date ->
+                val rows = byModel.filter { it.date == date }
+                HLine(Modifier.padding(start = 16.dp))
+                Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(
+                        "${date.monthValue}/${date.dayOfMonth} 明细（点选柱条切换）",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = palette.text2,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    rows.forEach { row ->
+                        val costText = row.costCny?.let { "¥%.2f".format(it) } ?: "—"
+                        Text(
+                            "${row.modelId} · ${row.calls} 次 · " +
+                                "${formatTokens(row.prompt)} / ${formatTokens(row.completion)} / " +
+                                "${formatTokens(row.total)} · $costText",
+                            style = QianyanCodeStyle,
+                            color = palette.text2,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UsageStatCard(label: String, value: String, modifier: Modifier = Modifier) {
+    val palette = QianyanTheme.palette
+    Column(
+        modifier
+            .border(1.dp, palette.line, RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = palette.text3, maxLines = 1)
+        Spacer(Modifier.height(4.dp))
+        Text(value, style = QianyanCodeStyle, color = palette.text, maxLines = 1)
+    }
+}
+
+/** 按日柱状图：X 轴按日、同日按模型分色堆叠；点选柱条回调日期（再点同日取消）。 */
+@Composable
+private fun UsageBarChart(
+    daily: List<DailyUsage>,
+    byModel: Map<LocalDate, List<DailyModelUsage>>,
+    models: List<String>,
+    metric: Int,
+    selected: LocalDate?,
+    onSelect: (LocalDate?) -> Unit,
+) {
+    val palette = QianyanTheme.palette
+    val textMeasurer = rememberTextMeasurer()
+    val labelStyle = TextStyle(fontSize = 9.sp, color = palette.text3)
+
+    Canvas(
+        Modifier
+            .fillMaxWidth()
+            .height(150.dp)
+            .padding(horizontal = 16.dp)
+            .pointerInput(daily, metric) {
+                detectTapGestures { offset ->
+                    val n = daily.size
+                    val slot = (size.width - CHART_LEFT - CHART_RIGHT) / n
+                    val idx = ((offset.x - CHART_LEFT) / slot).toInt()
+                    if (idx in 0 until n) onSelect(daily[idx].date) else onSelect(null)
+                }
+            },
+    ) {
+        val n = daily.size
+        val slot = (size.width - CHART_LEFT - CHART_RIGHT) / n
+        val chartH = size.height - CHART_BOTTOM
+        val maxV = daily.maxOf { metricValueOfDay(it, metric) }.coerceAtLeast(1.0)
+
+        // 选中日的整列高亮
+        selected?.let { sel ->
+            val idx = daily.indexOfFirst { it.date == sel }
+            if (idx >= 0) {
+                drawRect(
+                    color = palette.accent.copy(alpha = 0.08f),
+                    topLeft = Offset(CHART_LEFT + idx * slot, 0f),
+                    size = Size(slot, chartH),
+                )
+            }
+        }
+        // 基线
+        drawLine(palette.line, Offset(CHART_LEFT, chartH), Offset(size.width - CHART_RIGHT, chartH), 1f)
+        // 堆叠柱（同日按模型固定顺序，颜色与图例一致）
+        daily.forEachIndexed { i, day ->
+            val barW = (slot * 0.65f).coerceIn(1f, 20.dp.toPx())
+            val x0 = CHART_LEFT + i * slot + (slot - barW) / 2f
+            var y = chartH
+            val rows = (byModel[day.date] ?: emptyList())
+                .sortedBy { models.indexOf(it.modelId) }
+            rows.forEach { row ->
+                val v = metricValueOfModel(row, metric)
+                if (v > 0.0) {
+                    val h = (v / maxV * (chartH - 8f)).toFloat().coerceAtLeast(1f)
+                    y -= h
+                    val colorIdx = models.indexOf(row.modelId).coerceAtLeast(0)
+                    drawRoundRect(
+                        color = chartModelColors[colorIdx % chartModelColors.size],
+                        topLeft = Offset(x0, y),
+                        size = Size(barW, h),
+                        cornerRadius = CornerRadius(2f, 2f),
+                    )
+                }
+            }
+        }
+        // 坐标文本（顶 = 最大值，左下 = 0，X 首末日期）
+        val maxLabel = when (metric) {
+            METRIC_COST -> "%.2f".format(maxV)
+            else -> formatTokens(maxV.toLong())
+        }
+        drawText(textMeasurer, maxLabel, Offset(2f, 2f), labelStyle)
+        drawText(textMeasurer, "0", Offset(2f, chartH - 12f), labelStyle)
+        val xLabel: (LocalDate) -> String = { "${it.monthValue}/${it.dayOfMonth}" }
+        drawText(textMeasurer, xLabel(daily.first().date), Offset(CHART_LEFT, chartH + 4f), labelStyle)
+        if (n > 1) {
+            val lastText = xLabel(daily.last().date)
+            val w = textMeasurer.measure(lastText, labelStyle).size.width
+            drawText(
+                textMeasurer,
+                lastText,
+                Offset((size.width - CHART_RIGHT - w).coerceAtLeast(CHART_LEFT), chartH + 4f),
+                labelStyle,
+            )
         }
     }
 }
