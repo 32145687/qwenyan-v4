@@ -28,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -736,21 +738,29 @@ private fun TokensStackCard(series: List<DailyPoint>, modifier: Modifier = Modif
             }
             drawLine(palette.lineStrong, Offset(CHART_LEFT, chartH), Offset(CHART_LEFT + plotW, chartH), 1f)
 
-            val radius = CornerRadius(2.5.dp.toPx())
             series.forEachIndexed { i, p ->
                 val barW = (slot * 0.55f).coerceIn(2f, 16.dp.toPx())
                 val x0 = CHART_LEFT + i * slot + (slot - barW) / 2f
+                // 段与段方角直连（内部不许有圆角缺口），只给整根柱顶/底留圆角
+                val segs = buildList {
+                    if (p.cacheHit > 0) add(tokenHitColor to p.cacheHit)
+                    val miss = p.prompt - p.cacheHit
+                    if (miss > 0) add(tokenMissColor to miss)
+                    if (p.completion > 0) add(tokenOutColor to p.completion)
+                }
                 var y = chartH
-                listOf(
-                    tokenHitColor to p.cacheHit,
-                    tokenMissColor to (p.prompt - p.cacheHit),
-                    tokenOutColor to p.completion,
-                ).forEach { (color, v) ->
-                    if (v > 0) {
-                        val h = (v / maxV * (chartH - 6f)).toFloat().coerceAtLeast(1.5f)
-                        y -= h
-                        drawRoundRect(color = color, topLeft = Offset(x0, y), size = Size(barW, h), cornerRadius = radius)
-                    }
+                segs.forEachIndexed { si, (color, v) ->
+                    val h = (v / maxV * (chartH - 6f)).toFloat().coerceAtLeast(1.5f)
+                    y -= h
+                    val r = minOf(2.5.dp.toPx(), h / 2f, barW / 2f)
+                    val roundRect = RoundRect(
+                        rect = Rect(Offset(x0, y), Size(barW, h)),
+                        topLeft = CornerRadius(if (si == segs.lastIndex) r else 0f),
+                        topRight = CornerRadius(if (si == segs.lastIndex) r else 0f),
+                        bottomRight = CornerRadius(if (si == 0) r else 0f),
+                        bottomLeft = CornerRadius(if (si == 0) r else 0f),
+                    )
+                    drawPath(Path().apply { addRoundRect(roundRect) }, color)
                 }
             }
 
