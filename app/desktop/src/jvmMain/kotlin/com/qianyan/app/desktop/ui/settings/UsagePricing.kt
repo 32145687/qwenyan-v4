@@ -22,10 +22,15 @@ internal object ModelPricing {
      *
      * ⚠ 占位数值：上线前须按各厂商价格页核对修改；只收模型 ID 精确匹配，
      * 未列入的模型（含 MOCK / unknown）不计金额。
+     * 模型 ID 以本地账本实际记录为准（真机 2026-11-16 校对：deepseek-v4-flash /
+     * mimo-v2.6-flash / mimo-v2.6-pro / mock-v1）。
      */
     private val table = mapOf(
         "deepseek-flash" to ModelUnitPrice(inputPerMillion = 0.5, outputPerMillion = 2.0),
+        "deepseek-v4-flash" to ModelUnitPrice(inputPerMillion = 0.5, outputPerMillion = 2.0),
         "deepseek-v4-pro" to ModelUnitPrice(inputPerMillion = 4.0, outputPerMillion = 16.0),
+        "mimo-v2.6-flash" to ModelUnitPrice(inputPerMillion = 1.0, outputPerMillion = 4.0),
+        "mimo-v2.6-pro" to ModelUnitPrice(inputPerMillion = 2.0, outputPerMillion = 8.0),
     )
 
     internal fun priceOf(modelId: String): ModelUnitPrice? = table[modelId]
