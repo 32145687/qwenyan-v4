@@ -8,8 +8,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -115,104 +117,135 @@ private fun BalanceSection(state: DesktopAppState) {
     }
 
     SettingsSection("余额", "余额直接读自厂商接口；只展示币种与金额，不做价格估算。") {
-        ProviderType.entries.forEachIndexed { index, type ->
-            if (index > 0) Spacer(Modifier.height(10.dp))
-            val configured = state.graph.isConfigured(type)
-            LaunchedEffect(type, configured) {
-                if (type != ProviderType.MOCK && configured) refresh(type, force = false)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp).height(IntrinsicSize.Min),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            ProviderType.entries.forEach { type ->
+                val configured = state.graph.isConfigured(type)
+                LaunchedEffect(type, configured) {
+                    if (type != ProviderType.MOCK && configured) refresh(type, force = false)
+                }
+                BalanceCard(
+                    type = type,
+                    configured = configured,
+                    isCurrent = type == current,
+                    snapshot = balanceCache[type],
+                    onRefresh = { refresh(type, force = true) },
+                    onConfigure = { state.openSettingsSection(SETTINGS_PROVIDER_SECTION, type) },
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                )
             }
-            BalanceRow(
-                type = type,
-                configured = configured,
-                isCurrent = type == current,
-                snapshot = balanceCache[type],
-                onRefresh = { refresh(type, force = true) },
-                onConfigure = { state.openSettingsSection(SETTINGS_PROVIDER_SECTION, type) },
-            )
         }
     }
 }
 
+/** 余额卡：厂商名 + 刷新（右上）→ 大字余额 → 现金/赠送分解 → 刷新时间；等高并排。 */
 @Composable
-private fun BalanceRow(
+private fun BalanceCard(
     type: ProviderType,
     configured: Boolean,
     isCurrent: Boolean,
     snapshot: BalanceSnapshot?,
     onRefresh: () -> Unit,
     onConfigure: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val palette = QianyanTheme.palette
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .background(palette.soft, RoundedCornerShape(14.dp))
+    Column(
+        modifier
+            .background(palette.soft, RoundedCornerShape(16.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.Top,
     ) {
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    providerLabel(type),
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = palette.text,
-                )
-                if (isCurrent) {
-                    Spacer(Modifier.width(6.dp))
-                    Text("当前", style = MaterialTheme.typography.labelSmall, color = palette.accent)
-                }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                providerLabel(type),
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = palette.text,
+                maxLines = 1,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            if (isCurrent) {
+                Spacer(Modifier.width(6.dp))
+                Text("当前", style = MaterialTheme.typography.labelSmall, color = palette.accent)
             }
-            Spacer(Modifier.height(3.dp))
+            Spacer(Modifier.weight(1f))
             when {
-                type == ProviderType.MOCK ->
-                    Text("离线示意不查询余额", style = MaterialTheme.typography.bodySmall, color = palette.text3)
-
-                !configured ->
-                    Text("未配置 API Key", style = MaterialTheme.typography.bodySmall, color = palette.text3)
-
-                snapshot?.loading == true ->
-                    Text("查询中…", style = MaterialTheme.typography.bodySmall, color = palette.text3)
-
-                snapshot?.error != null ->
-                    Text(snapshot.error!!, style = MaterialTheme.typography.bodySmall, color = palette.del)
-
-                snapshot?.balance != null -> {
-                    val balance = snapshot.balance!!
-                    if (!balance.available) {
-                        Text(
-                            "厂商返回：账户当前不可用",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = palette.del,
-                        )
-                        Spacer(Modifier.height(3.dp))
-                    }
-                    if (balance.lines.isEmpty()) {
-                        Text("厂商未返回币种余额", style = MaterialTheme.typography.bodySmall, color = palette.text3)
-                    } else {
-                        balance.lines.forEach { line ->
-                            Text(formatBalanceLine(line), style = MaterialTheme.typography.bodyMedium, color = palette.text)
-                        }
-                    }
-                    snapshot.at?.let {
-                        Text(
-                            "上次刷新 ${formatRefreshTime(it)}",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = palette.text3,
-                        )
-                    }
-                }
-
-                else ->
-                    Text("尚未查询", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+                type == ProviderType.MOCK -> Unit
+                !configured -> ActionButton("配置 ›", ActionLevel.TEXT, true) { onConfigure() }
+                else -> ActionButton("刷新", ActionLevel.TEXT, snapshot?.loading != true) { onRefresh() }
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.height(8.dp))
         when {
-            type == ProviderType.MOCK -> Unit
-            !configured -> ActionButton("配置 ›", ActionLevel.TEXT, true) { onConfigure() }
-            else -> ActionButton("刷新余额", ActionLevel.TEXT, snapshot?.loading != true) { onRefresh() }
+            type == ProviderType.MOCK ->
+                Text("离线示意不查询余额", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+
+            !configured ->
+                Text("未配置 API Key", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+
+            snapshot?.loading == true ->
+                Text("查询中…", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+
+            snapshot?.error != null ->
+                Text(snapshot.error!!, style = MaterialTheme.typography.bodySmall, color = palette.del)
+
+            snapshot?.balance != null -> {
+                val balance = snapshot.balance!!
+                if (!balance.available) {
+                    Text(
+                        "厂商返回：账户当前不可用",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = palette.del,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                }
+                if (balance.lines.isEmpty()) {
+                    Text("厂商未返回币种余额", style = MaterialTheme.typography.bodySmall, color = palette.text3)
+                } else {
+                    val first = balance.lines.first()
+                    Text(
+                        "${first.currency} ${first.total}",
+                        style = QianyanCodeStyle.copy(fontSize = 17.sp, fontWeight = FontWeight.SemiBold),
+                        color = palette.text,
+                        maxLines = 1,
+                    )
+                    val parts = buildList {
+                        first.cash?.let { add("现金 $it") }
+                        first.granted?.let { add("赠送 $it") }
+                    }
+                    if (parts.isNotEmpty()) {
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            parts.joinToString(" · "),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.text3,
+                            maxLines = 1,
+                        )
+                    }
+                    balance.lines.drop(1).forEach { extra ->
+                        Spacer(Modifier.height(3.dp))
+                        Text(
+                            formatBalanceLine(extra),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = palette.text2,
+                            maxLines = 1,
+                        )
+                    }
+                }
+                snapshot.at?.let {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "上次刷新 ${formatRefreshTime(it)}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = palette.text3,
+                    )
+                }
+            }
+
+            else ->
+                Text("尚未查询", style = MaterialTheme.typography.bodySmall, color = palette.text3)
         }
     }
 }
