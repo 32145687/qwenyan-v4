@@ -70,7 +70,7 @@ internal const val SETTINGS_MODELS_SECTION = "models"
 internal const val SETTINGS_USAGE_SECTION = "usage"
 
 private val SETTINGS_NAV = listOf(
-    SettingsGroup("外观", listOf(SettingsItem("theme", "主题"), SettingsItem("layout", "界面"))),
+    SettingsGroup("外观", listOf(SettingsItem("theme", "主题"))),
     SettingsGroup(
         "AI",
         listOf(
@@ -162,7 +162,6 @@ fun SettingsPanel(state: DesktopAppState, onClose: () -> Unit) {
                 ) {
                     when (itemKey) {
                         "theme" -> ThemeSettings(state)
-                        "layout" -> LayoutSettings(state)
                         "provider" -> ProviderSection(state)
                         "models" -> ModelSettings(state)
                         SETTINGS_USAGE_SECTION -> UsageSettings(state)
@@ -303,23 +302,6 @@ private fun ThemeCard(
             if (active) Text("✓", style = QianyanCodeStyle, color = current.accent)
         }
         Text(desc, style = MaterialTheme.typography.labelSmall, color = current.text3)
-    }
-}
-
-/* ---------------- 外观 · 界面 ---------------- */
-
-@Composable
-private fun LayoutSettings(state: DesktopAppState) {
-    SettingsSection("面板", "控制工作区的三栏显示。") {
-        SettingsRow("左侧导航", "显示项目导航（${shortcutLabel()}+B）") {
-            SettingsSwitch(state.sidebarOpen) { state.toggle(com.qianyan.app.desktop.ui.PanelToggle.SIDEBAR) }
-        }
-        SettingsRow("检查器", "显示右侧上下文检查器（${shortcutLabel()}+\\）", divider = true) {
-            SettingsSwitch(state.inspectorOpen) { state.toggle(com.qianyan.app.desktop.ui.PanelToggle.INSPECTOR) }
-        }
-        SettingsRow("专注模式", "隐藏两侧面板，只留正文（${shortcutLabel()}+Shift+E）", divider = true) {
-            SettingsSwitch(state.focusMode) { state.toggle(com.qianyan.app.desktop.ui.PanelToggle.FOCUS) }
-        }
     }
 }
 
