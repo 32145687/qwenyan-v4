@@ -151,6 +151,19 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
     var toast by mutableStateOf<String?>(null)
     var busy by mutableStateOf(false)
 
+    /** DSH-06：当前 run 的取消令牌（busy 期间非空）；UI「停止」入口经 [cancelCurrentRun] 置位。 */
+    var currentRunCancellation: com.qianyan.application.usecase.agent.AgentRunCancellation? = null
+
+    /** DSH-06：已请求停止、等待终态期间为 true（按钮置灰显示「正在停止…」）。 */
+    var stopping by mutableStateOf(false)
+
+    /** DSH-06：取消当前 run（幂等；只对本次 runId 生效）。无运行中的任务返回 false。 */
+    fun cancelCurrentRun(): Boolean {
+        val token = currentRunCancellation ?: return false
+        stopping = true
+        return token.cancel()
+    }
+
     /**
      * O-88：写作页是否正在跑生成类动作（由 [com.qianyan.app.desktop.ui.pages.WritePage] 按
      * `WriterUiState.busy` 同步）。设置页切换 Provider 会重建容器并关闭旧 DB 驱动，
@@ -182,6 +195,20 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
 
     /** 创作工作区的连续会话（纯 UI；同一作品内保留，切换作品时清空）。 */
     var creationMessages by mutableStateOf<List<CreationMessage>>(emptyList())
+
+    /**
+     * DSH-03：新会话视图标识（纯内存态）。
+     *
+     * 「新会话」只清空当前显示并递增本标识，让创作页滚动位置等视图态归零；
+     * **不落库、不删行**——历史对话仍是记忆，重开作品会按 novelId 全部回灌。
+     */
+    var conversationViewKey by mutableStateOf(0)
+
+    /** DSH-03：「新会话」= 只影响显示；历史对话仍在库（重开作品仍回灌）。 */
+    fun startNewConversation() {
+        creationMessages = emptyList()
+        conversationViewKey += 1
+    }
 
     /** 创作输入草稿（纯 UI；提升到 App 级，切换工作区不丢失，切换作品时清空）。 */
     var creationDraft by mutableStateOf("")
@@ -447,9 +474,13 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
         persistConversation(CreationMessageRole.USER, intent)
         lastConvergenceReview = null
         busy = true
+        // DSH-06：每次 run 一个取消令牌（只对本次 runId 生效）；终态后清空。
+        val cancellation = com.qianyan.application.usecase.agent.AgentRunCancellation()
+        currentRunCancellation = cancellation
+        stopping = false
         scope.launch {
             try {
-                val result = withContext(Dispatchers.IO) { container.novelAgent.run(request) }
+                val result = withContext(Dispatchers.IO) { container.novelAgent.run(request, cancellation) }
                 lastAgentRequest = result.sessionId?.let { request.copy(sessionId = it) } ?: request
                 lastAgentResult = result
                 appendAssistantMessage(result)
@@ -461,6 +492,8 @@ class DesktopAppState(val graph: com.qianyan.app.desktop.di.DesktopGraph) {
                 toast(message)
             } finally {
                 busy = false
+                stopping = false
+                currentRunCancellation = null
                 refreshKey++
             }
         }

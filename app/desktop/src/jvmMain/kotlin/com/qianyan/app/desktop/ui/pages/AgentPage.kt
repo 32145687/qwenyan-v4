@@ -1,5 +1,6 @@
 package com.qianyan.app.desktop.ui.pages
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -65,7 +66,8 @@ fun AgentPage(state: DesktopAppState) {
     // 草稿放在 DesktopAppState：切到正文 / 故事再回来仍保留；切换作品时由 applyNovelSwitch 清空。
     val input = state.creationDraft
     val messages = state.creationMessages
-    val scroll = rememberScrollState()
+    // DSH-03：新会话只换视图标识（滚动归零），不删除库中历史。
+    val scroll = remember(state.conversationViewKey) { ScrollState(0) }
 
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) scroll.animateScrollTo(scroll.maxValue)
@@ -131,6 +133,23 @@ fun AgentPage(state: DesktopAppState) {
         }
     } else {
         Column(Modifier.fillMaxSize()) {
+            // DSH-03：「新会话」入口（只清空当前显示；历史仍在库，重开作品可回灌）。
+            // DSH-06：busy 时同排出现「停止」（点击后置灰显示「正在停止…」，终态恢复并走既有失败条）。
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (state.busy) {
+                    ActionButton(
+                        if (state.stopping) "正在停止…" else "停止",
+                        ActionLevel.SECONDARY,
+                        !state.stopping,
+                    ) { state.cancelCurrentRun() }
+                    Spacer(Modifier.width(8.dp))
+                }
+                ActionButton("新会话", ActionLevel.TEXT, !state.busy) { state.startNewConversation() }
+            }
             Box(Modifier.weight(1f).fillMaxWidth()) {
                 Column(
                     Modifier.align(Alignment.TopCenter).widthIn(max = 706.dp).fillMaxWidth()

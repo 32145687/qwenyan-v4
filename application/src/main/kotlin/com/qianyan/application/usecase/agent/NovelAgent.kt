@@ -205,9 +205,10 @@ class NovelAgent internal constructor(
      * 不抛业务异常：一切失败都表达为稳定的 [NovelAgentResult]（含类型化 [NovelAgentFailure]），
      * 并已把会话收敛到既有语义的状态（失败 → `FAILED`；等待人工 → `PAUSED`；完成 → `COMPLETED`）。
      */
-    fun run(request: NovelAgentRequest): NovelAgentResult {
+    fun run(request: NovelAgentRequest, cancellation: AgentRunCancellation? = null): NovelAgentResult {
         val intent = analyzeIntent(request.userIntent)
         val state = RunState()
+        state.cancellation = cancellation
         var session: AgentSession? = null
         var selectedSkill: Skill? = null
         var builtPack: ContextPack? = null
@@ -408,11 +409,19 @@ class NovelAgent internal constructor(
                 historyId = committed.historyEntry.historyId,
             )
         } catch (e: RunAbort) {
-            session?.let { settleInterrupted(it.sessionId) }
+            // DSH-06：作者主动中止 → 会话走既有 CANCELLED（不落 FAILED）；其余中止照旧收敛为失败。
+            val authorCancelled = cancellation?.isCancelled() == true
+            session?.let {
+                if (authorCancelled) sessions.cancel(it.sessionId) else settleInterrupted(it.sessionId)
+            }
             return result(
                 outcome = outcomeOf(e.code), request = request, intent = intent,
                 sessionId = session?.sessionId, skill = selectedSkill, pack = builtPack, state = state,
-                summary = "运行中止（${e.code}）：${e.detail}",
+                summary = if (authorCancelled) {
+                    "${cancellation!!.message}（runId=${cancellation.runId}）"
+                } else {
+                    "运行中止（${e.code}）：${e.detail}"
+                },
                 failure = NovelAgentFailure(e.code, e.detail),
             )
         } catch (t: Throwable) {
@@ -1597,6 +1606,10 @@ class NovelAgent internal constructor(
         summary: String,
         block: (ActivityId) -> T,
     ): T {
+        // DSH-06：相位边界协作式取消检查点（只在边界检查，不在 LLM 调用内部中断）。
+        state.cancellation?.takeIf { it.isCancelled() }?.let {
+            throw RunAbort(NovelAgentErrorCodes.SESSION_CANCELLED, it.message)
+        }
         val activity = activities.start(sessionId, phase.name, summary)
         state.activityIds += activity.activityId
         return try {
@@ -1707,6 +1720,9 @@ class NovelAgent internal constructor(
         var continuationAbsentReason: String? = null
         /** O-30（D4）：声明来源覆盖；Pack Skill 由 pack.items 计算，非 Pack Skill 由轻量统计计算。 */
         var contextCoverage: ContextCoverage? = null
+
+        /** DSH-06：协作式取消令牌（null = 不可取消，行为与既有完全一致）。 */
+        var cancellation: AgentRunCancellation? = null
     }
 
     /** 编排中止（内部信号；统一转成稳定 [NovelAgentFailure]，不向调用方抛业务异常）。 */
