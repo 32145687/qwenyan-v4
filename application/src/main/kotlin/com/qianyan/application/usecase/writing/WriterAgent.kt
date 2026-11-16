@@ -60,12 +60,14 @@ class WriterAgent(
      *
      * @param conversation DSH-02：由 UseCase 层拼好的只读对话段落（null = 不注入，行为与既有完全一致）。
      * Agent 不持有 Repository，只消费已拼好的文本。
+     * @param onDelta DSH-07：流式增量回调（null = 走 chat 单块，行为与既有完全一致）。
      */
     fun write(
         context: PlanningContext,
         plan: ChapterPlan,
         policies: List<DecisionPolicy>,
         conversation: String? = null,
+        onDelta: ((String) -> Unit)? = null,
     ): Draft {
         val structure = DraftStructure(
             draftId = java.util.UUID.randomUUID().toString(),
@@ -78,7 +80,7 @@ class WriterAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(WRITER_AGENT, renderInput(context, plan, policies, conversation))
+            val result = runtime.run(WRITER_AGENT, renderInput(context, plan, policies, conversation), onDelta)
             val raw = result.answer
                 ?: throw WritingException.InvalidOutput("writer returned no answer")
             DraftParser.parse(raw, structure)

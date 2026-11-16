@@ -10,9 +10,12 @@ import com.qianyan.model.tool.ToolRequest
 import com.qianyan.model.tool.ToolResult
 import com.qianyan.provider.ChatMessage
 import com.qianyan.provider.ChatRole
+import com.qianyan.provider.FinishReason
 import com.qianyan.provider.LLMGateway
 import com.qianyan.provider.ModelProfile
 import com.qianyan.provider.ProviderRequest
+import com.qianyan.provider.ProviderResponse
+import com.qianyan.provider.Usage
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -46,8 +49,14 @@ class AgentRuntime(
     private val maxSteps: Int = DEFAULT_MAX_STEPS,
 ) {
 
-    /** 执行一次 Agent 任务（同步）。 */
-    fun run(agent: AgentContract, input: String): AgentResult {
+    /**
+     * 执行一次 Agent 任务（同步）。
+     *
+     * DSH-07：[onDelta] 非空时模型输出经 [LLMGateway.stream] 增量拉取并逐块回调
+     * （显示缓冲用；拼接结果与全文等价，流式路径 usage 记 0——真实流式 usage 由 DSH-07R 修正）；
+     * null 时行为与既有逐字一致（走 [LLMGateway.chat] 单块）。
+     */
+    fun run(agent: AgentContract, input: String, onDelta: ((String) -> Unit)? = null): AgentResult {
         val ctx = AgentExecutionContext(agent, input)
         ctx.state = AgentState.RUNNING
 
@@ -57,7 +66,12 @@ class AgentRuntime(
         )
 
         while (ctx.steps < maxSteps) {
-            val response = gateway.chat(ProviderRequest(model = model, messages = messages, temperature = 0.0))
+            val request = ProviderRequest(model = model, messages = messages, temperature = 0.0)
+            val response = if (onDelta == null) {
+                gateway.chat(request)
+            } else {
+                streamResponse(request, onDelta)
+            }
             ctx.steps += 1
 
             when (val step = AgentResponseParser.parse(response.message.content)) {
@@ -94,6 +108,24 @@ class AgentRuntime(
         // 超出最大步数仍无最终回答 → 防循环
         ctx.state = AgentState.FAILED
         throw AgentException.MaxStepsExceeded(maxSteps)
+    }
+
+    /**
+     * DSH-07 · 流式拉取：逐增量回调并累积全文，返回等价的 [ProviderResponse]
+     * （流式路径 usage 记 0——真实流式 usage 由 DSH-07R 的 provider 实现修正）。
+     * 中途失败：已回调的增量不撤回，异常向上透传（既有失败通道）。
+     */
+    private fun streamResponse(request: ProviderRequest, onDelta: (String) -> Unit): ProviderResponse {
+        val builder = StringBuilder()
+        gateway.stream(request).forEach { delta ->
+            builder.append(delta)
+            onDelta(delta)
+        }
+        return ProviderResponse(
+            message = ChatMessage(ChatRole.ASSISTANT, builder.toString()),
+            usage = Usage(0, 0, 0),
+            finishReason = FinishReason.STOP,
+        )
     }
 
     /** 把工具结果渲染为模型可读的观察文本（错误也类型化渲染，不吞）。 */
