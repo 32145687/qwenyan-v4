@@ -783,6 +783,7 @@ class ApplicationContainer(
             projects = projects,
             errorMapper = errorMapper,
             decisionModel = decisionModelGateway,
+            conversations = conversations,
         )
 
     /** P11.3 Writer Agent：复用 AgentRuntime → LLMGateway，默认 Mock（模型经 seam 装配方注入）。 */
@@ -822,6 +823,7 @@ class ApplicationContainer(
             contextEngine = contextEngine,
             continuationResolver = continuationResolver,
             vocabularyRules = vocabularyRules,
+            conversations = conversations,
             errorMapper = errorMapper,
         )
 

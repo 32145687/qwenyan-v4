@@ -57,8 +57,16 @@ class WriterAgent(
 
     /**
      * P20-P5：带上**与 Planning 相同**的 [DecisionPolicy]（只读消费；Writer **不重新计算** Decision）。
+     *
+     * @param conversation DSH-02：由 UseCase 层拼好的只读对话段落（null = 不注入，行为与既有完全一致）。
+     * Agent 不持有 Repository，只消费已拼好的文本。
      */
-    fun write(context: PlanningContext, plan: ChapterPlan, policies: List<DecisionPolicy>): Draft {
+    fun write(
+        context: PlanningContext,
+        plan: ChapterPlan,
+        policies: List<DecisionPolicy>,
+        conversation: String? = null,
+    ): Draft {
         val structure = DraftStructure(
             draftId = java.util.UUID.randomUUID().toString(),
             novelId = plan.novelId,
@@ -70,7 +78,7 @@ class WriterAgent(
             now = Clock.System.now(),
         )
         return try {
-            val result = runtime.run(WRITER_AGENT, renderInput(context, plan, policies))
+            val result = runtime.run(WRITER_AGENT, renderInput(context, plan, policies, conversation))
             val raw = result.answer
                 ?: throw WritingException.InvalidOutput("writer returned no answer")
             DraftParser.parse(raw, structure)
@@ -93,7 +101,12 @@ class WriterAgent(
     }
 
     /** 构造供 Writer LLM 使用的输入文本（复用 PlanningContext 投影 + ChapterPlan 创作意图）。 */
-    private fun renderInput(context: PlanningContext, plan: ChapterPlan, policies: List<DecisionPolicy>): String = buildString {
+    private fun renderInput(
+        context: PlanningContext,
+        plan: ChapterPlan,
+        policies: List<DecisionPolicy>,
+        conversation: String? = null,
+    ): String = buildString {
         appendLine("【创作请求】")
         appendLine("intent: ${context.request.intentType}")
         appendLine("target: ${context.request.target.kind}${context.request.target.id?.let { "(${it.value})" } ?: ""}")
@@ -134,6 +147,9 @@ class WriterAgent(
         }
 
         context.worldModelPromptSection()?.let { appendLine(it) }
+
+        // DSH-02：只读对话上下文（UseCase 层拼好；null 时不加任何行，既有行为逐字不变）
+        conversation?.let { appendLine(it); appendLine() }
 
         appendLine("【本章规划】")
         if (plan.chapterGoal.isNotBlank()) appendLine("chapterGoal: ${plan.chapterGoal}")

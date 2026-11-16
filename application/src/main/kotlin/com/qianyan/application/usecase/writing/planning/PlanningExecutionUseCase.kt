@@ -6,6 +6,8 @@ import com.qianyan.application.error.ErrorMapper
 import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.context.ContextEngineUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
+import com.qianyan.application.usecase.session.ConversationPromptSection
+import com.qianyan.application.usecase.session.ConversationUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.model.ChapterId
 import com.qianyan.model.NovelId
@@ -50,6 +52,8 @@ class PlanningExecutionUseCase(
     errorMapper: ErrorMapper,
     /** P20-P5：Decision 政策入口（Application orchestration 调用；Planner 只消费，不重算）。 */
     private val decisionModel: com.qianyan.application.usecase.decision.DecisionModelGateway? = null,
+    /** DSH-02：只读对话上下文取数（null = 不注入；读取失败降级为空，不阻断任务）。 */
+    private val conversations: ConversationUseCases? = null,
 ) : UseCase(errorMapper) {
 
     /**
@@ -104,7 +108,9 @@ class PlanningExecutionUseCase(
             val context = assembly.assemble(request, pack, continuationReference, resolved)
             // P20-P5：Resume → 复用传入政策；新 Task → decide 一次（不重复决定）。
             val policies = decisionPolicies ?: decidePolicy(context)
-            val plan = planWithCorrectionRetry(context, policies)
+            // DSH-02：对话只作为一次性 prompt 段落（不写 MemoryEntry / CandidateFact / Canonical）。
+            val conversation = conversationSection(novelId, request.rawText)
+            val plan = planWithCorrectionRetry(context, policies, conversation)
             val planWithChapter = bindChapter(plan, targetChapterId)
             taskManager.saveCheckpoint(taskId, PlanningSnapshot.STAGE, PlanningSnapshot.encode(planWithChapter, policies))
             taskManager.complete(taskId)
@@ -117,6 +123,22 @@ class PlanningExecutionUseCase(
             taskManager.fail(taskId, describe(mapped.error))
             throw mapped
         }
+    }
+
+    /**
+     * DSH-02：读取并裁剪本作品对话上下文（只读）。任何读取失败 → 降级为空（null），
+     * 一行 stderr 记录，**不阻断**规划任务（对话只是上下文参考）。
+     */
+    private fun conversationSection(novelId: NovelId, rawText: String): String? {
+        val useCases = conversations ?: return null
+        return runCatching {
+            ConversationPromptSection.build(
+                useCases.listByNovel(novelId),
+                excludeContent = rawText.takeIf { it.isNotBlank() },
+            )
+        }.onFailure {
+            System.err.println("DSH-02: 读取对话上下文失败，降级为空: ${it.message}")
+        }.getOrNull()
     }
 
     /**
@@ -143,6 +165,7 @@ class PlanningExecutionUseCase(
     private fun planWithCorrectionRetry(
         context: PlanningContext,
         policies: List<com.qianyan.model.decision.DecisionPolicy>,
+        conversation: String? = null,
     ): ChapterPlan {
         var lastError: ApplicationException? = null
         for (attempt in 0..MAX_CORRECTION_RETRIES) {
@@ -154,7 +177,7 @@ class PlanningExecutionUseCase(
                     "键值对之间用逗号分隔，不要用分号。"
             }
             try {
-                return planner.plan(context, policies, correction = correction)
+                return planner.plan(context, policies, correction = correction, conversation = conversation)
             } catch (e: ApplicationException) {
                 if (e.error !is ApplicationError.InvalidPlanningOutput) throw e
                 lastError = e

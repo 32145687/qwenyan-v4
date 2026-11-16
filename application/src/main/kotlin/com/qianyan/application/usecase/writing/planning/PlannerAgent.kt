@@ -67,6 +67,11 @@ class PlannerAgent(
          * 追加在输入末尾；null = 首次调用（行为不变）。
          */
         correction: String? = null,
+        /**
+         * DSH-02：由 UseCase 层拼好的只读对话段落（null = 不注入，行为与既有完全一致）。
+         * Agent 不持有 Repository，只消费已拼好的文本；位置在输出契约之前、correction 仍最末。
+         */
+        conversation: String? = null,
     ): ChapterPlan {
         val structure = ChapterPlanStructure(
             novelId = context.novelId,
@@ -79,7 +84,7 @@ class PlannerAgent(
         return try {
             val result = toolRuntime(activityId, allowedTools).run(
                 contract(activityId, allowedTools),
-                renderInput(context, policies, correction),
+                renderInput(context, policies, correction, conversation),
             )
             val raw = result.answer
                 ?: throw PlanningException.InvalidOutput("planner returned no answer")
@@ -107,6 +112,7 @@ class PlannerAgent(
         context: PlanningContext,
         policies: List<DecisionPolicy>,
         correction: String? = null,
+        conversation: String? = null,
     ): String = buildString {
         appendLine("【创作请求】")
         appendLine("intent: ${context.request.intentType}")
@@ -188,6 +194,9 @@ class PlannerAgent(
                 appendLine("- ${p.decisionType} → ${p.outcome} (source=${p.source})")
             }
         }
+
+        // DSH-02：只读对话上下文（UseCase 层拼好；null 时不加任何行，既有行为逐字不变）
+        conversation?.let { appendLine(it); appendLine() }
 
         // O-73：输出契约（T-O73-D 实测：无契约时模型把 answer 当小说正文，解析必然失败）。
         // T-O73-F2：首版"作为 answer 的值"被 DeepSeek 字面执行成 {"answer": {…}}（对象），而运行时只接受字符串 answer，

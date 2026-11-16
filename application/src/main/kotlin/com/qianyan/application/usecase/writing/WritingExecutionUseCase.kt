@@ -7,12 +7,15 @@ import com.qianyan.application.usecase.UseCase
 import com.qianyan.application.usecase.context.ContextEngineUseCases
 import com.qianyan.application.usecase.draft.WorkingDraftUseCases
 import com.qianyan.application.usecase.project.ProjectUseCases
+import com.qianyan.application.usecase.session.ConversationPromptSection
+import com.qianyan.application.usecase.session.ConversationUseCases
 import com.qianyan.application.usecase.task.TaskManagerUseCases
 import com.qianyan.application.usecase.vocabulary.VocabularyRuleEngine
 import com.qianyan.application.usecase.vocabulary.VocabularyRuleUseCases
 import com.qianyan.application.usecase.writing.planning.ContinuationResolver
 import com.qianyan.application.usecase.writing.planning.PlanningContextAssembly
 import com.qianyan.model.IntentType
+import com.qianyan.model.NovelId
 import com.qianyan.model.TaskId
 import com.qianyan.model.context.ContextRequest
 import com.qianyan.model.context.UserWritingRequest
@@ -56,6 +59,8 @@ class WritingExecutionUseCase(
     private val contextEngine: ContextEngineUseCases,
     private val continuationResolver: ContinuationResolver,
     private val vocabularyRules: VocabularyRuleUseCases,
+    /** DSH-02：只读对话上下文取数（null = 不注入；读取失败降级为空，不阻断任务）。 */
+    private val conversations: ConversationUseCases? = null,
     errorMapper: ErrorMapper,
 ) : UseCase(errorMapper) {
 
@@ -113,8 +118,10 @@ class WritingExecutionUseCase(
                 plan.variantId,
             )
             val context = contextAssembly.assemble(request, pack, continuationReference, resolved)
+            // DSH-02：对话只作为一次性 prompt 段落（不写 MemoryEntry / CandidateFact / Canonical）。
+            val conversation = conversationSection(plan.novelId, request.rawText)
             // writer 产出仍是内存 Draft 值（正文来源），**不落 DraftRepository**（P1-02c+d）。
-            val produced = writer.write(context, plan, decisionPolicies)
+            val produced = writer.write(context, plan, decisionPolicies, conversation)
             // T-O37-A：AI 产出先应用词库替换规则（确定性、无 LLM），命中随候选进入人工门。
             val applied = VocabularyRuleEngine.apply(
                 produced.content,
@@ -168,6 +175,22 @@ class WritingExecutionUseCase(
         } catch (e: ApplicationException) {
             null
         }
+    }
+
+    /**
+     * DSH-02：读取并裁剪本作品对话上下文（只读）。任何读取失败 → 降级为空（null），
+     * 一行 stderr 记录，**不阻断**写作任务（对话只是上下文参考）。
+     */
+    private fun conversationSection(novelId: NovelId, rawText: String): String? {
+        val useCases = conversations ?: return null
+        return runCatching {
+            ConversationPromptSection.build(
+                useCases.listByNovel(novelId),
+                excludeContent = rawText.takeIf { it.isNotBlank() },
+            )
+        }.onFailure {
+            System.err.println("DSH-02: 读取对话上下文失败，降级为空: ${it.message}")
+        }.getOrNull()
     }
 
     /** P12.0.1 P3：Request 与 Plan 的 novel/variant/scope 必须一致；不一致即跨实体污染 → 类型化拒绝（在调 LLM 前）。 */
